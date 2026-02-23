@@ -56,6 +56,11 @@ route_item:
       default: true
       selector:
         boolean:
+    allow_duplicate:
+      required: false
+      default: false
+      selector:
+        boolean:
 
 apply_review:
   name: Apply Grocery Review

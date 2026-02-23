@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import asyncio
 from collections.abc import Mapping
 from typing import Any
 
@@ -23,6 +24,10 @@ from .const import (
     CONF_NOTIFY_SERVICE,
     DEFAULT_CATEGORIES,
     DEFAULT_KEYWORDS_BY_CATEGORY,
+    DUPLICATE_PENDING_HELPER,
+    DUPLICATE_PENDING_ITEM_HELPER,
+    DUPLICATE_PENDING_KEY_HELPER,
+    DUPLICATE_PENDING_TARGET_HELPER,
     DOMAIN,
     HELPER_BY_CATEGORY,
     REVIEW_CATEGORY_HELPER,
@@ -62,6 +67,7 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
         vol.Optional("source_list", default=""): cv.string,
         vol.Optional("remove_from_source", default=False): cv.boolean,
         vol.Optional("review_on_other", default=True): cv.boolean,
+        vol.Optional("allow_duplicate", default=False): cv.boolean,
     }
 )
 
@@ -224,6 +230,43 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     async def _remove_from_list(list_entity: str, item_summary: str) -> None:
         if not list_entity or hass.states.get(list_entity) is None:
             return
+        needle = _normalize_term(item_summary)
+        for attempt in range(4):
+            response = await hass.services.async_call(
+                "todo",
+                "get_items",
+                {"status": "needs_action"},
+                target={"entity_id": list_entity},
+                blocking=True,
+                return_response=True,
+            )
+            resp = response.get(list_entity, response) if isinstance(response, dict) else {}
+            items = resp.get("items", []) if isinstance(resp, dict) else []
+            match = next(
+                (
+                    i
+                    for i in items
+                    if _normalize_term(str(i.get("summary", "")).strip()) == needle
+                ),
+                None,
+            )
+            if match:
+                remove_id = str(match.get("uid", "")).strip() or str(match.get("summary", "")).strip()
+                if remove_id:
+                    await hass.services.async_call(
+                        "todo",
+                        "remove_item",
+                        {"item": remove_id},
+                        target={"entity_id": list_entity},
+                        blocking=True,
+                    )
+                return
+            if attempt < 3:
+                await asyncio.sleep(0.25)
+
+    async def _has_open_duplicate(list_entity: str, item_summary: str) -> bool:
+        if not list_entity or hass.states.get(list_entity) is None:
+            return False
         response = await hass.services.async_call(
             "todo",
             "get_items",
@@ -234,18 +277,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         )
         resp = response.get(list_entity, response) if isinstance(response, dict) else {}
         items = resp.get("items", []) if isinstance(resp, dict) else []
-        match = next((i for i in items if str(i.get("summary", "")).strip() == item_summary), None)
-        if not match:
-            return
-        remove_id = str(match.get("uid", "")).strip() or str(match.get("summary", "")).strip()
-        if remove_id:
-            await hass.services.async_call(
-                "todo",
-                "remove_item",
-                {"item": remove_id},
-                target={"entity_id": list_entity},
-                blocking=True,
-            )
+        needle = _normalize_term(item_summary)
+        for item in items:
+            existing = _normalize_term(str(item.get("summary", "")))
+            if existing and existing == needle:
+                return True
+        return False
 
     async def _ensure_local_todo_list(entity_id: str, title: str) -> None:
         if hass.states.get(entity_id) is not None:
@@ -385,8 +422,27 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     def _build_main_dashboard_config(entry: ConfigEntry | None) -> dict[str, Any]:
         categories = _active_categories()
         inbox_entity = str(_entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox"))
-        cards: list[dict[str, Any]] = [
-            {
+        quick_add_input = "input_text.grocery_quick_add"
+        quick_add_button = "input_button.grocery_quick_add_submit"
+        has_helper_quick_add = hass.states.get(quick_add_input) is not None and hass.states.get(quick_add_button) is not None
+        if has_helper_quick_add:
+            quick_add_card: dict[str, Any] = {
+                "type": "entities",
+                "title": "Quick Add",
+                "show_header_toggle": False,
+                "entities": [
+                    {
+                        "entity": quick_add_input,
+                        "name": "Add item",
+                    },
+                    {
+                        "entity": quick_add_button,
+                        "name": "Add",
+                    },
+                ],
+            }
+        else:
+            quick_add_card = {
                 "display_order": "none",
                 "item_tap_action": "toggle",
                 "type": "todo-list",
@@ -395,8 +451,26 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "hide_section_headers": True,
                 "title": "Quick Add",
                 "hide_create": False,
+                "card_mod": {
+                    "style": (
+                        "ha-card $ h1.card-header {\n"
+                        "  padding: 16px 16px 4px 16px !important;\n"
+                        "}\n"
+                        "ha-card $ .card-content {\n"
+                        "  padding-top: 0 !important;\n"
+                        "}\n"
+                        "ha-empty-state,\n"
+                        "ha-md-empty-state,\n"
+                        ".empty,\n"
+                        ".empty-state,\n"
+                        ".placeholder {\n"
+                        "  display: none !important;\n"
+                        "}\n"
+                    )
+                },
             }
-        ]
+
+        cards: list[dict[str, Any]] = [quick_add_card]
 
         for category in categories:
             cards.append(_empty_card_for(category))
@@ -517,6 +591,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         source_list = call.data["source_list"].strip()
         remove_from_source = bool(call.data["remove_from_source"])
         review_on_other = bool(call.data["review_on_other"])
+        allow_duplicate = bool(call.data["allow_duplicate"])
         normalized = _normalize_term(raw_item)
         if not normalized:
             return
@@ -531,6 +606,32 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if hass.states.get(target_list) is None:
             _LOGGER.warning("Target list %s missing for category %s", target_list, category)
             target_list = _target_list_for_category("other")
+
+        is_duplicate = await _has_open_duplicate(target_list, raw_item)
+        if is_duplicate and not allow_duplicate:
+            target_state = hass.states.get(target_list)
+            target_name = (
+                str(target_state.attributes.get("friendly_name", "")).strip()
+                if target_state is not None
+                else target_list
+            )
+            await _set_helper_if_exists(DUPLICATE_PENDING_ITEM_HELPER, raw_item)
+            await _set_helper_if_exists(DUPLICATE_PENDING_TARGET_HELPER, target_list)
+            await _set_helper_if_exists(DUPLICATE_PENDING_KEY_HELPER, normalized)
+            await _set_helper_if_exists(DUPLICATE_PENDING_HELPER, "on")
+            await hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "title": "Grocery duplicate",
+                    "message": f"{raw_item} is already on {target_name}. Say 'yes' to add another or 'no' to skip.",
+                    "notification_id": "grocery_duplicate",
+                },
+                blocking=True,
+            )
+            if remove_from_source:
+                await _remove_from_list(source_list, raw_item)
+            return
 
         await hass.services.async_call(
             "todo",

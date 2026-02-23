@@ -115,6 +115,11 @@ REVIEW_SOURCE_HELPER = "input_text.grocery_review_source_list"
 REVIEW_PENDING_HELPER = "input_boolean.grocery_review_pending"
 REVIEW_CATEGORY_HELPER = "input_select.grocery_review_category"
 
+DUPLICATE_PENDING_HELPER = "input_boolean.grocery_confirm_pending"
+DUPLICATE_PENDING_ITEM_HELPER = "input_text.grocery_pending_display_item"
+DUPLICATE_PENDING_TARGET_HELPER = "input_text.grocery_pending_target_list"
+DUPLICATE_PENDING_KEY_HELPER = "input_text.grocery_pending_key"
+
 CONF_INBOX_ENTITY = "inbox_entity"
 CONF_AUTO_ROUTE_INBOX = "auto_route_inbox"
 CONF_NOTIFY_SERVICE = "notify_service"

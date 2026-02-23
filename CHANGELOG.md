@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7
+- Restored duplicate-prevention flow in `route_item` with pending confirmation support.
+- Added `allow_duplicate` service option for explicit duplicate adds.
+- Improved inbox/quick-add source item removal reliability with normalized matching + short retries.
+- Updated auto-generated Quick Add dashboard card to helper-based input/button layout to avoid empty-state text.
+
 ## 0.1.6
 - Improved keyword routing to handle common plural forms, fixing basics like `bananas` and `grapes`.
 - Added branding starter assets and docs in `branding/` for Home Assistant brands submission.
