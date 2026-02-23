@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.5
+- Rebranded user-facing integration name to `Local Grocery Assistant`.
+- Updated manifest/HACS/config-flow labels and docs to use the new name.
+- Kept integration domain (`grocery_learning`) and service names unchanged for backwards compatibility.
+
 ## 0.1.4
 - Added auto-dashboard generation for `Grocery` and `Grocery Admin` storage dashboards.
 - Dashboard category cards are now generated from configured categories and preserve user-entered order.

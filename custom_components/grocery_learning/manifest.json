@@ -1,7 +1,7 @@
 {
   "domain": "grocery_learning",
   "name": "Local Grocery Assistant",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "documentation": "https://github.com/rynecoop/ha-grocery-learning",
   "issue_tracker": "https://github.com/rynecoop/ha-grocery-learning/issues",
   "codeowners": [
