@@ -4,6 +4,19 @@ Home Assistant custom integration for grocery routing, review, and auto-learning
 
 This project is built from a production setup and is designed to be shareable.
 
+## Why This Exists
+This project is for people moving off Alexa Shopping List while keeping the same convenience for voice-added groceries.
+
+Alexa shopping list support is often the last blocker for going fully local on voice assistants.  
+Grocery Learning replaces that workflow in Home Assistant and adds features Alexa does not provide:
+- local-first control in your HA environment
+- store-walk routing by category/order
+- review + correction workflow for uncertain items
+- auto-learning from your corrections
+- dashboard/admin visibility into learned behavior
+
+Goal: make a truly local voice assistant setup practical, with grocery list behavior equal to or better than Alexa.
+
 ## Quick Start (Recommended)
 1. Install integration (HACS custom repository or manual copy).
 2. Add `grocery_learning:` to `configuration.yaml`.

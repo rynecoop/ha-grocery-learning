@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+- Expanded README positioning to clearly document Alexa Shopping List replacement use case.
+- Clarified local-first voice assistant migration goal and advantages over Alexa list behavior.
+
 ## 0.1.1
 - Added setup wizard fields in config flow:
   - auto-route inbox toggle

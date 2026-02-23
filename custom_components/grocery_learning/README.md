@@ -2,6 +2,8 @@
 
 This integration is the foundation for a shareable "grocery list routing + review + learn" system.
 
+It is specifically aimed at replacing Alexa Shopping List workflows for users moving to a local Home Assistant voice setup.
+
 ## Current Scope (v0.1.0)
 - Config entry (`Settings -> Devices & Services -> Add Integration -> Grocery Learning`)
 - Persistent learned term storage in HA storage
