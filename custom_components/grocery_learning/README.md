@@ -4,8 +4,12 @@ This integration is the foundation for a shareable "grocery list routing + revie
 
 It is specifically aimed at replacing Alexa Shopping List workflows for users moving to a local Home Assistant voice setup.
 
-## Current Scope (v0.1.0)
+## Current Scope (v0.1.3)
 - Config entry (`Settings -> Devices & Services -> Add Integration -> Grocery Learning`)
+- Setup wizard for:
+  - auto-provisioning grocery lists
+  - category selection/customization
+  - inbox auto-routing and optional notifications
 - Persistent learned term storage in HA storage
 - Services:
   - `grocery_learning.learn_term`
@@ -14,23 +18,19 @@ It is specifically aimed at replacing Alexa Shopping List workflows for users mo
   - `grocery_learning.route_item`
   - `grocery_learning.apply_review`
 
-## How It Connects To Your Existing Setup
-Your current YAML router already reads helper entities such as:
-- `input_text.grocery_learned_pantry`
-- `input_text.grocery_learned_dairy`
-- etc.
+## Zero-Touch Install Path
+1. Install via HACS.
+2. Restart Home Assistant.
+3. Add integration from Devices & Services.
+4. Keep auto-provision enabled in wizard.
 
-After learning terms through integration services, call:
+The integration will create missing grocery todo lists for inbox, each selected category, and `other`.
+
+## Legacy Compatibility
+If you still use helper-driven YAML routing, keep using:
 - `grocery_learning.sync_helpers`
 
-This copies stored learned terms into those helpers so routing uses them immediately.
-
-## Install (Local Custom Component)
-1. Ensure this folder exists:
-   - `/config/custom_components/grocery_learning`
-2. Restart Home Assistant.
-3. Add integration via UI:
-   - `Settings -> Devices & Services -> Add Integration -> Grocery Learning`
+This pushes learned terms into `input_text.grocery_learned_<category>` helpers when they exist.
 
 ## Service Examples
 Learn a term:
@@ -73,7 +73,7 @@ data:
 ```
 
 ## Roadmap To "Install And Works From Zero"
-1. Create category list entities directly from integration
-2. Replace YAML scripts/automations with integration-native workflow
-3. Ship packaged dashboards and one-click setup wizard
-4. Publish as HACS repository with releases and docs
+1. Ship optional dashboard creation from integration
+2. Remove remaining helper dependencies from review UX
+3. Add guided onboarding for voice assistant intents
+4. Continue HACS release hardening + docs

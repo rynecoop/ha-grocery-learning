@@ -6,15 +6,7 @@ learn_term:
       required: true
       example: pantry
       selector:
-        select:
-          options:
-            - produce
-            - bakery
-            - meat
-            - dairy
-            - frozen
-            - pantry
-            - household
+        text:
     term:
       required: true
       example: vanilla coke
@@ -29,15 +21,7 @@ forget_term:
       required: false
       example: pantry
       selector:
-        select:
-          options:
-            - produce
-            - bakery
-            - meat
-            - dairy
-            - frozen
-            - pantry
-            - household
+        text:
     term:
       required: true
       example: vanilla coke
@@ -81,16 +65,7 @@ apply_review:
       required: false
       example: pantry
       selector:
-        select:
-          options:
-            - produce
-            - bakery
-            - meat
-            - dairy
-            - frozen
-            - pantry
-            - household
-            - other
+        text:
     learn:
       required: false
       default: true

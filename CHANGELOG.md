@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3
+- Added category customization in setup/options flow (comma/newline input, normalized slugs).
+- Added auto-provision option and runtime provisioning of missing `local_todo` grocery lists:
+  - inbox list
+  - one list per selected category
+  - `other` list
+- Refactored routing/learning to use runtime categories from config entry instead of fixed constants.
+- Updated services to accept custom categories (text selectors).
+- Added options-update reload listener so changes apply cleanly.
+- Updated docs for no-YAML install path via Devices & Services.
+
 ## 0.1.2
 - Expanded README positioning to clearly document Alexa Shopping List replacement use case.
 - Clarified local-first voice assistant migration goal and advantages over Alexa list behavior.

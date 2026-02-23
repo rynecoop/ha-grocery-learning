@@ -12,7 +12,7 @@ SERVICE_SYNC_HELPERS = "sync_helpers"
 SERVICE_ROUTE_ITEM = "route_item"
 SERVICE_APPLY_REVIEW = "apply_review"
 
-CATEGORIES = [
+DEFAULT_CATEGORIES = [
     "produce",
     "bakery",
     "meat",
@@ -21,6 +21,73 @@ CATEGORIES = [
     "pantry",
     "household",
 ]
+
+DEFAULT_KEYWORDS_BY_CATEGORY: dict[str, tuple[str, ...]] = {
+    "dairy": ("milk", "egg", "eggs", "cheese", "butter", "yogurt", "cream", "sour cream"),
+    "meat": ("chicken", "beef", "steak", "pork", "turkey", "sausage", "bacon", "ham", "fish", "salmon", "tuna", "shrimp"),
+    "bakery": ("bread", "bagel", "bun", "roll", "tortilla", "muffin", "croissant", "donut", "donuts"),
+    "produce": (
+        "apple",
+        "banana",
+        "orange",
+        "grape",
+        "berry",
+        "berries",
+        "lettuce",
+        "spinach",
+        "kale",
+        "tomato",
+        "cucumber",
+        "onion",
+        "potato",
+        "avocado",
+        "pepper",
+        "carrot",
+    ),
+    "frozen": ("frozen", "ice cream", "frozen pizza", "hash brown", "waffles"),
+    "household": (
+        "paper towel",
+        "toilet paper",
+        "tissue",
+        "trash bag",
+        "detergent",
+        "dish soap",
+        "hand soap",
+        "sponge",
+        "foil",
+        "ziplock",
+        "ziploc",
+        "cloth",
+    ),
+    "pantry": (
+        "soda",
+        "pop",
+        "coke",
+        "juice",
+        "coffee",
+        "tea",
+        "pasta",
+        "alfredo",
+        "sauce",
+        "pickle",
+        "pickles",
+        "rice",
+        "cereal",
+        "chips",
+        "cracker",
+        "crackers",
+        "snack",
+        "soup",
+        "flour",
+        "sugar",
+        "oil",
+        "vinegar",
+        "spice",
+        "seasoning",
+        "peanut butter",
+        "jam",
+    ),
+}
 
 HELPER_BY_CATEGORY = {
     "produce": "input_text.grocery_learned_produce",
@@ -51,3 +118,5 @@ REVIEW_CATEGORY_HELPER = "input_select.grocery_review_category"
 CONF_INBOX_ENTITY = "inbox_entity"
 CONF_AUTO_ROUTE_INBOX = "auto_route_inbox"
 CONF_NOTIFY_SERVICE = "notify_service"
+CONF_CATEGORIES = "categories"
+CONF_AUTO_PROVISION = "auto_provision"

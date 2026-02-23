@@ -19,17 +19,16 @@ Goal: make a truly local voice assistant setup practical, with grocery list beha
 
 ## Quick Start (Recommended)
 1. Install integration (HACS custom repository or manual copy).
-2. Add `grocery_learning:` to `configuration.yaml`.
-3. Restart Home Assistant.
-4. Add helpers/snippets from:
-   - `examples/configuration_helpers.yaml`
-   - `examples/automations.yaml`
-   - `examples/scripts.yaml`
+2. Restart Home Assistant.
+3. Add integration:
+   - `Settings -> Devices & Services -> Add Integration -> Grocery Learning`
+4. In setup wizard:
+   - keep default categories or add your own categories (comma/newline separated)
+   - keep auto-provision enabled so missing grocery lists are created for you
 5. Import dashboard examples from:
    - `examples/dashboards/lovelace.grocery.json`
    - `examples/dashboards/lovelace.grocery_admin.json`
-6. Restart Home Assistant again.
-7. Test:
+6. Test:
    - Add `coffee` to grocery list (should route to Pantry).
    - Add a weird item (should go to Other + show review flow).
    - Apply review category and re-add the same item (should auto-route due to learning).
@@ -58,17 +57,15 @@ Goal: make a truly local voice assistant setup practical, with grocery list beha
 2. In HACS, add a Custom Repository pointing to your repo URL, type `Integration`.
 3. Install `Grocery Learning`.
 4. Restart Home Assistant.
-5. Add to `configuration.yaml`:
-   - `grocery_learning:`
-6. Restart Home Assistant.
-7. Merge helper/automation/script snippets from `examples/`.
-8. Import dashboard JSON examples or recreate cards from examples.
+5. Add integration in UI (`Settings -> Devices & Services`).
+6. Complete setup wizard (categories + auto-provision).
+7. Import dashboard JSON examples or recreate cards from examples.
 
 ## Install (Manual)
 1. Copy `custom_components/grocery_learning` into your HA config directory.
-2. Add `grocery_learning:` to `configuration.yaml`.
-3. Restart Home Assistant.
-4. Apply example helpers/automations/scripts from `examples/`.
+2. Restart Home Assistant.
+3. Add integration in UI (`Settings -> Devices & Services`).
+4. Complete setup wizard (categories + auto-provision).
 5. Import dashboard examples from `examples/dashboards/`.
 
 ## Core Services
@@ -79,14 +76,18 @@ Goal: make a truly local voice assistant setup practical, with grocery list beha
 - `grocery_learning.sync_helpers`
 
 ## Current Scope
-This release provides the integration foundation and service APIs plus tested example config.
-It includes a setup wizard and integration-managed inbox auto-routing.
-It does not yet auto-create all helper entities/lists/dashboards by itself.
+This release provides:
+- setup wizard with editable categories
+- automatic provisioning of missing grocery todo lists (inbox, each category, other)
+- integration-managed inbox auto-routing and learning services
+- optional helper sync for legacy YAML-based setups
+
+It still does not auto-create Lovelace dashboards/cards by itself.
 
 ## Troubleshooting
 - `Action grocery_learning.route_item not found`
-  - Ensure `grocery_learning:` exists in `configuration.yaml`.
-  - Restart Home Assistant after adding/changing integration files.
+  - Ensure the integration is added in `Settings -> Devices & Services`.
+  - Restart Home Assistant after installing/updating in HACS.
 - Dashboard/admin view not visible
   - Confirm dashboard is imported/registered.
   - Clear app/frontend cache or fully reopen the HA app.

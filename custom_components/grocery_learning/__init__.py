@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -13,10 +14,13 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
-    CATEGORIES,
+    CONF_AUTO_PROVISION,
     CONF_AUTO_ROUTE_INBOX,
+    CONF_CATEGORIES,
     CONF_INBOX_ENTITY,
     CONF_NOTIFY_SERVICE,
+    DEFAULT_CATEGORIES,
+    DEFAULT_KEYWORDS_BY_CATEGORY,
     DOMAIN,
     HELPER_BY_CATEGORY,
     REVIEW_CATEGORY_HELPER,
@@ -38,14 +42,14 @@ PLATFORMS: list[Platform] = []
 
 LEARN_SCHEMA = vol.Schema(
     {
-        vol.Required("category"): vol.In(CATEGORIES),
+        vol.Required("category"): cv.string,
         vol.Required("term"): cv.string,
     }
 )
 
 FORGET_SCHEMA = vol.Schema(
     {
-        vol.Optional("category"): vol.In(CATEGORIES),
+        vol.Optional("category"): cv.string,
         vol.Required("term"): cv.string,
     }
 )
@@ -66,20 +70,56 @@ APPLY_REVIEW_SCHEMA = vol.Schema(
     }
 )
 
-KEYWORDS_BY_CATEGORY: dict[str, tuple[str, ...]] = {
-    "dairy": ("milk", "egg", "eggs", "cheese", "butter", "yogurt", "cream", "sour cream"),
-    "meat": ("chicken", "beef", "steak", "pork", "turkey", "sausage", "bacon", "ham", "fish", "salmon", "tuna", "shrimp"),
-    "bakery": ("bread", "bagel", "bun", "roll", "tortilla", "muffin", "croissant", "donut", "donuts"),
-    "produce": ("apple", "banana", "orange", "grape", "berry", "berries", "lettuce", "spinach", "kale", "tomato", "cucumber", "onion", "potato", "avocado", "pepper", "carrot"),
-    "frozen": ("frozen", "ice cream", "frozen pizza", "hash brown", "waffles"),
-    "household": ("paper towel", "toilet paper", "tissue", "trash bag", "detergent", "dish soap", "hand soap", "sponge", "foil", "ziplock", "ziploc", "cloth"),
-    "pantry": ("soda", "pop", "coke", "juice", "coffee", "tea", "pasta", "alfredo", "sauce", "pickle", "pickles", "rice", "cereal", "chips", "cracker", "crackers", "snack", "soup", "flour", "sugar", "oil", "vinegar", "spice", "seasoning", "peanut butter", "jam"),
-}
-
 
 def _normalize_term(value: str) -> str:
     cleaned = re.sub(r"[^a-z0-9 ]", " ", value.lower())
     return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _normalize_category(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
+
+
+def _display_name_for_category(category: str) -> str:
+    return category.replace("_", " ").title()
+
+
+def _target_list_for_category(category: str) -> str:
+    if category in TARGET_LIST_BY_CATEGORY:
+        return TARGET_LIST_BY_CATEGORY[category]
+    return f"todo.grocery_{category}"
+
+
+def _helper_for_category(category: str) -> str:
+    if category in HELPER_BY_CATEGORY:
+        return HELPER_BY_CATEGORY[category]
+    return f"input_text.grocery_learned_{category}"
+
+
+def _entry_value(entry: ConfigEntry | None, key: str, default: Any) -> Any:
+    if entry is None:
+        return default
+    if key in entry.options:
+        return entry.options[key]
+    return entry.data.get(key, default)
+
+
+def _categories_from_entry(entry: ConfigEntry | None) -> list[str]:
+    raw = _entry_value(entry, CONF_CATEGORIES, list(DEFAULT_CATEGORIES))
+    if isinstance(raw, str):
+        values = [_normalize_category(v) for v in raw.replace("\n", ",").split(",")]
+    elif isinstance(raw, list):
+        values = [_normalize_category(str(v)) for v in raw]
+    else:
+        values = []
+
+    cleaned: list[str] = []
+    for value in values:
+        if not value or value == "other":
+            continue
+        if value not in cleaned:
+            cleaned.append(value)
+    return cleaned or list(DEFAULT_CATEGORIES)
 
 
 async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
@@ -91,20 +131,29 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 async def _async_setup_runtime(hass: HomeAssistant) -> None:
     """Set up runtime state/services once."""
     hass.data.setdefault(DOMAIN, {})
-    if hass.data[DOMAIN].get("runtime_ready"):
+    data = hass.data[DOMAIN]
+    if data.get("runtime_ready"):
         return
+
     store = GroceryLearningStore(hass)
-    terms = await store.load()
-    hass.data[DOMAIN]["store"] = store
-    hass.data[DOMAIN]["terms"] = terms
-    hass.data[DOMAIN]["runtime_ready"] = True
+    terms = await store.load(list(DEFAULT_CATEGORIES))
+
+    data["store"] = store
+    data["terms"] = terms
+    data["categories"] = list(DEFAULT_CATEGORIES)
 
     async def _save() -> None:
         await store.save(hass.data[DOMAIN]["terms"])
 
+    def _active_categories() -> list[str]:
+        return list(hass.data[DOMAIN].get("categories", list(DEFAULT_CATEGORIES)))
+
     async def _learn_term(call: ServiceCall) -> None:
-        category = call.data["category"]
+        category = _normalize_category(call.data["category"])
         term = _normalize_term(call.data["term"])
+        categories = _active_categories()
+        if category not in categories:
+            raise vol.Invalid(f"Unknown category '{category}'")
         if not term:
             return
         terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
@@ -119,7 +168,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         term = _normalize_term(call.data["term"])
         if not term:
             return
-        selected = call.data.get("category")
+
+        category_input = str(call.data.get("category", "")).strip()
+        selected = _normalize_category(category_input) if category_input else ""
+        categories = _active_categories()
+        if selected and selected not in categories:
+            raise vol.Invalid(f"Unknown category '{selected}'")
+
         terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
         changed = False
         for category, values in terms_obj.data.items():
@@ -132,11 +187,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
 
     async def _sync_helpers_internal() -> None:
-        """Sync learned terms to input_text helpers used by YAML router."""
+        """Sync learned terms to optional input_text helpers used by legacy YAML router."""
         terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
-        for category in CATEGORIES:
-            helper = HELPER_BY_CATEGORY.get(category)
-            if not helper or hass.states.get(helper) is None:
+        for category in _active_categories():
+            helper = _helper_for_category(category)
+            if hass.states.get(helper) is None:
                 continue
             merged = "|".join(sorted(set(terms_obj.data.get(category, []))))
             if len(merged) > 255:
@@ -192,13 +247,82 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 blocking=True,
             )
 
+    async def _ensure_local_todo_list(entity_id: str, title: str) -> None:
+        if hass.states.get(entity_id) is not None:
+            return
+
+        slug = entity_id.split(".", 1)[1] if "." in entity_id else entity_id
+        payloads = (
+            {"storage_key": slug, "todo_list_name": title},
+            {"todo_list_name": title},
+        )
+
+        for payload in payloads:
+            try:
+                result = await hass.config_entries.flow.async_init(
+                    "local_todo",
+                    context={"source": "user"},
+                    data=payload,
+                )
+            except Exception as err:  # pragma: no cover - defensive for core flow variations
+                _LOGGER.debug("local_todo async_init failed (%s): %s", payload, err)
+                continue
+
+            for _ in range(4):
+                if not isinstance(result, Mapping):
+                    break
+                if result.get("type") in {"create_entry", "abort"}:
+                    break
+                if result.get("type") != "form" or "flow_id" not in result:
+                    break
+
+                next_input = dict(payload)
+                data_schema = result.get("data_schema")
+                schema_map = getattr(data_schema, "schema", {}) if data_schema else {}
+                if isinstance(schema_map, dict):
+                    next_input = {}
+                    for marker, validator in schema_map.items():
+                        key = getattr(marker, "schema", marker)
+                        key_name = str(key)
+                        if key_name in payload:
+                            next_input[key_name] = payload[key_name]
+                        elif "storage" in key_name:
+                            next_input[key_name] = slug
+                        elif "todo" in key_name or "name" in key_name or "title" in key_name:
+                            next_input[key_name] = title
+                        elif validator is bool:
+                            next_input[key_name] = True
+                result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input=next_input)
+
+            if hass.states.get(entity_id) is not None:
+                return
+
+    async def _ensure_required_lists(entry: ConfigEntry | None) -> None:
+        should_provision = bool(_entry_value(entry, CONF_AUTO_PROVISION, True))
+        if not should_provision:
+            return
+
+        categories = _active_categories()
+        inbox_entity = str(_entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox"))
+        await _ensure_local_todo_list(inbox_entity, "Grocery Inbox")
+
+        for category in categories:
+            await _ensure_local_todo_list(
+                _target_list_for_category(category),
+                f"Grocery {_display_name_for_category(category)}",
+            )
+        await _ensure_local_todo_list(_target_list_for_category("other"), "Grocery Other")
+
     def _get_category_for_term(terms_obj: LearnedTerms, normalized: str) -> str:
+        categories = _active_categories()
         if normalized:
-            for category in CATEGORIES:
+            for category in categories:
                 if normalized in set(terms_obj.data.get(category, [])):
                     return category
+
         text = f" {normalized} "
-        for category, words in KEYWORDS_BY_CATEGORY.items():
+        for category in categories:
+            words = DEFAULT_KEYWORDS_BY_CATEGORY.get(category, ())
             if any(f" {word} " in text for word in words):
                 return category
         return "other"
@@ -214,7 +338,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
         category = _get_category_for_term(terms_obj, normalized)
-        target_list = TARGET_LIST_BY_CATEGORY[category]
+        target_list = _target_list_for_category(category)
+
+        entry = hass.data.get(DOMAIN, {}).get("entry")
+        await _ensure_required_lists(entry)
+
+        if hass.states.get(target_list) is None:
+            _LOGGER.warning("Target list %s missing for category %s", target_list, category)
+            target_list = _target_list_for_category("other")
 
         await hass.services.async_call(
             "todo",
@@ -241,8 +372,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 },
                 blocking=True,
             )
-            entry = hass.data.get(DOMAIN, {}).get("entry")
-            notify_service = str(entry.data.get(CONF_NOTIFY_SERVICE, "")).strip() if entry else ""
+            notify_service = str(_entry_value(entry, CONF_NOTIFY_SERVICE, "")).strip()
             if notify_service and "." in notify_service:
                 n_domain, n_service = notify_service.split(".", 1)
                 await hass.services.async_call(
@@ -261,24 +391,20 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not category_in and hass.states.get(REVIEW_CATEGORY_HELPER):
             category_in = str(hass.states.get(REVIEW_CATEGORY_HELPER).state).strip().lower()
 
-        label_map = {
-            "produce": "produce",
-            "bakery": "bakery",
-            "meat": "meat",
-            "dairy": "dairy",
-            "frozen": "frozen",
-            "pantry": "pantry",
-            "household": "household",
-            "keep other": "other",
-            "other": "other",
-        }
-        target_category = label_map.get(category_in, "other")
+        categories = _active_categories()
+        normalized_category = _normalize_category(category_in)
+        if category_in == "keep other":
+            target_category = "other"
+        elif normalized_category in categories:
+            target_category = normalized_category
+        else:
+            target_category = "other"
 
         review_item_state = hass.states.get(REVIEW_ITEM_HELPER)
         source_list_state = hass.states.get(REVIEW_SOURCE_HELPER)
         review_item = str(review_item_state.state).strip() if review_item_state else ""
-        source_list = str(source_list_state.state).strip() if source_list_state else TARGET_LIST_BY_CATEGORY["other"]
-        target_list = TARGET_LIST_BY_CATEGORY[target_category]
+        source_list = str(source_list_state.state).strip() if source_list_state else _target_list_for_category("other")
+        target_list = _target_list_for_category(target_category)
         if not review_item:
             return
 
@@ -292,7 +418,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 blocking=True,
             )
 
-        if learn and target_category in CATEGORIES:
+        if learn and target_category in categories:
             norm = _normalize_term(review_item)
             terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
             existing = set(terms_obj.data.get(target_category, []))
@@ -317,22 +443,34 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_ROUTE_ITEM, _route_item, schema=ROUTE_ITEM_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_APPLY_REVIEW, _apply_review, schema=APPLY_REVIEW_SCHEMA)
 
+    data["ensure_required_lists"] = _ensure_required_lists
+    data["runtime_ready"] = True
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Grocery Learning from config entry."""
     await _async_setup_runtime(hass)
-    hass.data[DOMAIN]["entry"] = entry
+    data = hass.data[DOMAIN]
+    data["entry"] = entry
+    data["categories"] = _categories_from_entry(entry)
+
+    store: GroceryLearningStore = data["store"]
+    data["terms"] = await store.load(data["categories"])
+
+    ensure_required_lists = data.get("ensure_required_lists")
+    if ensure_required_lists:
+        await ensure_required_lists(entry)
 
     async def _handle_call_service(event) -> None:
-        if not entry.data.get(CONF_AUTO_ROUTE_INBOX, True):
+        if not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
             return
-        data = event.data.get("service_data", {})
+        data_event = event.data.get("service_data", {})
         if event.data.get("domain") != "todo" or event.data.get("service") != "add_item":
             return
-        eid = data.get("entity_id", "")
+        eid = data_event.get("entity_id", "")
         list_id = eid[0] if isinstance(eid, list) and eid else eid
-        inbox_entity = entry.data.get(CONF_INBOX_ENTITY, "todo.grocery_inbox")
-        item_text = str(data.get("item", "")).strip()
+        inbox_entity = _entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")
+        item_text = str(data_event.get("item", "")).strip()
         if list_id != inbox_entity or not item_text:
             return
         await hass.services.async_call(
@@ -347,16 +485,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             blocking=True,
         )
 
-    remove_listener = hass.bus.async_listen("call_service", _handle_call_service)
-    hass.data[DOMAIN]["remove_listener"] = remove_listener
+    entry.async_on_unload(hass.bus.async_listen("call_service", _handle_call_service))
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload when options are updated."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    remove_listener = hass.data.get(DOMAIN, {}).pop("remove_listener", None)
-    if remove_listener:
-        remove_listener()
     await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     return True
