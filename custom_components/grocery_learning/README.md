@@ -4,10 +4,11 @@ This integration is the foundation for a shareable "grocery list routing + revie
 
 It is specifically aimed at replacing Alexa Shopping List workflows for users moving to a local Home Assistant voice setup.
 
-## Current Scope (v0.1.3)
+## Current Scope (v0.1.4)
 - Config entry (`Settings -> Devices & Services -> Add Integration -> Grocery Learning`)
 - Setup wizard for:
   - auto-provisioning grocery lists
+  - auto-provisioning Grocery dashboards
   - category selection/customization
   - inbox auto-routing and optional notifications
 - Persistent learned term storage in HA storage
@@ -22,9 +23,11 @@ It is specifically aimed at replacing Alexa Shopping List workflows for users mo
 1. Install via HACS.
 2. Restart Home Assistant.
 3. Add integration from Devices & Services.
-4. Keep auto-provision enabled in wizard.
+4. Keep auto-provision and auto-dashboard enabled in wizard.
 
-The integration will create missing grocery todo lists for inbox, each selected category, and `other`.
+The integration will create:
+- missing grocery todo lists for inbox, each selected category, and `other`
+- storage dashboards `Grocery` and `Grocery Admin` (admin-only) with cards based on your category order
 
 ## Legacy Compatibility
 If you still use helper-driven YAML routing, keep using:
@@ -73,7 +76,6 @@ data:
 ```
 
 ## Roadmap To "Install And Works From Zero"
-1. Ship optional dashboard creation from integration
-2. Remove remaining helper dependencies from review UX
-3. Add guided onboarding for voice assistant intents
-4. Continue HACS release hardening + docs
+1. Remove remaining helper dependencies from review UX
+2. Add guided onboarding for voice assistant intents
+3. Continue HACS release hardening + docs

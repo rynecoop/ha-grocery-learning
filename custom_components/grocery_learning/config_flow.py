@@ -10,6 +10,7 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv
 
 from .const import (
+    CONF_AUTO_DASHBOARD,
     CONF_AUTO_PROVISION,
     CONF_AUTO_ROUTE_INBOX,
     CONF_CATEGORIES,
@@ -21,6 +22,7 @@ from .const import (
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
+        vol.Required(CONF_AUTO_DASHBOARD, default=True): bool,
         vol.Required(CONF_AUTO_PROVISION, default=True): bool,
         vol.Required(CONF_AUTO_ROUTE_INBOX, default=True): bool,
         vol.Required(CONF_INBOX_ENTITY, default="todo.grocery_inbox"): cv.string,
@@ -76,6 +78,7 @@ class GroceryLearningOptionsFlow(config_entries.OptionsFlow):
 
         schema = vol.Schema(
             {
+                vol.Required(CONF_AUTO_DASHBOARD, default=current_data.get(CONF_AUTO_DASHBOARD, True)): bool,
                 vol.Required(CONF_AUTO_PROVISION, default=current_data.get(CONF_AUTO_PROVISION, True)): bool,
                 vol.Required(CONF_AUTO_ROUTE_INBOX, default=current_data.get(CONF_AUTO_ROUTE_INBOX, True)): bool,
                 vol.Required(CONF_INBOX_ENTITY, default=current_data.get(CONF_INBOX_ENTITY, "todo.grocery_inbox")): cv.string,

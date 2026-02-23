@@ -8,6 +8,7 @@
     },
     "error": {},
     "data": {
+      "auto_dashboard": "Auto-create/update Grocery dashboards",
       "auto_provision": "Auto-create missing grocery todo lists",
       "auto_route_inbox": "Auto-route inbox items",
       "inbox_entity": "Inbox todo entity",
@@ -26,6 +27,7 @@
       }
     },
     "data": {
+      "auto_dashboard": "Auto-create/update Grocery dashboards",
       "auto_provision": "Auto-create missing grocery todo lists",
       "auto_route_inbox": "Auto-route inbox items",
       "inbox_entity": "Inbox todo entity",

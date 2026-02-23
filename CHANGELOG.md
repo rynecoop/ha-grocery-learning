@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+- Added auto-dashboard generation for `Grocery` and `Grocery Admin` storage dashboards.
+- Dashboard category cards are now generated from configured categories and preserve user-entered order.
+- Changing categories in integration options now updates routing order and dashboard card order on reload.
+- Added setup/options toggle to enable or disable integration-managed dashboards.
+
 ## 0.1.3
 - Added category customization in setup/options flow (comma/newline input, normalized slugs).
 - Added auto-provision option and runtime provisioning of missing `local_todo` grocery lists:

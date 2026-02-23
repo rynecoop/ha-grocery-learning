@@ -25,9 +25,10 @@ Goal: make a truly local voice assistant setup practical, with grocery list beha
 4. In setup wizard:
    - keep default categories or add your own categories (comma/newline separated)
    - keep auto-provision enabled so missing grocery lists are created for you
-5. Import dashboard examples from:
-   - `examples/dashboards/lovelace.grocery.json`
-   - `examples/dashboards/lovelace.grocery_admin.json`
+   - keep auto-dashboard enabled so Grocery dashboards are created/updated for you
+5. Open sidebar dashboards:
+   - `Grocery`
+   - `Grocery Admin` (admin-only)
 6. Test:
    - Add `coffee` to grocery list (should route to Pantry).
    - Add a weird item (should go to Other + show review flow).
@@ -79,17 +80,19 @@ Goal: make a truly local voice assistant setup practical, with grocery list beha
 This release provides:
 - setup wizard with editable categories
 - automatic provisioning of missing grocery todo lists (inbox, each category, other)
+- automatic provisioning/updating of Grocery dashboards (main + admin)
 - integration-managed inbox auto-routing and learning services
 - optional helper sync for legacy YAML-based setups
 
-It still does not auto-create Lovelace dashboards/cards by itself.
+You can still import/modify example dashboards manually if you want a custom layout.
 
 ## Troubleshooting
 - `Action grocery_learning.route_item not found`
   - Ensure the integration is added in `Settings -> Devices & Services`.
   - Restart Home Assistant after installing/updating in HACS.
 - Dashboard/admin view not visible
-  - Confirm dashboard is imported/registered.
+  - Confirm auto-dashboard is enabled in integration options.
+  - Reopen Home Assistant frontend after integration reload.
   - Clear app/frontend cache or fully reopen the HA app.
 - Item not routing as expected
   - Use review flow to classify and learn.
@@ -105,8 +108,8 @@ It still does not auto-create Lovelace dashboards/cards by itself.
 4. Add screenshots/GIFs to repo README for user onboarding.
 
 ## Roadmap
-1. Auto-provision entities/lists on first run.
-2. Native integration entities for review state.
-3. Built-in dashboard creation.
-4. Optional voice intent pack.
-5. Full zero-touch onboarding flow.
+1. Native integration entities for review state.
+2. Optional voice intent pack.
+3. Full zero-touch onboarding flow hardening.
+4. Guided category-review UX improvements.
+5. Extended dedupe and normalization tuning options.

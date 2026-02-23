@@ -12,8 +12,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.storage import Store
 
 from .const import (
+    CONF_AUTO_DASHBOARD,
     CONF_AUTO_PROVISION,
     CONF_AUTO_ROUTE_INBOX,
     CONF_CATEGORIES,
@@ -195,7 +197,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 continue
             merged = "|".join(sorted(set(terms_obj.data.get(category, []))))
             if len(merged) > 255:
-                # Keep latest terms if helper max length is hit.
                 clipped = merged[-255:]
                 if "|" in clipped:
                     clipped = clipped.split("|", 1)[1]
@@ -208,7 +209,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             )
 
     async def _sync_helpers(_call: ServiceCall) -> None:
-        """Service wrapper for helper sync."""
         await _sync_helpers_internal()
 
     async def _set_helper_if_exists(entity_id: str, value: str) -> None:
@@ -264,7 +264,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     context={"source": "user"},
                     data=payload,
                 )
-            except Exception as err:  # pragma: no cover - defensive for core flow variations
+            except Exception as err:  # pragma: no cover
                 _LOGGER.debug("local_todo async_init failed (%s): %s", payload, err)
                 continue
 
@@ -298,8 +298,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 return
 
     async def _ensure_required_lists(entry: ConfigEntry | None) -> None:
-        should_provision = bool(_entry_value(entry, CONF_AUTO_PROVISION, True))
-        if not should_provision:
+        if not bool(_entry_value(entry, CONF_AUTO_PROVISION, True)):
             return
 
         categories = _active_categories()
@@ -312,6 +311,181 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 f"Grocery {_display_name_for_category(category)}",
             )
         await _ensure_local_todo_list(_target_list_for_category("other"), "Grocery Other")
+
+    async def _upsert_storage_dashboard_meta(
+        dashboard_id: str,
+        title: str,
+        icon: str,
+        require_admin: bool,
+        url_path: str,
+    ) -> None:
+        dashboards_store = Store(hass, 1, "lovelace_dashboards")
+        dashboards = await dashboards_store.async_load() or {}
+        items = dashboards.get("items", [])
+        if not isinstance(items, list):
+            items = []
+
+        updated = False
+        for idx, item in enumerate(items):
+            if isinstance(item, dict) and item.get("id") == dashboard_id:
+                items[idx] = {
+                    **item,
+                    "id": dashboard_id,
+                    "title": title,
+                    "icon": icon,
+                    "show_in_sidebar": True,
+                    "require_admin": require_admin,
+                    "mode": "storage",
+                    "url_path": url_path,
+                }
+                updated = True
+                break
+
+        if not updated:
+            items.append(
+                {
+                    "id": dashboard_id,
+                    "title": title,
+                    "icon": icon,
+                    "show_in_sidebar": True,
+                    "require_admin": require_admin,
+                    "mode": "storage",
+                    "url_path": url_path,
+                }
+            )
+
+        dashboards["items"] = items
+        await dashboards_store.async_save(dashboards)
+
+    def _empty_card_for(category: str) -> dict[str, Any]:
+        name = _display_name_for_category(category)
+        entity = _target_list_for_category(category)
+        return {
+            "type": "conditional",
+            "conditions": [{"entity": entity, "state": "0"}],
+            "card": {"type": "markdown", "content": f"No items in {name}.", "title": name},
+        }
+
+    def _todo_card_for(category: str) -> dict[str, Any]:
+        name = _display_name_for_category(category)
+        entity = _target_list_for_category(category)
+        return {
+            "type": "conditional",
+            "conditions": [{"entity": entity, "state_not": "0"}],
+            "card": {
+                "type": "todo-list",
+                "title": name,
+                "entity": entity,
+                "show_completed": False,
+                "hide_create": True,
+                "hide_section_headers": True,
+            },
+        }
+
+    def _build_main_dashboard_config(entry: ConfigEntry | None) -> dict[str, Any]:
+        categories = _active_categories()
+        inbox_entity = str(_entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox"))
+        cards: list[dict[str, Any]] = [
+            {
+                "display_order": "none",
+                "item_tap_action": "toggle",
+                "type": "todo-list",
+                "entity": inbox_entity,
+                "hide_completed": True,
+                "hide_section_headers": True,
+                "title": "Quick Add",
+                "hide_create": False,
+            }
+        ]
+
+        for category in categories:
+            cards.append(_empty_card_for(category))
+            cards.append(_todo_card_for(category))
+
+        cards.append(_empty_card_for("other"))
+        cards.append(_todo_card_for("other"))
+        cards.append(
+            {
+                "type": "conditional",
+                "conditions": [{"entity": "input_boolean.grocery_review_pending", "state": "on"}],
+                "card": {
+                    "type": "entities",
+                    "title": "Review & Learn",
+                    "show_header_toggle": False,
+                    "entities": [
+                        {"entity": "input_text.grocery_review_item", "name": "Item to review"},
+                        {"entity": "input_select.grocery_review_category", "name": "Move to category"},
+                        {"entity": "input_button.grocery_review_apply", "name": "Apply Category + Learn"},
+                    ],
+                },
+            }
+        )
+
+        return {
+            "config": {
+                "title": "Grocery",
+                "views": [
+                    {
+                        "title": "Grocery",
+                        "path": "grocery",
+                        "icon": "mdi:cart-variant",
+                        "type": "masonry",
+                        "cards": cards,
+                    }
+                ],
+            }
+        }
+
+    def _build_admin_dashboard_config() -> dict[str, Any]:
+        categories = _active_categories()
+        learned_entities = [
+            {"entity": _helper_for_category(category), "name": f"{_display_name_for_category(category)} Learned Terms"}
+            for category in categories
+        ]
+        return {
+            "config": {
+                "title": "Grocery Admin",
+                "views": [
+                    {
+                        "title": "Grocery Admin",
+                        "path": "grocery-admin",
+                        "icon": "mdi:shield-crown",
+                        "type": "masonry",
+                        "cards": [
+                            {
+                                "type": "entities",
+                                "title": "Review Status",
+                                "show_header_toggle": False,
+                                "entities": [
+                                    {"entity": "input_boolean.grocery_review_pending", "name": "Review Pending"},
+                                    {"entity": "input_text.grocery_review_item", "name": "Pending Item"},
+                                    {"entity": "input_select.grocery_review_category", "name": "Review Category"},
+                                    {"entity": "input_button.grocery_review_apply", "name": "Apply Category + Learn"},
+                                ],
+                            },
+                            {
+                                "type": "entities",
+                                "title": "Learned Terms (Admin)",
+                                "show_header_toggle": False,
+                                "entities": learned_entities,
+                            },
+                        ],
+                    }
+                ],
+            }
+        }
+
+    async def _ensure_dashboards(entry: ConfigEntry | None) -> None:
+        if not bool(_entry_value(entry, CONF_AUTO_DASHBOARD, True)):
+            return
+
+        await _upsert_storage_dashboard_meta("grocery", "Grocery", "mdi:cart-variant", False, "grocery")
+        await _upsert_storage_dashboard_meta("grocery_admin", "Grocery Admin", "mdi:shield-crown", True, "grocery-admin")
+
+        main_store = Store(hass, 1, "lovelace.grocery")
+        admin_store = Store(hass, 1, "lovelace.grocery_admin")
+        await main_store.async_save(_build_main_dashboard_config(entry))
+        await admin_store.async_save(_build_admin_dashboard_config())
 
     def _get_category_for_term(terms_obj: LearnedTerms, normalized: str) -> str:
         categories = _active_categories()
@@ -444,6 +618,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_APPLY_REVIEW, _apply_review, schema=APPLY_REVIEW_SCHEMA)
 
     data["ensure_required_lists"] = _ensure_required_lists
+    data["ensure_dashboards"] = _ensure_dashboards
     data["runtime_ready"] = True
 
 
@@ -460,6 +635,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ensure_required_lists = data.get("ensure_required_lists")
     if ensure_required_lists:
         await ensure_required_lists(entry)
+
+    ensure_dashboards = data.get("ensure_dashboards")
+    if ensure_dashboards:
+        await ensure_dashboards(entry)
 
     async def _handle_call_service(event) -> None:
         if not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
