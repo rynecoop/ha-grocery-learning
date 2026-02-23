@@ -1,0 +1,54 @@
+# Merge these into configuration.yaml
+
+grocery_learning:
+
+input_text:
+  grocery_review_item:
+    name: Grocery Review Item
+    max: 255
+  grocery_review_source_list:
+    name: Grocery Review Source List
+    max: 255
+  grocery_learned_produce:
+    name: Grocery Learned Produce
+    max: 255
+  grocery_learned_bakery:
+    name: Grocery Learned Bakery
+    max: 255
+  grocery_learned_meat:
+    name: Grocery Learned Meat
+    max: 255
+  grocery_learned_dairy:
+    name: Grocery Learned Dairy
+    max: 255
+  grocery_learned_frozen:
+    name: Grocery Learned Frozen
+    max: 255
+  grocery_learned_pantry:
+    name: Grocery Learned Pantry
+    max: 255
+  grocery_learned_household:
+    name: Grocery Learned Household
+    max: 255
+
+input_boolean:
+  grocery_review_pending:
+    name: Grocery Review Pending
+
+input_select:
+  grocery_review_category:
+    name: Grocery Review Category
+    options:
+      - Pantry
+      - Dairy
+      - Produce
+      - Bakery
+      - Meat
+      - Frozen
+      - Household
+      - Keep Other
+    initial: Pantry
+
+input_button:
+  grocery_review_apply:
+    name: Apply Grocery Review

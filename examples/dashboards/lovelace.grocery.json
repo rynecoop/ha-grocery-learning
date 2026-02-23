@@ -1,0 +1,422 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "lovelace.grocery",
+  "data": {
+    "config": {
+      "title": "Grocery",
+      "views": [
+        {
+          "title": "Grocery",
+          "path": "grocery",
+          "icon": "mdi:cart-variant",
+          "cards": [
+            {
+              "display_order": "none",
+              "item_tap_action": "toggle",
+              "type": "todo-list",
+              "entity": "todo.grocery_inbox",
+              "hide_completed": true,
+              "hide_section_headers": true,
+              "title": "Quick Add",
+              "hide_create": false,
+              "theme": "Grocery No Add",
+              "card_mod": {
+                "style": "ha-card $ h1.card-header {\n  padding: 16px 16px 4px 16px !important;\n}\nha-card $ .card-content {\n  padding-top: 0 !important;\n}\n\nha-empty-state,\nha-md-empty-state,\n.empty,\n.empty-state,\n.placeholder {\n  display: none !important;\n}\n"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_produce",
+                  "state": "0"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "No items in Produce.",
+                "title": "Produce"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_produce",
+                  "state_not": "0"
+                }
+              ],
+              "card": {
+                "type": "todo-list",
+                "title": "Produce",
+                "entity": "todo.grocery_produce",
+                "show_completed": false,
+                "hide_create": true,
+                "card_mod": {
+                  "style": "ha-todo-list $ .add {\\n  display: none !important;\\n}\\n"
+                },
+                "hide_section_headers": true
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_meat",
+                  "state": "0"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "No items in Meat.",
+                "title": "Meat"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_meat",
+                  "state_not": "0"
+                }
+              ],
+              "card": {
+                "type": "todo-list",
+                "title": "Meat",
+                "entity": "todo.grocery_meat",
+                "show_completed": false,
+                "hide_create": true,
+                "card_mod": {
+                  "style": "ha-todo-list $ .add {\\n  display: none !important;\\n}\\n"
+                },
+                "hide_section_headers": true
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_bakery",
+                  "state": "0"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "No items in Bakery.",
+                "title": "Bakery"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_bakery",
+                  "state_not": "0"
+                }
+              ],
+              "card": {
+                "type": "todo-list",
+                "title": "Bakery",
+                "entity": "todo.grocery_bakery",
+                "show_completed": false,
+                "hide_create": true,
+                "card_mod": {
+                  "style": "ha-todo-list $ .add {\\n  display: none !important;\\n}\\n"
+                },
+                "hide_section_headers": true
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_pantry",
+                  "state": "0"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "No items in Pantry.",
+                "title": "Pantry"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_pantry",
+                  "state_not": "0"
+                }
+              ],
+              "card": {
+                "type": "todo-list",
+                "title": "Pantry",
+                "entity": "todo.grocery_pantry",
+                "show_completed": false,
+                "hide_create": true,
+                "card_mod": {
+                  "style": "ha-todo-list $ .add {\\n  display: none !important;\\n}\\n"
+                },
+                "hide_section_headers": true
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_dairy",
+                  "state": "0"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "No items in Dairy.",
+                "title": "Dairy"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_dairy",
+                  "state_not": "0"
+                }
+              ],
+              "card": {
+                "type": "todo-list",
+                "title": "Dairy",
+                "entity": "todo.grocery_dairy",
+                "show_completed": false,
+                "hide_create": true,
+                "card_mod": {
+                  "style": "ha-todo-list $ .add {\\n  display: none !important;\\n}\\n"
+                },
+                "hide_section_headers": true
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_household",
+                  "state": "0"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "No items in Household.",
+                "title": "Household"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_household",
+                  "state_not": "0"
+                }
+              ],
+              "card": {
+                "type": "todo-list",
+                "title": "Household",
+                "entity": "todo.grocery_household",
+                "show_completed": false,
+                "hide_create": true,
+                "card_mod": {
+                  "style": "ha-todo-list $ .add {\\n  display: none !important;\\n}\\n"
+                },
+                "hide_section_headers": true
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_frozen",
+                  "state": "0"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "No items in Frozen.",
+                "title": "Frozen"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_frozen",
+                  "state_not": "0"
+                }
+              ],
+              "card": {
+                "type": "todo-list",
+                "title": "Frozen",
+                "entity": "todo.grocery_frozen",
+                "show_completed": false,
+                "hide_create": true,
+                "card_mod": {
+                  "style": "ha-todo-list $ .add {\\n  display: none !important;\\n}\\n"
+                },
+                "hide_section_headers": true
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_other",
+                  "state": "0"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "No items in Other.",
+                "title": "Other"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "todo.grocery_other",
+                  "state_not": "0"
+                }
+              ],
+              "card": {
+                "type": "todo-list",
+                "title": "Other",
+                "entity": "todo.grocery_other",
+                "show_completed": false,
+                "hide_create": true,
+                "card_mod": {
+                  "style": "ha-todo-list $ .add {\\n  display: none !important;\\n}\\n"
+                },
+                "hide_section_headers": true
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "input_boolean.grocery_review_pending",
+                  "state": "on"
+                }
+              ],
+              "card": {
+                "type": "entities",
+                "title": "Review & Learn",
+                "show_header_toggle": false,
+                "entities": [
+                  {
+                    "entity": "input_text.grocery_review_item",
+                    "name": "Item to review"
+                  },
+                  {
+                    "entity": "input_select.grocery_review_category",
+                    "name": "Move to category"
+                  },
+                  {
+                    "entity": "input_button.grocery_review_apply",
+                    "name": "Apply category + learn"
+                  }
+                ]
+              }
+            },
+            {
+              "display_order": "none",
+              "item_tap_action": "toggle",
+              "type": "todo-list",
+              "entity": "todo.grocery_completed",
+              "hide_create": true,
+              "hide_completed": false,
+              "hide_section_headers": false,
+              "card_mod": {
+                "style": "ha-card $ h1.card-header {\n  padding: 16px 16px 4px 16px !important;\n}\nha-card $ .card-content {\n  padding-top: 0 !important;\n}\n\nha-empty-state,\nha-md-empty-state,\n.empty,\n.empty-state,\n.placeholder {\n  display: none !important;\n}\n"
+              }
+            }
+          ],
+          "type": "masonry",
+          "theme": "Grocery No Add"
+        },
+        {
+          "title": "Grocery Admin",
+          "path": "grocery-admin",
+          "icon": "mdi:shield-crown",
+          "visible": [
+            {
+              "condition": "user",
+              "users": [
+                "62c48c46b2804a5c86fa82f55c5f07c7"
+              ]
+            }
+          ],
+          "cards": [
+            {
+              "type": "entities",
+              "title": "Review Status",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "input_boolean.grocery_review_pending",
+                  "name": "Review Pending"
+                },
+                {
+                  "entity": "input_text.grocery_review_item",
+                  "name": "Pending Item"
+                },
+                {
+                  "entity": "input_select.grocery_review_category",
+                  "name": "Review Category"
+                },
+                {
+                  "entity": "input_button.grocery_review_apply",
+                  "name": "Apply Category + Learn"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Learned Terms (Admin)",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "input_text.grocery_learned_produce",
+                  "name": "Produce Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_bakery",
+                  "name": "Bakery Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_meat",
+                  "name": "Meat Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_dairy",
+                  "name": "Dairy Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_frozen",
+                  "name": "Frozen Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_pantry",
+                  "name": "Pantry Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_household",
+                  "name": "Household Learned Terms"
+                }
+              ]
+            }
+          ],
+          "type": "masonry",
+          "theme": "Grocery No Add"
+        }
+      ]
+    }
+  }
+}

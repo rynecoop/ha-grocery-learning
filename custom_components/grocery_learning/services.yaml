@@ -1,0 +1,98 @@
+learn_term:
+  name: Learn Grocery Term
+  description: Store a normalized phrase and route it to a category in future sorting.
+  fields:
+    category:
+      required: true
+      example: pantry
+      selector:
+        select:
+          options:
+            - produce
+            - bakery
+            - meat
+            - dairy
+            - frozen
+            - pantry
+            - household
+    term:
+      required: true
+      example: vanilla coke
+      selector:
+        text:
+
+forget_term:
+  name: Forget Grocery Term
+  description: Remove a learned term from one category or all categories.
+  fields:
+    category:
+      required: false
+      example: pantry
+      selector:
+        select:
+          options:
+            - produce
+            - bakery
+            - meat
+            - dairy
+            - frozen
+            - pantry
+            - household
+    term:
+      required: true
+      example: vanilla coke
+      selector:
+        text:
+
+sync_helpers:
+  name: Sync Learned Terms To Helpers
+  description: Push integration learned terms into helper entities used by YAML routing.
+
+route_item:
+  name: Route Grocery Item
+  description: Route an item to a grocery category list using learned terms + keyword routing.
+  fields:
+    item:
+      required: true
+      example: vanilla coke
+      selector:
+        text:
+    source_list:
+      required: false
+      example: todo.grocery_inbox
+      selector:
+        text:
+    remove_from_source:
+      required: false
+      default: false
+      selector:
+        boolean:
+    review_on_other:
+      required: false
+      default: true
+      selector:
+        boolean:
+
+apply_review:
+  name: Apply Grocery Review
+  description: Move pending review item to a category and optionally learn the mapping.
+  fields:
+    category:
+      required: false
+      example: pantry
+      selector:
+        select:
+          options:
+            - produce
+            - bakery
+            - meat
+            - dairy
+            - frozen
+            - pantry
+            - household
+            - other
+    learn:
+      required: false
+      default: true
+      selector:
+        boolean:

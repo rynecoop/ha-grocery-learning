@@ -1,0 +1,15 @@
+# Changelog
+
+## 0.1.0
+- Initial custom integration scaffold (`grocery_learning`).
+- Added persistent learned-term storage.
+- Added services:
+  - `grocery_learning.learn_term`
+  - `grocery_learning.forget_term`
+  - `grocery_learning.sync_helpers`
+  - `grocery_learning.route_item`
+  - `grocery_learning.apply_review`
+- Added shareable dashboard examples:
+  - `examples/dashboards/lovelace.grocery.json`
+  - `examples/dashboards/lovelace.grocery_admin.json`
+- Added example YAML snippets for helpers, automations, and scripts.

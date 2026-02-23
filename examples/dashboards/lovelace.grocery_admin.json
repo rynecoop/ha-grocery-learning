@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "lovelace.grocery_admin",
+  "data": {
+    "config": {
+      "title": "Grocery Admin",
+      "views": [
+        {
+          "title": "Grocery Admin",
+          "path": "grocery-admin",
+          "icon": "mdi:shield-crown",
+          "type": "masonry",
+          "theme": "Grocery No Add",
+          "cards": [
+            {
+              "type": "entities",
+              "title": "Review Status",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "input_boolean.grocery_review_pending",
+                  "name": "Review Pending"
+                },
+                {
+                  "entity": "input_text.grocery_review_item",
+                  "name": "Pending Item"
+                },
+                {
+                  "entity": "input_select.grocery_review_category",
+                  "name": "Review Category"
+                },
+                {
+                  "entity": "input_button.grocery_review_apply",
+                  "name": "Apply Category + Learn"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Learned Terms (Admin)",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "input_text.grocery_learned_produce",
+                  "name": "Produce Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_bakery",
+                  "name": "Bakery Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_meat",
+                  "name": "Meat Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_dairy",
+                  "name": "Dairy Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_frozen",
+                  "name": "Frozen Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_pantry",
+                  "name": "Pantry Learned Terms"
+                },
+                {
+                  "entity": "input_text.grocery_learned_household",
+                  "name": "Household Learned Terms"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

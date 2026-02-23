@@ -1,0 +1,77 @@
+# Example automations for Grocery Learning.
+# Merge into automations.yaml and update IDs if needed.
+
+- id: "grocery_learning_auto_sort_inbox"
+  alias: Grocery - Auto sort inbox items
+  description: Route inbox items via grocery_learning integration and remove from inbox
+  triggers:
+    - trigger: event
+      event_type: call_service
+      event_data:
+        domain: todo
+        service: add_item
+  conditions:
+    - condition: template
+      value_template: >-
+        {% set data = trigger.event.data.service_data %}
+        {% set eid = data.entity_id | default('') %}
+        {% set list_id = (eid[0] if eid is sequence and eid is not string and (eid | length) > 0 else eid) %}
+        {{ list_id == 'todo.grocery_inbox' and (data.item | default('') | trim) != '' }}
+  actions:
+    - variables:
+        data: "{{ trigger.event.data.service_data }}"
+        item_text: "{{ data.item | default('') | trim }}"
+    - action: grocery_learning.route_item
+      data:
+        item: "{{ item_text }}"
+        source_list: todo.grocery_inbox
+        remove_from_source: true
+        review_on_other: true
+  mode: queued
+
+- id: "grocery_learning_apply_review_action"
+  alias: Grocery - Apply category from notification action
+  description: Apply grocery review using integration service (mobile action or dashboard apply button).
+  triggers:
+    - trigger: event
+      event_type: mobile_app_notification_action
+      id: mobile_action
+    - trigger: state
+      entity_id: input_button.grocery_review_apply
+      id: dashboard_apply
+  conditions:
+    - condition: template
+      value_template: "{{ trigger.id == 'dashboard_apply' or (trigger.event.data.action | default('')) in [
+        'GROCERY_CAT_PRODUCE',
+        'GROCERY_CAT_BAKERY',
+        'GROCERY_CAT_MEAT',
+        'GROCERY_CAT_DAIRY',
+        'GROCERY_CAT_FROZEN',
+        'GROCERY_CAT_PANTRY',
+        'GROCERY_CAT_HOUSEHOLD',
+        'GROCERY_CAT_KEEP_OTHER'
+      ] }}"
+  actions:
+    - variables:
+        category_in: >-
+          {% if trigger.id == 'mobile_action' %}
+            {% set a = trigger.event.data.action | default('') %}
+            {% set map = {
+              'GROCERY_CAT_PRODUCE': 'produce',
+              'GROCERY_CAT_BAKERY': 'bakery',
+              'GROCERY_CAT_MEAT': 'meat',
+              'GROCERY_CAT_DAIRY': 'dairy',
+              'GROCERY_CAT_FROZEN': 'frozen',
+              'GROCERY_CAT_PANTRY': 'pantry',
+              'GROCERY_CAT_HOUSEHOLD': 'household',
+              'GROCERY_CAT_KEEP_OTHER': 'other'
+            } %}
+            {{ map.get(a, 'other') }}
+          {% else %}
+            {{ states('input_select.grocery_review_category') | lower | trim }}
+          {% endif %}
+    - action: grocery_learning.apply_review
+      data:
+        category: "{{ category_in }}"
+        learn: true
+  mode: queued

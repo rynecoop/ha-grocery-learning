@@ -1,0 +1,15 @@
+# Example script alias for voice/quick-add flows.
+# Merge into scripts.yaml.
+
+grocery_process_add_alias:
+  alias: Grocery - Process Add (stable alias)
+  mode: queued
+  fields:
+    raw_text:
+      description: The raw phrase after "add ..."
+      example: "2 gallons of 2% milk"
+  sequence:
+    - service: grocery_learning.route_item
+      data:
+        item: "{{ raw_text }}"
+        review_on_other: true

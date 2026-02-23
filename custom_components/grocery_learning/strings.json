@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Grocery Learning",
+        "description": "Set up Grocery Learning."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one Grocery Learning instance is allowed."
+    }
+  }
+}
