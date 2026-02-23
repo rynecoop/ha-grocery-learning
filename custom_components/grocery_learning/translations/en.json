@@ -2,19 +2,19 @@
   "config": {
     "step": {
       "user": {
+        "data": {
+          "auto_dashboard": "Auto-create/update Grocery dashboards",
+          "auto_provision": "Auto-create missing grocery todo lists",
+          "auto_route_inbox": "Auto-route inbox items",
+          "inbox_entity": "Inbox todo entity",
+          "categories": "Categories (comma or newline separated)",
+          "notify_service": "Optional notify service (example: notify.mobile_app_phone)"
+        },
         "title": "Local Grocery Assistant",
         "description": "Configure your grocery routing defaults."
       }
     },
     "error": {},
-    "data": {
-      "auto_dashboard": "Auto-create/update Grocery dashboards",
-      "auto_provision": "Auto-create missing grocery todo lists",
-      "auto_route_inbox": "Auto-route inbox items",
-      "inbox_entity": "Inbox todo entity",
-      "categories": "Categories (comma or newline separated)",
-      "notify_service": "Optional notify service (example: notify.mobile_app_phone)"
-    },
     "abort": {
       "single_instance_allowed": "Only one Local Grocery Assistant instance is allowed."
     }
@@ -22,17 +22,17 @@
   "options": {
     "step": {
       "init": {
+        "data": {
+          "auto_dashboard": "Auto-create/update Grocery dashboards",
+          "auto_provision": "Auto-create missing grocery todo lists",
+          "auto_route_inbox": "Auto-route inbox items",
+          "inbox_entity": "Inbox todo entity",
+          "categories": "Categories (comma or newline separated)",
+          "notify_service": "Optional notify service (example: notify.mobile_app_phone)"
+        },
         "title": "Local Grocery Assistant Options",
         "description": "Update grocery routing behavior."
       }
-    },
-    "data": {
-      "auto_dashboard": "Auto-create/update Grocery dashboards",
-      "auto_provision": "Auto-create missing grocery todo lists",
-      "auto_route_inbox": "Auto-route inbox items",
-      "inbox_entity": "Inbox todo entity",
-      "categories": "Categories (comma or newline separated)",
-      "notify_service": "Optional notify service (example: notify.mobile_app_phone)"
     }
   }
 }

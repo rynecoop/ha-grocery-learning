@@ -130,12 +130,6 @@ def _categories_from_entry(entry: ConfigEntry | None) -> list[str]:
     return cleaned or list(DEFAULT_CATEGORIES)
 
 
-async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
-    """Set up integration and register services."""
-    await _async_setup_runtime(hass)
-    return True
-
-
 async def _async_setup_runtime(hass: HomeAssistant) -> None:
     """Set up runtime state/services once."""
     hass.data.setdefault(DOMAIN, {})
