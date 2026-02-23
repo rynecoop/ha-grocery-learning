@@ -1,4 +1,4 @@
-"""Storage helpers for Grocery Learning."""
+"""Storage helpers for Local Grocery Assistant."""
 
 from __future__ import annotations
 

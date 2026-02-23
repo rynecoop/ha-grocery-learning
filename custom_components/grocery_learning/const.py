@@ -1,4 +1,4 @@
-"""Constants for Grocery Learning."""
+"""Constants for Local Grocery Assistant."""
 
 from __future__ import annotations
 

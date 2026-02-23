@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Grocery Learning",
+        "title": "Local Grocery Assistant",
         "description": "Configure your grocery routing defaults."
       }
     },
@@ -16,13 +16,13 @@
       "notify_service": "Optional notify service (example: notify.mobile_app_phone)"
     },
     "abort": {
-      "single_instance_allowed": "Only one Grocery Learning instance is allowed."
+      "single_instance_allowed": "Only one Local Grocery Assistant instance is allowed."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Grocery Learning Options",
+        "title": "Local Grocery Assistant Options",
         "description": "Update grocery routing behavior."
       }
     },

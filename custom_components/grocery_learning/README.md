@@ -1,11 +1,11 @@
-# Grocery Learning (Custom Integration)
+# Local Grocery Assistant (Custom Integration)
 
 This integration is the foundation for a shareable "grocery list routing + review + learn" system.
 
 It is specifically aimed at replacing Alexa Shopping List workflows for users moving to a local Home Assistant voice setup.
 
 ## Current Scope (v0.1.4)
-- Config entry (`Settings -> Devices & Services -> Add Integration -> Grocery Learning`)
+- Config entry (`Settings -> Devices & Services -> Add Integration -> Local Grocery Assistant`)
 - Setup wizard for:
   - auto-provisioning grocery lists
   - auto-provisioning Grocery dashboards

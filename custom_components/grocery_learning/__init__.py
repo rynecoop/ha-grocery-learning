@@ -1,4 +1,4 @@
-"""Grocery Learning custom integration."""
+"""Local Grocery Assistant custom integration."""
 
 from __future__ import annotations
 
@@ -623,7 +623,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Grocery Learning from config entry."""
+    """Set up Local Grocery Assistant from config entry."""
     await _async_setup_runtime(hass)
     data = hass.data[DOMAIN]
     data["entry"] = entry
