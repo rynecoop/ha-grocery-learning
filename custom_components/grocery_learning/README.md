@@ -29,6 +29,10 @@ The integration will create:
 - missing grocery todo lists for inbox, each selected category, and `other`
 - storage dashboards `Grocery` and `Grocery Admin` (admin-only) with cards based on your category order
 
+## Integration Icon In HACS
+To show a custom integration icon, submit branding for domain `grocery_learning` to Home Assistant brands.
+Starter assets and notes are in `branding/README.md`.
+
 ## Legacy Compatibility
 If you still use helper-driven YAML routing, keep using:
 - `grocery_learning.sync_helpers`

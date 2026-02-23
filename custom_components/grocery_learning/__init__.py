@@ -494,10 +494,21 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 if normalized in set(terms_obj.data.get(category, [])):
                     return category
 
-        text = f" {normalized} "
+        tokens = [t for t in normalized.split(" ") if t]
+        token_forms: set[str] = set(tokens)
+        for token in tokens:
+            if len(token) > 3 and token.endswith("s"):
+                token_forms.add(token[:-1])
+            if len(token) > 4 and token.endswith("es"):
+                token_forms.add(token[:-2])
+
+        def _keyword_match(keyword: str) -> bool:
+            parts = [p for p in keyword.split(" ") if p]
+            return bool(parts) and all(part in token_forms for part in parts)
+
         for category in categories:
             words = DEFAULT_KEYWORDS_BY_CATEGORY.get(category, ())
-            if any(f" {word} " in text for word in words):
+            if any(_keyword_match(word) for word in words):
                 return category
         return "other"
 

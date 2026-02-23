@@ -106,6 +106,7 @@ You can still import/modify example dashboards manually if you want a custom lay
 2. Create GitHub release tag (for HACS install stability).
 3. Verify `hacs.json` and manifest versions match intended release.
 4. Add screenshots/GIFs to repo README for user onboarding.
+5. Submit icon assets to Home Assistant brands for `grocery_learning` (see `branding/README.md`) so HACS/HA show custom branding.
 
 ## Roadmap
 1. Native integration entities for review state.

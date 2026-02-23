@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+- Improved keyword routing to handle common plural forms, fixing basics like `bananas` and `grapes`.
+- Added branding starter assets and docs in `branding/` for Home Assistant brands submission.
+- Updated docs with icon/branding publication notes.
+
 ## 0.1.5
 - Rebranded user-facing integration name to `Local Grocery Assistant`.
 - Updated manifest/HACS/config-flow labels and docs to use the new name.
