@@ -67,6 +67,7 @@ This project is built from a production setup and is designed to be shareable.
 
 ## Current Scope
 This release provides the integration foundation and service APIs plus tested example config.
+It includes a setup wizard and integration-managed inbox auto-routing.
 It does not yet auto-create all helper entities/lists/dashboards by itself.
 
 ## Troubleshooting

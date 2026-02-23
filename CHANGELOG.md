@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1
+- Added setup wizard fields in config flow:
+  - auto-route inbox toggle
+  - inbox entity selection
+  - optional notify service
+- Added integration-managed inbox routing listener (reduces required YAML automations).
+- Added optional notification dispatch from integration when review is needed.
+- Improved config-flow labels/translations for beginner setup clarity.
+
 ## 0.1.0
 - Initial custom integration scaffold (`grocery_learning`).
 - Added persistent learned-term storage.

@@ -3,8 +3,14 @@
     "step": {
       "user": {
         "title": "Grocery Learning",
-        "description": "Set up Grocery Learning."
+        "description": "Configure your grocery routing defaults."
       }
+    },
+    "error": {},
+    "data": {
+      "auto_route_inbox": "Auto-route inbox items",
+      "inbox_entity": "Inbox todo entity",
+      "notify_service": "Optional notify service (example: notify.mobile_app_phone)"
     },
     "abort": {
       "single_instance_allowed": "Only one Grocery Learning instance is allowed."

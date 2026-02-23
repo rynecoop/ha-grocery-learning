@@ -14,6 +14,9 @@ from homeassistant.helpers import config_validation as cv
 
 from .const import (
     CATEGORIES,
+    CONF_AUTO_ROUTE_INBOX,
+    CONF_INBOX_ENTITY,
+    CONF_NOTIFY_SERVICE,
     DOMAIN,
     HELPER_BY_CATEGORY,
     REVIEW_CATEGORY_HELPER,
@@ -238,6 +241,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 },
                 blocking=True,
             )
+            entry = hass.data.get(DOMAIN, {}).get("entry")
+            notify_service = str(entry.data.get(CONF_NOTIFY_SERVICE, "")).strip() if entry else ""
+            if notify_service and "." in notify_service:
+                n_domain, n_service = notify_service.split(".", 1)
+                await hass.services.async_call(
+                    n_domain,
+                    n_service,
+                    {
+                        "title": "Grocery review needed",
+                        "message": f"'{raw_item}' was added to Other.",
+                    },
+                    blocking=True,
+                )
 
     async def _apply_review(call: ServiceCall) -> None:
         category_in = str(call.data.get("category", "")).strip().lower()
@@ -305,11 +321,42 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Grocery Learning from config entry."""
     await _async_setup_runtime(hass)
+    hass.data[DOMAIN]["entry"] = entry
+
+    async def _handle_call_service(event) -> None:
+        if not entry.data.get(CONF_AUTO_ROUTE_INBOX, True):
+            return
+        data = event.data.get("service_data", {})
+        if event.data.get("domain") != "todo" or event.data.get("service") != "add_item":
+            return
+        eid = data.get("entity_id", "")
+        list_id = eid[0] if isinstance(eid, list) and eid else eid
+        inbox_entity = entry.data.get(CONF_INBOX_ENTITY, "todo.grocery_inbox")
+        item_text = str(data.get("item", "")).strip()
+        if list_id != inbox_entity or not item_text:
+            return
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_ROUTE_ITEM,
+            {
+                "item": item_text,
+                "source_list": inbox_entity,
+                "remove_from_source": True,
+                "review_on_other": True,
+            },
+            blocking=True,
+        )
+
+    remove_listener = hass.bus.async_listen("call_service", _handle_call_service)
+    hass.data[DOMAIN]["remove_listener"] = remove_listener
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    remove_listener = hass.data.get(DOMAIN, {}).pop("remove_listener", None)
+    if remove_listener:
+        remove_listener()
     await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     return True

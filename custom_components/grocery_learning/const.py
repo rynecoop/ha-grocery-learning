@@ -47,3 +47,7 @@ REVIEW_ITEM_HELPER = "input_text.grocery_review_item"
 REVIEW_SOURCE_HELPER = "input_text.grocery_review_source_list"
 REVIEW_PENDING_HELPER = "input_boolean.grocery_review_pending"
 REVIEW_CATEGORY_HELPER = "input_select.grocery_review_category"
+
+CONF_INBOX_ENTITY = "inbox_entity"
+CONF_AUTO_ROUTE_INBOX = "auto_route_inbox"
+CONF_NOTIFY_SERVICE = "notify_service"
