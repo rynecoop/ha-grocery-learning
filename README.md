@@ -1,116 +1,87 @@
 # Local Grocery Assistant
 
-Home Assistant custom integration for grocery routing, review, and auto-learning.
+Local Grocery Assistant is a Home Assistant custom integration for grocery routing, review, and auto-learning.
 
-This project is built from a production setup and is designed to be shareable.
+It is designed for users moving away from Alexa Shopping List while keeping fast voice add flows and gaining better control over category routing.
 
-## Why This Exists
-This project is for people moving off Alexa Shopping List while keeping the same convenience for voice-added groceries.
+## Features
+- Local-first grocery routing by category
+- Auto-learning from review decisions
+- Duplicate-prevention flow with pending confirmation
+- Auto-provisioning of grocery todo lists
+- Auto-generated `Grocery` and `Grocery Admin` dashboards
+- Configurable categories and category order
 
-Alexa shopping list support is often the last blocker for going fully local on voice assistants.  
-Local Grocery Assistant replaces that workflow in Home Assistant and adds features Alexa does not provide:
-- local-first control in your HA environment
-- store-walk routing by category/order
-- review + correction workflow for uncertain items
-- auto-learning from your corrections
-- dashboard/admin visibility into learned behavior
+## Install
+### HACS (Recommended)
+1. In HACS, add this repo as a Custom Repository (`Integration`) if it is not yet in the default index.
+2. Install `Local Grocery Assistant`.
+3. Restart Home Assistant.
+4. Add integration in `Settings -> Devices & Services`.
+5. In setup wizard:
+   - keep `auto_provision` enabled
+   - keep `auto_dashboard` enabled
+   - set your categories in store-walk order
 
-Goal: make a truly local voice assistant setup practical, with grocery list behavior equal to or better than Alexa.
-
-## Quick Start (Recommended)
-1. Install integration (HACS custom repository or manual copy).
+### Manual
+1. Copy `custom_components/grocery_learning` to your Home Assistant config at `custom_components/grocery_learning`.
 2. Restart Home Assistant.
-3. Add integration:
-   - `Settings -> Devices & Services -> Add Integration -> Local Grocery Assistant`
-4. In setup wizard:
-   - keep default categories or add your own categories (comma/newline separated)
-   - keep auto-provision enabled so missing grocery lists are created for you
-   - keep auto-dashboard enabled so Grocery dashboards are created/updated for you
-5. Open sidebar dashboards:
-   - `Grocery`
-   - `Grocery Admin` (admin-only)
-6. Test:
-   - Add `coffee` to grocery list (should route to Pantry).
-   - Add a weird item (should go to Other + show review flow).
-   - Apply review category and re-add the same item (should auto-route due to learning).
+3. Add integration in `Settings -> Devices & Services`.
+4. Complete setup wizard.
 
-## What It Does
-- Routes grocery items into category lists (produce, bakery, meat, dairy, frozen, pantry, household, other).
-- Learns from your review decisions so future items auto-route.
-- Supports review workflow for uncertain (`other`) items.
-- Works with dashboard and automation-driven flows.
-
-## Included In This Repo
-- Integration code:
-  - `custom_components/grocery_learning`
-- HACS metadata:
-  - `hacs.json`
-- Example dashboard exports:
-  - `examples/dashboards/lovelace.grocery.json`
-  - `examples/dashboards/lovelace.grocery_admin.json`
-- Example YAML snippets:
-  - `examples/configuration_helpers.yaml`
-  - `examples/automations.yaml`
-  - `examples/scripts.yaml`
-
-## Install (HACS Custom Repository)
-1. Push this repo to GitHub.
-2. In HACS, add a Custom Repository pointing to your repo URL, type `Integration`.
-3. Install `Local Grocery Assistant`.
-4. Restart Home Assistant.
-5. Add integration in UI (`Settings -> Devices & Services`).
-6. Complete setup wizard (categories + auto-provision).
-7. Import dashboard JSON examples or recreate cards from examples.
-
-## Install (Manual)
-1. Copy `custom_components/grocery_learning` into your HA config directory.
+## Upgrade
+1. Update integration in HACS (or copy updated files manually).
 2. Restart Home Assistant.
-3. Add integration in UI (`Settings -> Devices & Services`).
-4. Complete setup wizard (categories + auto-provision).
-5. Import dashboard examples from `examples/dashboards/`.
+3. Open integration options and confirm:
+   - categories and order
+   - inbox entity
+   - auto-provision and auto-dashboard toggles
+4. Hard refresh mobile/web frontend if old dashboard cards are cached.
 
-## Core Services
+## Usage
+- Add items via voice or Quick Add.
+- Integration routes items by learned terms + keyword fallback.
+- Unknown items land in `Other` and can be reviewed/learned.
+- Duplicate items trigger confirmation flow before adding again.
+
+Core services:
 - `grocery_learning.route_item`
 - `grocery_learning.apply_review`
 - `grocery_learning.learn_term`
 - `grocery_learning.forget_term`
 - `grocery_learning.sync_helpers`
 
-## Current Scope
-This release provides:
-- setup wizard with editable categories
-- automatic provisioning of missing grocery todo lists (inbox, each category, other)
-- automatic provisioning/updating of Grocery dashboards (main + admin)
-- integration-managed inbox auto-routing and learning services
-- optional helper sync for legacy YAML-based setups
-
-You can still import/modify example dashboards manually if you want a custom layout.
-
 ## Troubleshooting
 - `Action grocery_learning.route_item not found`
-  - Ensure the integration is added in `Settings -> Devices & Services`.
-  - Restart Home Assistant after installing/updating in HACS.
-- Dashboard/admin view not visible
-  - Confirm auto-dashboard is enabled in integration options.
-  - Reopen Home Assistant frontend after integration reload.
-  - Clear app/frontend cache or fully reopen the HA app.
-- Item not routing as expected
-  - Use review flow to classify and learn.
-  - Call `grocery_learning.sync_helpers` if you manually edited learned terms.
+  - Confirm integration is added in Devices & Services.
+  - Restart Home Assistant after install/update.
+- Quick Add or inbox item not removed after routing
+  - Ensure source list is your configured inbox entity.
+  - Retry once after restart (removal includes short retries for race conditions).
+- Dashboard not updating after category changes
+  - Confirm `auto_dashboard` is enabled in integration options.
+  - Reload integration and refresh frontend cache.
+- Item routes to `Other` unexpectedly
+  - Use review flow once to teach it.
+  - Re-test the same term.
 
-## Publish Checklist
-1. Update metadata in `custom_components/grocery_learning/manifest.json`:
-   - `documentation`
-   - `issue_tracker`
-   - `codeowners`
-2. Create GitHub release tag (for HACS install stability).
-3. Verify `hacs.json` and manifest versions match intended release.
-4. Add screenshots/GIFs to repo README for user onboarding.
-5. Submit icon assets to Home Assistant brands for `grocery_learning` (see `branding/README.md`) so HACS/HA show custom branding.
+## FAQ
+- Do I need YAML edits for normal setup?
+  - No. The integration can run zero-touch through UI setup.
+- Can I add/reorder categories later?
+  - Yes. Change categories in integration options; routing and dashboard order follow that list.
+- Will this break existing `grocery_learning.*` automations?
+  - No. Domain and service names remain `grocery_learning` for compatibility.
+- Why doesn’t a custom icon always show in HACS immediately?
+  - Branding comes from Home Assistant Brands and can take time after merge/update.
 
-## Roadmap
-1. Native integration entities for review state.
-2. Optional voice intent pack.
-3. Full zero-touch onboarding flow hardening.
-4. Guided category-review UX improvements.
-5. Extended dedupe and normalization tuning options.
+## Publishing Notes
+- HACS default listing is done through PR to `hacs/default` `integration` file.
+- Integration branding icon/logo is submitted to Home Assistant Brands for domain `grocery_learning`.
+- Starter branding assets: `branding/README.md`.
+
+## Repo Layout
+- Integration: `custom_components/grocery_learning`
+- HACS metadata: `hacs.json`
+- Examples: `examples/`
+- Changelog: `CHANGELOG.md`
