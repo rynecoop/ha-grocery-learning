@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.5
+- Fixed inbox auto-route listener to detect `todo.add_item` entity targets from both `service_data` and top-level `target` payload shapes (restores reliable Quick Add routing and duplicate checks).
+- Improved Grocery Admin dashboard to show out-of-box operational cards (overview + list status) even when optional helper entities are not configured.
+
 ## 0.2.4
 - Removed helper-dependent Quick Add mode from auto dashboard; Quick Add now always uses inbox `todo-list` create flow.
 - Made duplicate/review dashboard cards render only when required helper entities exist, preventing missing-helper UI/runtime issues.

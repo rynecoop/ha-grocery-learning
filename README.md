@@ -10,7 +10,7 @@ It is designed for users moving away from Alexa Shopping List while keeping fast
 - Duplicate-prevention flow with pending confirmation + Add Anyway/Skip actions
 - Duplicate context: who added it, when it was added, and source (typed/voice/automation)
 - Auto-provisioning of grocery todo lists
-- Auto-generated `Grocery` and `Grocery Admin` dashboards
+- Auto-generated `Grocery` and `Grocery Admin` dashboards that work without helper YAML
 - Configurable categories and category order
 
 ## Install

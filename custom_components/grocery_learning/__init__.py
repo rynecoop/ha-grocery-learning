@@ -708,6 +708,31 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         ]
         cards: list[dict[str, Any]] = []
 
+        order_text = " -> ".join([_display_name_for_category(c) for c in categories] + ["Other"])
+        cards.append(
+            {
+                "type": "markdown",
+                "title": "Admin Overview",
+                "content": (
+                    "Local Grocery Assistant is running in integration-managed mode.\n\n"
+                    f"**Current category order:** {order_text}\n\n"
+                    "To change routing order or categories, open the integration options in "
+                    "`Settings -> Devices & Services`."
+                ),
+            }
+        )
+
+        inbox_entity = str(_entry_value(hass.data[DOMAIN].get("entry"), CONF_INBOX_ENTITY, "todo.grocery_inbox"))
+        list_entities = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [_target_list_for_category("other")]
+        cards.append(
+            {
+                "type": "entities",
+                "title": "List Status",
+                "show_header_toggle": False,
+                "entities": [{"entity": ent} for ent in list_entities if hass.states.get(ent) is not None],
+            }
+        )
+
         has_duplicate_helpers = all(
             hass.states.get(entity_id) is not None
             for entity_id in (
@@ -802,6 +827,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "title": "Learned Terms (Admin)",
                     "show_header_toggle": False,
                     "entities": learned_entities,
+                }
+            )
+
+        if not cards:
+            cards.append(
+                {
+                    "type": "markdown",
+                    "content": "No admin entities available yet. Reload integration after setup.",
                 }
             )
 
@@ -1060,7 +1093,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     data["runtime_ready"] = True
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Local Grocery Assistant from config entry."""
     await _async_setup_runtime(hass)
     data = hass.data[DOMAIN]
@@ -1085,8 +1118,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data_event = event.data.get("service_data", {})
         if event.data.get("domain") != "todo" or event.data.get("service") != "add_item":
             return
-        eid = data_event.get("entity_id", "")
-        list_id = eid[0] if isinstance(eid, list) and eid else eid
+
+        def _extract_entity_id() -> str:
+            top_target = event.data.get("target", {})
+            service_target = data_event.get("target", {})
+            candidates: list[Any] = [
+                data_event.get("entity_id", ""),
+                service_target.get("entity_id", "") if isinstance(service_target, dict) else "",
+                top_target.get("entity_id", "") if isinstance(top_target, dict) else "",
+            ]
+            for candidate in candidates:
+                if isinstance(candidate, list) and candidate:
+                    return str(candidate[0]).strip()
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+            return ""
+
+        list_id = _extract_entity_id()
         inbox_entity = _entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")
         item_text = str(data_event.get("item", "")).strip()
         if list_id != inbox_entity or not item_text:
