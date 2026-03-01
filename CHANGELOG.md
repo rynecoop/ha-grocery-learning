@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.1
+- Fixed startup crash (`NotImplementedError` in Home Assistant storage loader) by keeping storage schema version at `1` while using backward-compatible data handling.
+
 ## 0.2.0
 - Added item-level metadata tracking for routing decisions (`added by`, `added when`, `source`) persisted in integration storage.
 - Added duplicate context helpers and dashboard UI cards that show existing item context before confirming duplicate adds.

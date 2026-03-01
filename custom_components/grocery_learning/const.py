@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DOMAIN = "grocery_learning"
 STORAGE_KEY = DOMAIN
-STORAGE_VERSION = 2
+STORAGE_VERSION = 1
 
 SERVICE_LEARN_TERM = "learn_term"
 SERVICE_FORGET_TERM = "forget_term"
