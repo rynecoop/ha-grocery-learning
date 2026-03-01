@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.2
+- Fixed Home Assistant options flow crash (`AttributeError: property 'config_entry' has no setter`) by removing manual assignment in `GroceryLearningOptionsFlow`.
+
 ## 0.2.1
 - Fixed startup crash (`NotImplementedError` in Home Assistant storage loader) by keeping storage schema version at `1` while using backward-compatible data handling.
 
