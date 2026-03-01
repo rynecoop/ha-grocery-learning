@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+- Introduced a polished in-HA app shell layout for both Grocery and Grocery Admin dashboards.
+- Added status tile grids, cleaner section structure, and an operations-center style admin view.
+- Kept core app behavior helper-optional while preserving advanced duplicate/review controls when helper entities are present.
+
 ## 0.2.5
 - Fixed inbox auto-route listener to detect `todo.add_item` entity targets from both `service_data` and top-level `target` payload shapes (restores reliable Quick Add routing and duplicate checks).
 - Improved Grocery Admin dashboard to show out-of-box operational cards (overview + list status) even when optional helper entities are not configured.

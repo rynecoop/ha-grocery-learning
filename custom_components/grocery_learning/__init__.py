@@ -558,35 +558,56 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     def _build_main_dashboard_config(entry: ConfigEntry | None) -> dict[str, Any]:
         categories = _active_categories()
         inbox_entity = str(_entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox"))
-        quick_add_card: dict[str, Any] = {
-            "display_order": "none",
-            "item_tap_action": "toggle",
-            "type": "todo-list",
-            "entity": inbox_entity,
-            "hide_completed": True,
-            "hide_section_headers": True,
-            "title": "Quick Add",
-            "hide_create": False,
-            "card_mod": {
-                "style": (
-                    "ha-card $ h1.card-header {\n"
-                    "  padding: 16px 16px 4px 16px !important;\n"
-                    "}\n"
-                    "ha-card $ .card-content {\n"
-                    "  padding-top: 0 !important;\n"
-                    "}\n"
-                    "ha-empty-state,\n"
-                    "ha-md-empty-state,\n"
-                    ".empty,\n"
-                    ".empty-state,\n"
-                    ".placeholder {\n"
-                    "  display: none !important;\n"
-                    "}\n"
-                )
-            },
-        }
+        lane_entities = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [_target_list_for_category("other")]
+        lane_tiles = [
+            {
+                "type": "tile",
+                "entity": entity_id,
+                "vertical": True,
+                "state_content": ["state"],
+                "icon_tap_action": {"action": "more-info"},
+            }
+            for entity_id in lane_entities
+            if hass.states.get(entity_id) is not None
+        ]
 
-        cards: list[dict[str, Any]] = [quick_add_card]
+        cards: list[dict[str, Any]] = [
+            {
+                "type": "markdown",
+                "title": "Local Grocery Assistant",
+                "content": (
+                    "Add items fast, keep aisle order, and route everything automatically.\n\n"
+                    "Use **Quick Add** below, then shop directly from category lists."
+                ),
+            },
+            {
+                "type": "todo-list",
+                "display_order": "none",
+                "item_tap_action": "toggle",
+                "entity": inbox_entity,
+                "hide_completed": True,
+                "hide_section_headers": True,
+                "title": "Quick Add",
+                "hide_create": False,
+            },
+        ]
+
+        if lane_tiles:
+            cards.append(
+                {
+                    "type": "grid",
+                    "title": "List Status",
+                    "columns": 3,
+                    "square": False,
+                    "cards": lane_tiles,
+                }
+            )
+            cards.append(
+                {
+                    "type": "markdown",
+                    "content": "## Shopping Lanes",
+                }
+            )
 
         for category in categories:
             cards.append(_empty_card_for(category))
@@ -706,8 +727,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             for category in categories
             if hass.states.get(_helper_for_category(category)) is not None
         ]
-        cards: list[dict[str, Any]] = []
-
+        cards: list[dict[str, Any]] = [
+            {
+                "type": "markdown",
+                "title": "Operations Center",
+                "content": (
+                    "This panel controls routing behavior and keeps the Grocery app healthy.\n\n"
+                    "Everything here is local and managed by the integration."
+                ),
+            }
+        ]
         order_text = " -> ".join([_display_name_for_category(c) for c in categories] + ["Other"])
         cards.append(
             {
@@ -721,9 +750,41 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 ),
             }
         )
+        cards.append(
+            {
+                "type": "button",
+                "name": "Sync Learned Terms",
+                "icon": "mdi:sync",
+                "tap_action": {
+                    "action": "call-service",
+                    "service": f"{DOMAIN}.{SERVICE_SYNC_HELPERS}",
+                    "service_data": {},
+                },
+            }
+        )
 
         inbox_entity = str(_entry_value(hass.data[DOMAIN].get("entry"), CONF_INBOX_ENTITY, "todo.grocery_inbox"))
         list_entities = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [_target_list_for_category("other")]
+        tile_cards = [
+            {
+                "type": "tile",
+                "entity": ent,
+                "vertical": True,
+                "state_content": ["state"],
+            }
+            for ent in list_entities
+            if hass.states.get(ent) is not None
+        ]
+        if tile_cards:
+            cards.append(
+                {
+                    "type": "grid",
+                    "title": "Current Queue Depth",
+                    "columns": 3,
+                    "square": False,
+                    "cards": tile_cards,
+                }
+            )
         cards.append(
             {
                 "type": "entities",
