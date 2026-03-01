@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4
+- Removed helper-dependent Quick Add mode from auto dashboard; Quick Add now always uses inbox `todo-list` create flow.
+- Made duplicate/review dashboard cards render only when required helper entities exist, preventing missing-helper UI/runtime issues.
+
 ## 0.2.3
 - Fixed Home Assistant options flow initialization (`TypeError: GroceryLearningOptionsFlow() takes no arguments`) by restoring a compatible constructor signature.
 

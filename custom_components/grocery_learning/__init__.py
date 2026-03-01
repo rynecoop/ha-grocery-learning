@@ -558,53 +558,33 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     def _build_main_dashboard_config(entry: ConfigEntry | None) -> dict[str, Any]:
         categories = _active_categories()
         inbox_entity = str(_entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox"))
-        quick_add_input = "input_text.grocery_quick_add"
-        quick_add_button = "input_button.grocery_quick_add_submit"
-        has_helper_quick_add = hass.states.get(quick_add_input) is not None and hass.states.get(quick_add_button) is not None
-        if has_helper_quick_add:
-            quick_add_card: dict[str, Any] = {
-                "type": "entities",
-                "title": "Quick Add",
-                "show_header_toggle": False,
-                "entities": [
-                    {
-                        "entity": quick_add_input,
-                        "name": "Add item",
-                    },
-                    {
-                        "entity": quick_add_button,
-                        "name": "Add",
-                    },
-                ],
-            }
-        else:
-            quick_add_card = {
-                "display_order": "none",
-                "item_tap_action": "toggle",
-                "type": "todo-list",
-                "entity": inbox_entity,
-                "hide_completed": True,
-                "hide_section_headers": True,
-                "title": "Quick Add",
-                "hide_create": False,
-                "card_mod": {
-                    "style": (
-                        "ha-card $ h1.card-header {\n"
-                        "  padding: 16px 16px 4px 16px !important;\n"
-                        "}\n"
-                        "ha-card $ .card-content {\n"
-                        "  padding-top: 0 !important;\n"
-                        "}\n"
-                        "ha-empty-state,\n"
-                        "ha-md-empty-state,\n"
-                        ".empty,\n"
-                        ".empty-state,\n"
-                        ".placeholder {\n"
-                        "  display: none !important;\n"
-                        "}\n"
-                    )
-                },
-            }
+        quick_add_card: dict[str, Any] = {
+            "display_order": "none",
+            "item_tap_action": "toggle",
+            "type": "todo-list",
+            "entity": inbox_entity,
+            "hide_completed": True,
+            "hide_section_headers": True,
+            "title": "Quick Add",
+            "hide_create": False,
+            "card_mod": {
+                "style": (
+                    "ha-card $ h1.card-header {\n"
+                    "  padding: 16px 16px 4px 16px !important;\n"
+                    "}\n"
+                    "ha-card $ .card-content {\n"
+                    "  padding-top: 0 !important;\n"
+                    "}\n"
+                    "ha-empty-state,\n"
+                    "ha-md-empty-state,\n"
+                    ".empty,\n"
+                    ".empty-state,\n"
+                    ".placeholder {\n"
+                    "  display: none !important;\n"
+                    "}\n"
+                )
+            },
+        }
 
         cards: list[dict[str, Any]] = [quick_add_card]
 
@@ -614,72 +594,95 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         cards.append(_empty_card_for("other"))
         cards.append(_todo_card_for("other"))
-        cards.append(
-            {
-                "type": "conditional",
-                "conditions": [{"entity": DUPLICATE_PENDING_HELPER, "state": "on"}],
-                "card": {
-                    "type": "vertical-stack",
-                    "cards": [
-                        {
-                            "type": "entities",
-                            "title": "Duplicate Found",
-                            "show_header_toggle": False,
-                            "entities": [
-                                {"entity": DUPLICATE_PENDING_ITEM_HELPER, "name": "Item"},
-                                {"entity": DUPLICATE_PENDING_TARGET_HELPER, "name": "List"},
-                                {"entity": DUPLICATE_PENDING_BY_HELPER, "name": "Added by"},
-                                {"entity": DUPLICATE_PENDING_WHEN_HELPER, "name": "Added"},
-                                {"entity": DUPLICATE_PENDING_SOURCE_HELPER, "name": "Source"},
-                            ],
-                        },
-                        {
-                            "type": "grid",
-                            "columns": 2,
-                            "square": False,
-                            "cards": [
-                                {
-                                    "type": "button",
-                                    "name": "Add Anyway",
-                                    "icon": "mdi:cart-plus",
-                                    "tap_action": {
-                                        "action": "call-service",
-                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                        "service_data": {"decision": "add"},
-                                    },
-                                },
-                                {
-                                    "type": "button",
-                                    "name": "Skip",
-                                    "icon": "mdi:close-circle-outline",
-                                    "tap_action": {
-                                        "action": "call-service",
-                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                        "service_data": {"decision": "skip"},
-                                    },
-                                },
-                            ],
-                        },
-                    ],
-                },
-            }
+        has_duplicate_helpers = all(
+            hass.states.get(entity_id) is not None
+            for entity_id in (
+                DUPLICATE_PENDING_HELPER,
+                DUPLICATE_PENDING_ITEM_HELPER,
+                DUPLICATE_PENDING_TARGET_HELPER,
+                DUPLICATE_PENDING_BY_HELPER,
+                DUPLICATE_PENDING_WHEN_HELPER,
+                DUPLICATE_PENDING_SOURCE_HELPER,
+            )
         )
-        cards.append(
-            {
-                "type": "conditional",
-                "conditions": [{"entity": "input_boolean.grocery_review_pending", "state": "on"}],
-                "card": {
-                    "type": "entities",
-                    "title": "Review & Learn",
-                    "show_header_toggle": False,
-                    "entities": [
-                        {"entity": "input_text.grocery_review_item", "name": "Item to review"},
-                        {"entity": "input_select.grocery_review_category", "name": "Move to category"},
-                        {"entity": "input_button.grocery_review_apply", "name": "Apply Category + Learn"},
-                    ],
-                },
-            }
+        if has_duplicate_helpers:
+            cards.append(
+                {
+                    "type": "conditional",
+                    "conditions": [{"entity": DUPLICATE_PENDING_HELPER, "state": "on"}],
+                    "card": {
+                        "type": "vertical-stack",
+                        "cards": [
+                            {
+                                "type": "entities",
+                                "title": "Duplicate Found",
+                                "show_header_toggle": False,
+                                "entities": [
+                                    {"entity": DUPLICATE_PENDING_ITEM_HELPER, "name": "Item"},
+                                    {"entity": DUPLICATE_PENDING_TARGET_HELPER, "name": "List"},
+                                    {"entity": DUPLICATE_PENDING_BY_HELPER, "name": "Added by"},
+                                    {"entity": DUPLICATE_PENDING_WHEN_HELPER, "name": "Added"},
+                                    {"entity": DUPLICATE_PENDING_SOURCE_HELPER, "name": "Source"},
+                                ],
+                            },
+                            {
+                                "type": "grid",
+                                "columns": 2,
+                                "square": False,
+                                "cards": [
+                                    {
+                                        "type": "button",
+                                        "name": "Add Anyway",
+                                        "icon": "mdi:cart-plus",
+                                        "tap_action": {
+                                            "action": "call-service",
+                                            "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                            "service_data": {"decision": "add"},
+                                        },
+                                    },
+                                    {
+                                        "type": "button",
+                                        "name": "Skip",
+                                        "icon": "mdi:close-circle-outline",
+                                        "tap_action": {
+                                            "action": "call-service",
+                                            "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                            "service_data": {"decision": "skip"},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                }
+            )
+
+        has_review_helpers = all(
+            hass.states.get(entity_id) is not None
+            for entity_id in (
+                REVIEW_PENDING_HELPER,
+                REVIEW_ITEM_HELPER,
+                REVIEW_CATEGORY_HELPER,
+                "input_button.grocery_review_apply",
+            )
         )
+        if has_review_helpers:
+            cards.append(
+                {
+                    "type": "conditional",
+                    "conditions": [{"entity": REVIEW_PENDING_HELPER, "state": "on"}],
+                    "card": {
+                        "type": "entities",
+                        "title": "Review & Learn",
+                        "show_header_toggle": False,
+                        "entities": [
+                            {"entity": REVIEW_ITEM_HELPER, "name": "Item to review"},
+                            {"entity": REVIEW_CATEGORY_HELPER, "name": "Move to category"},
+                            {"entity": "input_button.grocery_review_apply", "name": "Apply Category + Learn"},
+                        ],
+                    },
+                }
+            )
 
         return {
             "config": {
@@ -701,7 +704,107 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         learned_entities = [
             {"entity": _helper_for_category(category), "name": f"{_display_name_for_category(category)} Learned Terms"}
             for category in categories
+            if hass.states.get(_helper_for_category(category)) is not None
         ]
+        cards: list[dict[str, Any]] = []
+
+        has_duplicate_helpers = all(
+            hass.states.get(entity_id) is not None
+            for entity_id in (
+                DUPLICATE_PENDING_HELPER,
+                DUPLICATE_PENDING_ITEM_HELPER,
+                DUPLICATE_PENDING_TARGET_HELPER,
+                DUPLICATE_PENDING_BY_HELPER,
+                DUPLICATE_PENDING_WHEN_HELPER,
+                DUPLICATE_PENDING_SOURCE_HELPER,
+            )
+        )
+        if has_duplicate_helpers:
+            cards.append(
+                {
+                    "type": "conditional",
+                    "conditions": [{"entity": DUPLICATE_PENDING_HELPER, "state": "on"}],
+                    "card": {
+                        "type": "vertical-stack",
+                        "cards": [
+                            {
+                                "type": "entities",
+                                "title": "Duplicate Pending",
+                                "show_header_toggle": False,
+                                "entities": [
+                                    {"entity": DUPLICATE_PENDING_ITEM_HELPER, "name": "Item"},
+                                    {"entity": DUPLICATE_PENDING_TARGET_HELPER, "name": "Target List"},
+                                    {"entity": DUPLICATE_PENDING_BY_HELPER, "name": "Added by"},
+                                    {"entity": DUPLICATE_PENDING_WHEN_HELPER, "name": "Added"},
+                                    {"entity": DUPLICATE_PENDING_SOURCE_HELPER, "name": "Source"},
+                                ],
+                            },
+                            {
+                                "type": "grid",
+                                "columns": 2,
+                                "square": False,
+                                "cards": [
+                                    {
+                                        "type": "button",
+                                        "name": "Add Anyway",
+                                        "icon": "mdi:cart-plus",
+                                        "tap_action": {
+                                            "action": "call-service",
+                                            "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                            "service_data": {"decision": "add"},
+                                        },
+                                    },
+                                    {
+                                        "type": "button",
+                                        "name": "Skip",
+                                        "icon": "mdi:close-circle-outline",
+                                        "tap_action": {
+                                            "action": "call-service",
+                                            "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                            "service_data": {"decision": "skip"},
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                }
+            )
+
+        has_review_helpers = all(
+            hass.states.get(entity_id) is not None
+            for entity_id in (
+                REVIEW_PENDING_HELPER,
+                REVIEW_ITEM_HELPER,
+                REVIEW_CATEGORY_HELPER,
+                "input_button.grocery_review_apply",
+            )
+        )
+        if has_review_helpers:
+            cards.append(
+                {
+                    "type": "entities",
+                    "title": "Review Status",
+                    "show_header_toggle": False,
+                    "entities": [
+                        {"entity": REVIEW_PENDING_HELPER, "name": "Review Pending"},
+                        {"entity": REVIEW_ITEM_HELPER, "name": "Pending Item"},
+                        {"entity": REVIEW_CATEGORY_HELPER, "name": "Review Category"},
+                        {"entity": "input_button.grocery_review_apply", "name": "Apply Category + Learn"},
+                    ],
+                }
+            )
+
+        if learned_entities:
+            cards.append(
+                {
+                    "type": "entities",
+                    "title": "Learned Terms (Admin)",
+                    "show_header_toggle": False,
+                    "entities": learned_entities,
+                }
+            )
+
         return {
             "config": {
                 "title": "Grocery Admin",
@@ -711,73 +814,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "path": "grocery-admin",
                         "icon": "mdi:shield-crown",
                         "type": "masonry",
-                        "cards": [
-                            {
-                                "type": "conditional",
-                                "conditions": [{"entity": DUPLICATE_PENDING_HELPER, "state": "on"}],
-                                "card": {
-                                    "type": "vertical-stack",
-                                    "cards": [
-                                        {
-                                            "type": "entities",
-                                            "title": "Duplicate Pending",
-                                            "show_header_toggle": False,
-                                            "entities": [
-                                                {"entity": DUPLICATE_PENDING_ITEM_HELPER, "name": "Item"},
-                                                {"entity": DUPLICATE_PENDING_TARGET_HELPER, "name": "Target List"},
-                                                {"entity": DUPLICATE_PENDING_BY_HELPER, "name": "Added by"},
-                                                {"entity": DUPLICATE_PENDING_WHEN_HELPER, "name": "Added"},
-                                                {"entity": DUPLICATE_PENDING_SOURCE_HELPER, "name": "Source"},
-                                            ],
-                                        },
-                                        {
-                                            "type": "grid",
-                                            "columns": 2,
-                                            "square": False,
-                                            "cards": [
-                                                {
-                                                    "type": "button",
-                                                    "name": "Add Anyway",
-                                                    "icon": "mdi:cart-plus",
-                                                    "tap_action": {
-                                                        "action": "call-service",
-                                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                                        "service_data": {"decision": "add"},
-                                                    },
-                                                },
-                                                {
-                                                    "type": "button",
-                                                    "name": "Skip",
-                                                    "icon": "mdi:close-circle-outline",
-                                                    "tap_action": {
-                                                        "action": "call-service",
-                                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                                        "service_data": {"decision": "skip"},
-                                                    },
-                                                },
-                                            ],
-                                        },
-                                    ],
-                                },
-                            },
-                            {
-                                "type": "entities",
-                                "title": "Review Status",
-                                "show_header_toggle": False,
-                                "entities": [
-                                    {"entity": "input_boolean.grocery_review_pending", "name": "Review Pending"},
-                                    {"entity": "input_text.grocery_review_item", "name": "Pending Item"},
-                                    {"entity": "input_select.grocery_review_category", "name": "Review Category"},
-                                    {"entity": "input_button.grocery_review_apply", "name": "Apply Category + Learn"},
-                                ],
-                            },
-                            {
-                                "type": "entities",
-                                "title": "Learned Terms (Admin)",
-                                "show_header_toggle": False,
-                                "entities": learned_entities,
-                            },
-                        ],
+                        "cards": cards,
                     }
                 ],
             }
