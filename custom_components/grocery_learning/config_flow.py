@@ -67,8 +67,11 @@ class GroceryLearningConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class GroceryLearningOptionsFlow(config_entries.OptionsFlow):
     """Handle Local Grocery Assistant options."""
 
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self._config_entry = config_entry
+
     async def async_step_init(self, user_input=None) -> FlowResult:
-        current_data = {**self.config_entry.data, **self.config_entry.options}
+        current_data = {**self._config_entry.data, **self._config_entry.options}
         if user_input is not None:
             user_input[CONF_CATEGORIES] = _normalize_categories(user_input.get(CONF_CATEGORIES, ""))
             return self.async_create_entry(data=user_input)

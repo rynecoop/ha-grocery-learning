@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.2.3
+- Fixed Home Assistant options flow initialization (`TypeError: GroceryLearningOptionsFlow() takes no arguments`) by restoring a compatible constructor signature.
+
 ## 0.2.2
 - Fixed Home Assistant options flow crash (`AttributeError: property 'config_entry' has no setter`) by removing manual assignment in `GroceryLearningOptionsFlow`.
 
