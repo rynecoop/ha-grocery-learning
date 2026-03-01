@@ -485,6 +485,151 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             )
         await _ensure_local_todo_list(_target_list_for_category("other"), "Grocery Other")
 
+    async def _ensure_helper_entity(
+        helper_domain: str,
+        entity_id: str,
+        title: str,
+        payload: dict[str, Any],
+    ) -> None:
+        if hass.states.get(entity_id) is not None:
+            return
+
+        attempts = [dict(payload), {k: v for k, v in payload.items() if k != "icon"}]
+        for base_payload in attempts:
+            try:
+                result = await hass.config_entries.flow.async_init(
+                    helper_domain,
+                    context={"source": "user"},
+                    data=base_payload,
+                )
+            except Exception as err:  # pragma: no cover
+                _LOGGER.debug("Helper async_init failed for %s (%s): %s", entity_id, helper_domain, err)
+                continue
+
+            for _ in range(5):
+                if hass.states.get(entity_id) is not None:
+                    return
+                if not isinstance(result, Mapping):
+                    break
+                if result.get("type") in {"create_entry", "abort"}:
+                    break
+                if result.get("type") != "form" or "flow_id" not in result:
+                    break
+
+                next_input: dict[str, Any] = {}
+                data_schema = result.get("data_schema")
+                schema_map = getattr(data_schema, "schema", {}) if data_schema else {}
+                if isinstance(schema_map, dict):
+                    for marker, validator in schema_map.items():
+                        key = getattr(marker, "schema", marker)
+                        key_name = str(key)
+                        key_low = key_name.lower()
+                        if key_name in base_payload:
+                            next_input[key_name] = base_payload[key_name]
+                        elif "name" in key_low:
+                            next_input[key_name] = title
+                        elif "option" in key_low and "options" in base_payload:
+                            next_input[key_name] = list(base_payload["options"])
+                        elif "max" in key_low:
+                            next_input[key_name] = int(base_payload.get("max", 255))
+                        elif "min" in key_low:
+                            next_input[key_name] = int(base_payload.get("min", 0))
+                        elif validator is bool:
+                            next_input[key_name] = bool(base_payload.get(key_name, True))
+                result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input=next_input or base_payload)
+
+            if hass.states.get(entity_id) is not None:
+                return
+
+    async def _ensure_required_helpers() -> None:
+        categories = _active_categories()
+
+        await _ensure_helper_entity(
+            "input_boolean",
+            REVIEW_PENDING_HELPER,
+            "Grocery Review Pending",
+            {"name": "Grocery Review Pending", "icon": "mdi:clipboard-text-clock-outline"},
+        )
+        await _ensure_helper_entity(
+            "input_text",
+            REVIEW_ITEM_HELPER,
+            "Grocery Review Item",
+            {"name": "Grocery Review Item", "max": 255, "icon": "mdi:cart"},
+        )
+        await _ensure_helper_entity(
+            "input_text",
+            REVIEW_SOURCE_HELPER,
+            "Grocery Review Source List",
+            {"name": "Grocery Review Source List", "max": 255, "icon": "mdi:playlist-check"},
+        )
+        await _ensure_helper_entity(
+            "input_select",
+            REVIEW_CATEGORY_HELPER,
+            "Grocery Review Category",
+            {
+                "name": "Grocery Review Category",
+                "options": [_display_name_for_category(c) for c in categories] + ["Keep Other"],
+                "icon": "mdi:shape-outline",
+            },
+        )
+        await _ensure_helper_entity(
+            "input_button",
+            "input_button.grocery_review_apply",
+            "Apply Grocery Review",
+            {"name": "Apply Grocery Review", "icon": "mdi:check-bold"},
+        )
+
+        await _ensure_helper_entity(
+            "input_boolean",
+            DUPLICATE_PENDING_HELPER,
+            "Grocery Duplicate Pending",
+            {"name": "Grocery Duplicate Pending", "icon": "mdi:content-duplicate"},
+        )
+        await _ensure_helper_entity(
+            "input_text",
+            DUPLICATE_PENDING_ITEM_HELPER,
+            "Grocery Duplicate Item",
+            {"name": "Grocery Duplicate Item", "max": 255, "icon": "mdi:cart-outline"},
+        )
+        await _ensure_helper_entity(
+            "input_text",
+            DUPLICATE_PENDING_TARGET_HELPER,
+            "Grocery Duplicate Target List",
+            {"name": "Grocery Duplicate Target List", "max": 255, "icon": "mdi:format-list-bulleted"},
+        )
+        await _ensure_helper_entity(
+            "input_text",
+            DUPLICATE_PENDING_KEY_HELPER,
+            "Grocery Duplicate Key",
+            {"name": "Grocery Duplicate Key", "max": 255, "icon": "mdi:key-variant"},
+        )
+        await _ensure_helper_entity(
+            "input_text",
+            DUPLICATE_PENDING_BY_HELPER,
+            "Grocery Duplicate Added By",
+            {"name": "Grocery Duplicate Added By", "max": 255, "icon": "mdi:account"},
+        )
+        await _ensure_helper_entity(
+            "input_text",
+            DUPLICATE_PENDING_WHEN_HELPER,
+            "Grocery Duplicate Added When",
+            {"name": "Grocery Duplicate Added When", "max": 255, "icon": "mdi:clock-outline"},
+        )
+        await _ensure_helper_entity(
+            "input_text",
+            DUPLICATE_PENDING_SOURCE_HELPER,
+            "Grocery Duplicate Source",
+            {"name": "Grocery Duplicate Source", "max": 255, "icon": "mdi:source-branch"},
+        )
+
+        for category in categories:
+            await _ensure_helper_entity(
+                "input_text",
+                _helper_for_category(category),
+                f"Grocery Learned {_display_name_for_category(category)}",
+                {"name": f"Grocery Learned {_display_name_for_category(category)}", "max": 255, "icon": "mdi:brain"},
+            )
+
     async def _upsert_storage_dashboard_meta(
         dashboard_id: str,
         title: str,
@@ -1150,6 +1295,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     )
 
     data["ensure_required_lists"] = _ensure_required_lists
+    data["ensure_required_helpers"] = _ensure_required_helpers
     data["ensure_dashboards"] = _ensure_dashboards
     data["runtime_ready"] = True
 
@@ -1168,6 +1314,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ensure_required_lists = data.get("ensure_required_lists")
     if ensure_required_lists:
         await ensure_required_lists(entry)
+
+    ensure_required_helpers = hass.data[DOMAIN].get("ensure_required_helpers")
+    if ensure_required_helpers:
+        await ensure_required_helpers()
 
     ensure_dashboards = data.get("ensure_dashboards")
     if ensure_dashboards:

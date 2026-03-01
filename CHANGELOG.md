@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+- Added automatic helper provisioning (review, duplicate, and learned-term helpers) so the integration is self-contained without manual helper YAML setup.
+- Fixed admin dashboard missing/unavailable controls by ensuring required helper entities are created during setup.
+
 ## 0.3.0
 - Introduced a polished in-HA app shell layout for both Grocery and Grocery Admin dashboards.
 - Added status tile grids, cleaner section structure, and an operations-center style admin view.

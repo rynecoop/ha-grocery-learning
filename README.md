@@ -70,7 +70,7 @@ Core services:
 
 ## FAQ
 - Do I need YAML edits for normal setup?
-  - No. The integration can run zero-touch through UI setup; helper YAML is optional.
+  - No. The integration runs zero-touch through UI setup and auto-provisions the helper entities it needs.
 - Can I add/reorder categories later?
   - Yes. Change categories in integration options; routing and dashboard order follow that list.
 - Will this break existing `grocery_learning.*` automations?
