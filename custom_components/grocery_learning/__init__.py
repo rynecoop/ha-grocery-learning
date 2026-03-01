@@ -90,6 +90,17 @@ CONFIRM_DUPLICATE_SCHEMA = vol.Schema(
     }
 )
 
+REVIEW_STATUS_PENDING_ENTITY = "sensor.grocery_review_pending_status"
+REVIEW_STATUS_ITEM_ENTITY = "sensor.grocery_review_item"
+REVIEW_STATUS_SOURCE_ENTITY = "sensor.grocery_review_source"
+
+DUPLICATE_STATUS_PENDING_ENTITY = "sensor.grocery_duplicate_pending_status"
+DUPLICATE_STATUS_ITEM_ENTITY = "sensor.grocery_duplicate_item"
+DUPLICATE_STATUS_TARGET_ENTITY = "sensor.grocery_duplicate_target"
+DUPLICATE_STATUS_BY_ENTITY = "sensor.grocery_duplicate_added_by"
+DUPLICATE_STATUS_WHEN_ENTITY = "sensor.grocery_duplicate_added_when"
+DUPLICATE_STATUS_SOURCE_ENTITY = "sensor.grocery_duplicate_source"
+
 
 def _normalize_term(value: str) -> str:
     cleaned = re.sub(r"[^a-z0-9 ]", " ", value.lower())
@@ -280,6 +291,79 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             payload["value"] = value
         await hass.services.async_call(domain, service, payload, blocking=True)
 
+    def _set_status_entity(entity_id: str, state: str, *, icon: str, friendly_name: str) -> None:
+        hass.states.async_set(
+            entity_id,
+            state,
+            {"icon": icon, "friendly_name": friendly_name},
+        )
+
+    def _update_review_status_entities(*, pending: bool, item: str = "", source_list: str = "") -> None:
+        _set_status_entity(
+            REVIEW_STATUS_PENDING_ENTITY,
+            "on" if pending else "off",
+            icon="mdi:clipboard-text-clock-outline",
+            friendly_name="Review Pending",
+        )
+        _set_status_entity(
+            REVIEW_STATUS_ITEM_ENTITY,
+            item or "none",
+            icon="mdi:cart-outline",
+            friendly_name="Review Item",
+        )
+        _set_status_entity(
+            REVIEW_STATUS_SOURCE_ENTITY,
+            source_list or "none",
+            icon="mdi:playlist-check",
+            friendly_name="Review Source List",
+        )
+
+    def _update_duplicate_status_entities(
+        *,
+        pending: bool,
+        item: str = "",
+        target: str = "",
+        added_by: str = "",
+        added_when: str = "",
+        source: str = "",
+    ) -> None:
+        _set_status_entity(
+            DUPLICATE_STATUS_PENDING_ENTITY,
+            "on" if pending else "off",
+            icon="mdi:content-duplicate",
+            friendly_name="Duplicate Pending",
+        )
+        _set_status_entity(
+            DUPLICATE_STATUS_ITEM_ENTITY,
+            item or "none",
+            icon="mdi:cart-outline",
+            friendly_name="Duplicate Item",
+        )
+        _set_status_entity(
+            DUPLICATE_STATUS_TARGET_ENTITY,
+            target or "none",
+            icon="mdi:format-list-bulleted",
+            friendly_name="Duplicate Target List",
+        )
+        _set_status_entity(
+            DUPLICATE_STATUS_BY_ENTITY,
+            added_by or "unknown",
+            icon="mdi:account",
+            friendly_name="Duplicate Added By",
+        )
+        _set_status_entity(
+            DUPLICATE_STATUS_WHEN_ENTITY,
+            added_when or "unknown",
+            icon="mdi:clock-outline",
+            friendly_name="Duplicate Added When",
+        )
+        _set_status_entity(
+            DUPLICATE_STATUS_SOURCE_ENTITY,
+            source or "unknown",
+            icon="mdi:source-branch",
+            friendly_name="Duplicate Source",
+        )
+
     async def _remove_from_list(list_entity: str, item_summary: str) -> None:
         if not list_entity or hass.states.get(list_entity) is None:
             return
@@ -395,6 +479,23 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 return item
         return None
 
+    async def _first_open_item(list_entity: str) -> dict[str, Any] | None:
+        if not list_entity or hass.states.get(list_entity) is None:
+            return None
+        response = await hass.services.async_call(
+            "todo",
+            "get_items",
+            {"status": "needs_action"},
+            target={"entity_id": list_entity},
+            blocking=True,
+            return_response=True,
+        )
+        resp = response.get(list_entity, response) if isinstance(response, dict) else {}
+        items = resp.get("items", []) if isinstance(resp, dict) else []
+        if not isinstance(items, list) or not items:
+            return None
+        return items[0] if isinstance(items[0], dict) else None
+
     async def _clear_pending_duplicate() -> None:
         hass.data[DOMAIN]["pending_duplicate"] = {}
         await _set_helper_if_exists(DUPLICATE_PENDING_ITEM_HELPER, "")
@@ -404,6 +505,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await _set_helper_if_exists(DUPLICATE_PENDING_WHEN_HELPER, "")
         await _set_helper_if_exists(DUPLICATE_PENDING_SOURCE_HELPER, "")
         await _set_helper_if_exists(DUPLICATE_PENDING_HELPER, "off")
+        _update_duplicate_status_entities(pending=False)
 
     async def _set_pending_duplicate(
         *,
@@ -429,18 +531,28 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await _set_helper_if_exists(DUPLICATE_PENDING_WHEN_HELPER, existing_when)
         await _set_helper_if_exists(DUPLICATE_PENDING_SOURCE_HELPER, existing_source)
         await _set_helper_if_exists(DUPLICATE_PENDING_HELPER, "on")
+        _update_duplicate_status_entities(
+            pending=True,
+            item=item,
+            target=target_list,
+            added_by=existing_by,
+            added_when=existing_when,
+            source=existing_source,
+        )
 
     async def _set_pending_review(item: str, source_list: str) -> None:
         hass.data[DOMAIN]["pending_review"] = {"item": item, "source_list": source_list}
         await _set_helper_if_exists(REVIEW_ITEM_HELPER, item)
         await _set_helper_if_exists(REVIEW_SOURCE_HELPER, source_list)
         await _set_helper_if_exists(REVIEW_PENDING_HELPER, "on")
+        _update_review_status_entities(pending=True, item=item, source_list=source_list)
 
     async def _clear_pending_review() -> None:
         hass.data[DOMAIN]["pending_review"] = {}
         await _set_helper_if_exists(REVIEW_PENDING_HELPER, "off")
         await _set_helper_if_exists(REVIEW_ITEM_HELPER, "")
         await _set_helper_if_exists(REVIEW_SOURCE_HELPER, "")
+        _update_review_status_entities(pending=False)
 
     async def _ensure_local_todo_list(entity_id: str, title: str) -> None:
         if hass.states.get(entity_id) is not None:
@@ -783,68 +895,56 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         cards.append(_empty_card_for("other"))
         cards.append(_todo_card_for("other"))
-        has_duplicate_helpers = all(
-            hass.states.get(entity_id) is not None
-            for entity_id in (
-                DUPLICATE_PENDING_HELPER,
-                DUPLICATE_PENDING_ITEM_HELPER,
-                DUPLICATE_PENDING_TARGET_HELPER,
-                DUPLICATE_PENDING_BY_HELPER,
-                DUPLICATE_PENDING_WHEN_HELPER,
-                DUPLICATE_PENDING_SOURCE_HELPER,
-            )
+        cards.append(
+            {
+                "type": "conditional",
+                "conditions": [{"entity": DUPLICATE_STATUS_PENDING_ENTITY, "state": "on"}],
+                "card": {
+                    "type": "vertical-stack",
+                    "cards": [
+                        {
+                            "type": "entities",
+                            "title": "Duplicate Found",
+                            "show_header_toggle": False,
+                            "entities": [
+                                {"entity": DUPLICATE_STATUS_ITEM_ENTITY, "name": "Item"},
+                                {"entity": DUPLICATE_STATUS_TARGET_ENTITY, "name": "List"},
+                                {"entity": DUPLICATE_STATUS_BY_ENTITY, "name": "Added by"},
+                                {"entity": DUPLICATE_STATUS_WHEN_ENTITY, "name": "Added"},
+                                {"entity": DUPLICATE_STATUS_SOURCE_ENTITY, "name": "Source"},
+                            ],
+                        },
+                        {
+                            "type": "grid",
+                            "columns": 2,
+                            "square": False,
+                            "cards": [
+                                {
+                                    "type": "button",
+                                    "name": "Add Anyway",
+                                    "icon": "mdi:cart-plus",
+                                    "tap_action": {
+                                        "action": "call-service",
+                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                        "service_data": {"decision": "add"},
+                                    },
+                                },
+                                {
+                                    "type": "button",
+                                    "name": "Skip",
+                                    "icon": "mdi:close-circle-outline",
+                                    "tap_action": {
+                                        "action": "call-service",
+                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                        "service_data": {"decision": "skip"},
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            }
         )
-        if has_duplicate_helpers:
-            cards.append(
-                {
-                    "type": "conditional",
-                    "conditions": [{"entity": DUPLICATE_PENDING_HELPER, "state": "on"}],
-                    "card": {
-                        "type": "vertical-stack",
-                        "cards": [
-                            {
-                                "type": "entities",
-                                "title": "Duplicate Found",
-                                "show_header_toggle": False,
-                                "entities": [
-                                    {"entity": DUPLICATE_PENDING_ITEM_HELPER, "name": "Item"},
-                                    {"entity": DUPLICATE_PENDING_TARGET_HELPER, "name": "List"},
-                                    {"entity": DUPLICATE_PENDING_BY_HELPER, "name": "Added by"},
-                                    {"entity": DUPLICATE_PENDING_WHEN_HELPER, "name": "Added"},
-                                    {"entity": DUPLICATE_PENDING_SOURCE_HELPER, "name": "Source"},
-                                ],
-                            },
-                            {
-                                "type": "grid",
-                                "columns": 2,
-                                "square": False,
-                                "cards": [
-                                    {
-                                        "type": "button",
-                                        "name": "Add Anyway",
-                                        "icon": "mdi:cart-plus",
-                                        "tap_action": {
-                                            "action": "call-service",
-                                            "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                            "service_data": {"decision": "add"},
-                                        },
-                                    },
-                                    {
-                                        "type": "button",
-                                        "name": "Skip",
-                                        "icon": "mdi:close-circle-outline",
-                                        "tap_action": {
-                                            "action": "call-service",
-                                            "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                            "service_data": {"decision": "skip"},
-                                        },
-                                    },
-                                ],
-                            },
-                        ],
-                    },
-                }
-            )
 
         review_action_cards = [
             {
@@ -877,9 +977,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "title": "Review Pending Item",
                 "show_header_toggle": False,
                 "entities": [
-                    {"entity": REVIEW_PENDING_HELPER, "name": "Review Pending"},
-                    {"entity": REVIEW_ITEM_HELPER, "name": "Item"},
-                    {"entity": REVIEW_SOURCE_HELPER, "name": "Current List"},
+                    {"entity": REVIEW_STATUS_PENDING_ENTITY, "name": "Review Pending"},
+                    {"entity": REVIEW_STATUS_ITEM_ENTITY, "name": "Item"},
+                    {"entity": REVIEW_STATUS_SOURCE_ENTITY, "name": "Current List"},
                 ],
             }
         )
@@ -982,68 +1082,56 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             }
         )
 
-        has_duplicate_helpers = all(
-            hass.states.get(entity_id) is not None
-            for entity_id in (
-                DUPLICATE_PENDING_HELPER,
-                DUPLICATE_PENDING_ITEM_HELPER,
-                DUPLICATE_PENDING_TARGET_HELPER,
-                DUPLICATE_PENDING_BY_HELPER,
-                DUPLICATE_PENDING_WHEN_HELPER,
-                DUPLICATE_PENDING_SOURCE_HELPER,
-            )
+        cards.append(
+            {
+                "type": "conditional",
+                "conditions": [{"entity": DUPLICATE_STATUS_PENDING_ENTITY, "state": "on"}],
+                "card": {
+                    "type": "vertical-stack",
+                    "cards": [
+                        {
+                            "type": "entities",
+                            "title": "Duplicate Pending",
+                            "show_header_toggle": False,
+                            "entities": [
+                                {"entity": DUPLICATE_STATUS_ITEM_ENTITY, "name": "Item"},
+                                {"entity": DUPLICATE_STATUS_TARGET_ENTITY, "name": "Target List"},
+                                {"entity": DUPLICATE_STATUS_BY_ENTITY, "name": "Added by"},
+                                {"entity": DUPLICATE_STATUS_WHEN_ENTITY, "name": "Added"},
+                                {"entity": DUPLICATE_STATUS_SOURCE_ENTITY, "name": "Source"},
+                            ],
+                        },
+                        {
+                            "type": "grid",
+                            "columns": 2,
+                            "square": False,
+                            "cards": [
+                                {
+                                    "type": "button",
+                                    "name": "Add Anyway",
+                                    "icon": "mdi:cart-plus",
+                                    "tap_action": {
+                                        "action": "call-service",
+                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                        "service_data": {"decision": "add"},
+                                    },
+                                },
+                                {
+                                    "type": "button",
+                                    "name": "Skip",
+                                    "icon": "mdi:close-circle-outline",
+                                    "tap_action": {
+                                        "action": "call-service",
+                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                        "service_data": {"decision": "skip"},
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            }
         )
-        if has_duplicate_helpers:
-            cards.append(
-                {
-                    "type": "conditional",
-                    "conditions": [{"entity": DUPLICATE_PENDING_HELPER, "state": "on"}],
-                    "card": {
-                        "type": "vertical-stack",
-                        "cards": [
-                            {
-                                "type": "entities",
-                                "title": "Duplicate Pending",
-                                "show_header_toggle": False,
-                                "entities": [
-                                    {"entity": DUPLICATE_PENDING_ITEM_HELPER, "name": "Item"},
-                                    {"entity": DUPLICATE_PENDING_TARGET_HELPER, "name": "Target List"},
-                                    {"entity": DUPLICATE_PENDING_BY_HELPER, "name": "Added by"},
-                                    {"entity": DUPLICATE_PENDING_WHEN_HELPER, "name": "Added"},
-                                    {"entity": DUPLICATE_PENDING_SOURCE_HELPER, "name": "Source"},
-                                ],
-                            },
-                            {
-                                "type": "grid",
-                                "columns": 2,
-                                "square": False,
-                                "cards": [
-                                    {
-                                        "type": "button",
-                                        "name": "Add Anyway",
-                                        "icon": "mdi:cart-plus",
-                                        "tap_action": {
-                                            "action": "call-service",
-                                            "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                            "service_data": {"decision": "add"},
-                                        },
-                                    },
-                                    {
-                                        "type": "button",
-                                        "name": "Skip",
-                                        "icon": "mdi:close-circle-outline",
-                                        "tap_action": {
-                                            "action": "call-service",
-                                            "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                            "service_data": {"decision": "skip"},
-                                        },
-                                    },
-                                ],
-                            },
-                        ],
-                    },
-                }
-            )
 
         admin_review_buttons = [
             {
@@ -1076,9 +1164,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "title": "Review Status",
                 "show_header_toggle": False,
                 "entities": [
-                    {"entity": REVIEW_PENDING_HELPER, "name": "Review Pending"},
-                    {"entity": REVIEW_ITEM_HELPER, "name": "Pending Item"},
-                    {"entity": REVIEW_SOURCE_HELPER, "name": "Source List"},
+                    {"entity": REVIEW_STATUS_PENDING_ENTITY, "name": "Review Pending"},
+                    {"entity": REVIEW_STATUS_ITEM_ENTITY, "name": "Pending Item"},
+                    {"entity": REVIEW_STATUS_SOURCE_ENTITY, "name": "Source List"},
                 ],
             }
         )
@@ -1286,6 +1374,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             source_list = str(pending_review.get("source_list", "")).strip()
         if not source_list:
             source_list = _target_list_for_category("other")
+        if not review_item:
+            candidate = await _first_open_item(source_list)
+            if candidate:
+                review_item = str(candidate.get("summary", "")).strip()
+        if not review_item and source_list != _target_list_for_category("other"):
+            candidate = await _first_open_item(_target_list_for_category("other"))
+            if candidate:
+                review_item = str(candidate.get("summary", "")).strip()
+                source_list = _target_list_for_category("other")
         target_list = _target_list_for_category(target_category)
         if not review_item:
             return
@@ -1363,6 +1460,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         _confirm_duplicate,
         schema=CONFIRM_DUPLICATE_SCHEMA,
     )
+
+    _update_review_status_entities(pending=False)
+    _update_duplicate_status_entities(pending=False)
 
     data["ensure_required_lists"] = _ensure_required_lists
     data["ensure_required_helpers"] = _ensure_required_helpers

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4
+- Replaced dashboard review/duplicate status display with integration-managed sensor entities so UI remains functional even if helper YAML/entities are removed.
+- Added fallback review behavior: category action buttons now pull the next uncategorized item from `Other` when pending state is missing.
+- Improved review/duplicate status synchronization for a more reliable self-contained flow.
+
 ## 0.3.3
 - Made uncategorized review flow fully actionable in dashboards with direct category action buttons (no fragile input-select dependency).
 - Added in-memory pending-review state so Review & Learn remains functional even if helper entities are temporarily unavailable.
