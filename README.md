@@ -7,7 +7,8 @@ It is designed for users moving away from Alexa Shopping List while keeping fast
 ## Features
 - Local-first grocery routing by category
 - Auto-learning from review decisions
-- Duplicate-prevention flow with pending confirmation
+- Duplicate-prevention flow with pending confirmation + Add Anyway/Skip actions
+- Duplicate context: who added it, when it was added, and source (typed/voice/automation)
 - Auto-provisioning of grocery todo lists
 - Auto-generated `Grocery` and `Grocery Admin` dashboards
 - Configurable categories and category order
@@ -42,11 +43,12 @@ It is designed for users moving away from Alexa Shopping List while keeping fast
 - Add items via voice or Quick Add.
 - Integration routes items by learned terms + keyword fallback.
 - Unknown items land in `Other` and can be reviewed/learned.
-- Duplicate items trigger confirmation flow before adding again.
+- Duplicate items trigger a confirmation card with context before adding again.
 
 Core services:
 - `grocery_learning.route_item`
 - `grocery_learning.apply_review`
+- `grocery_learning.confirm_duplicate`
 - `grocery_learning.learn_term`
 - `grocery_learning.forget_term`
 - `grocery_learning.sync_helpers`

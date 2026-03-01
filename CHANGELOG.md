@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+- Added item-level metadata tracking for routing decisions (`added by`, `added when`, `source`) persisted in integration storage.
+- Added duplicate context helpers and dashboard UI cards that show existing item context before confirming duplicate adds.
+- Added new `grocery_learning.confirm_duplicate` service with `add`/`skip` decisions.
+- Improved inbox auto-route context propagation so typed entries retain user attribution.
+
 ## 0.1.9
 - Moved in-repo branding assets from `branding/` to `brands/` for HACS brand validation compatibility.
 - Normalized `brands/icon.png` and `brands/logo.png` to `256x256`.

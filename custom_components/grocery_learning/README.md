@@ -8,7 +8,7 @@ For full end-user documentation, use the repo root README:
 ## Provides
 - Config entry setup via Devices & Services
 - Category routing with learning/review flow
-- Duplicate-prevention and confirmation state
+- Duplicate-prevention with add/skip confirmation state + metadata context
 - Auto-provision of grocery todo lists
 - Auto-generation of Grocery dashboards
 

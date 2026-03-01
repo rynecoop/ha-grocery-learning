@@ -9,6 +9,24 @@ input_text:
   grocery_review_source_list:
     name: Grocery Review Source List
     max: 255
+  grocery_pending_display_item:
+    name: Grocery Pending Duplicate Item
+    max: 255
+  grocery_pending_target_list:
+    name: Grocery Pending Duplicate Target List
+    max: 255
+  grocery_pending_key:
+    name: Grocery Pending Duplicate Normalized Key
+    max: 255
+  grocery_pending_existing_added_by:
+    name: Grocery Duplicate Added By
+    max: 255
+  grocery_pending_existing_added_when:
+    name: Grocery Duplicate Added When
+    max: 255
+  grocery_pending_existing_added_source:
+    name: Grocery Duplicate Added Source
+    max: 255
   grocery_learned_produce:
     name: Grocery Learned Produce
     max: 255
@@ -34,6 +52,8 @@ input_text:
 input_boolean:
   grocery_review_pending:
     name: Grocery Review Pending
+  grocery_confirm_pending:
+    name: Grocery Duplicate Confirmation Pending
 
 input_select:
   grocery_review_category:

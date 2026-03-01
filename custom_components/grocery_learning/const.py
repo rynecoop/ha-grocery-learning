@@ -4,13 +4,14 @@ from __future__ import annotations
 
 DOMAIN = "grocery_learning"
 STORAGE_KEY = DOMAIN
-STORAGE_VERSION = 1
+STORAGE_VERSION = 2
 
 SERVICE_LEARN_TERM = "learn_term"
 SERVICE_FORGET_TERM = "forget_term"
 SERVICE_SYNC_HELPERS = "sync_helpers"
 SERVICE_ROUTE_ITEM = "route_item"
 SERVICE_APPLY_REVIEW = "apply_review"
+SERVICE_CONFIRM_DUPLICATE = "confirm_duplicate"
 
 DEFAULT_CATEGORIES = [
     "produce",
@@ -119,6 +120,9 @@ DUPLICATE_PENDING_HELPER = "input_boolean.grocery_confirm_pending"
 DUPLICATE_PENDING_ITEM_HELPER = "input_text.grocery_pending_display_item"
 DUPLICATE_PENDING_TARGET_HELPER = "input_text.grocery_pending_target_list"
 DUPLICATE_PENDING_KEY_HELPER = "input_text.grocery_pending_key"
+DUPLICATE_PENDING_BY_HELPER = "input_text.grocery_pending_existing_added_by"
+DUPLICATE_PENDING_WHEN_HELPER = "input_text.grocery_pending_existing_added_when"
+DUPLICATE_PENDING_SOURCE_HELPER = "input_text.grocery_pending_existing_added_source"
 
 CONF_INBOX_ENTITY = "inbox_entity"
 CONF_AUTO_ROUTE_INBOX = "auto_route_inbox"

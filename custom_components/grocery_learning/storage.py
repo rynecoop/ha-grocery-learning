@@ -44,8 +44,35 @@ class GroceryLearningStore:
 
     async def load(self, categories: list[str] | None = None) -> LearnedTerms:
         """Load data from storage."""
-        return LearnedTerms.from_raw(await self._store.async_load(), categories)
+        data = await self._store.async_load()
+        if isinstance(data, dict) and "terms" in data:
+            return LearnedTerms.from_raw(data.get("terms"), categories)
+        return LearnedTerms.from_raw(data, categories)
 
-    async def save(self, terms: LearnedTerms) -> None:
+    async def load_item_meta(self) -> dict[str, dict[str, str]]:
+        """Load item metadata map from storage."""
+        data = await self._store.async_load()
+        if not isinstance(data, dict):
+            return {}
+        raw_meta = data.get("item_meta", {})
+        if not isinstance(raw_meta, dict):
+            return {}
+
+        cleaned: dict[str, dict[str, str]] = {}
+        for key, value in raw_meta.items():
+            if not isinstance(key, str) or not isinstance(value, dict):
+                continue
+            cleaned[key] = {}
+            for field, field_value in value.items():
+                if isinstance(field, str) and isinstance(field_value, str):
+                    cleaned[key][field] = field_value
+        return cleaned
+
+    async def save(self, terms: LearnedTerms, item_meta: dict[str, dict[str, str]] | None = None) -> None:
         """Persist data to storage."""
-        await self._store.async_save(terms.data)
+        await self._store.async_save(
+            {
+                "terms": terms.data,
+                "item_meta": item_meta or {},
+            }
+        )

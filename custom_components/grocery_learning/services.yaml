@@ -61,6 +61,11 @@ route_item:
       default: false
       selector:
         boolean:
+    source:
+      required: false
+      example: typed
+      selector:
+        text:
 
 apply_review:
   name: Apply Grocery Review
@@ -76,3 +81,16 @@ apply_review:
       default: true
       selector:
         boolean:
+
+confirm_duplicate:
+  name: Confirm Duplicate Action
+  description: Resolve a pending duplicate item by adding anyway or skipping.
+  fields:
+    decision:
+      required: true
+      example: add
+      selector:
+        select:
+          options:
+            - add
+            - skip

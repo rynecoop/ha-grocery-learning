@@ -14,6 +14,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_AUTO_DASHBOARD,
@@ -24,10 +25,13 @@ from .const import (
     CONF_NOTIFY_SERVICE,
     DEFAULT_CATEGORIES,
     DEFAULT_KEYWORDS_BY_CATEGORY,
+    DUPLICATE_PENDING_BY_HELPER,
     DUPLICATE_PENDING_HELPER,
     DUPLICATE_PENDING_ITEM_HELPER,
     DUPLICATE_PENDING_KEY_HELPER,
+    DUPLICATE_PENDING_SOURCE_HELPER,
     DUPLICATE_PENDING_TARGET_HELPER,
+    DUPLICATE_PENDING_WHEN_HELPER,
     DOMAIN,
     HELPER_BY_CATEGORY,
     REVIEW_CATEGORY_HELPER,
@@ -35,6 +39,7 @@ from .const import (
     REVIEW_PENDING_HELPER,
     REVIEW_SOURCE_HELPER,
     SERVICE_APPLY_REVIEW,
+    SERVICE_CONFIRM_DUPLICATE,
     SERVICE_FORGET_TERM,
     SERVICE_LEARN_TERM,
     SERVICE_ROUTE_ITEM,
@@ -68,6 +73,7 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
         vol.Optional("remove_from_source", default=False): cv.boolean,
         vol.Optional("review_on_other", default=True): cv.boolean,
         vol.Optional("allow_duplicate", default=False): cv.boolean,
+        vol.Optional("source", default=""): cv.string,
     }
 )
 
@@ -75,6 +81,12 @@ APPLY_REVIEW_SCHEMA = vol.Schema(
     {
         vol.Optional("category"): cv.string,
         vol.Optional("learn", default=True): cv.boolean,
+    }
+)
+
+CONFIRM_DUPLICATE_SCHEMA = vol.Schema(
+    {
+        vol.Required("decision"): vol.In(["add", "skip"]),
     }
 )
 
@@ -112,6 +124,48 @@ def _entry_value(entry: ConfigEntry | None, key: str, default: Any) -> Any:
     return entry.data.get(key, default)
 
 
+def _item_meta_key(list_entity: str, normalized_item: str) -> str:
+    return f"{list_entity}|{normalized_item}"
+
+
+def _friendly_source(source: str) -> str:
+    lookup = {
+        "typed": "Typed",
+        "voice_assistant": "Voice Assistant",
+        "automation": "Automation",
+        "service_call": "Service Call",
+        "duplicate_confirmation": "Duplicate Confirmation",
+        "unknown": "Unknown",
+    }
+    return lookup.get(source, source.replace("_", " ").title())
+
+
+def _relative_time(iso_value: str) -> str:
+    if not iso_value:
+        return "Unknown"
+    try:
+        when = dt_util.parse_datetime(iso_value)
+    except (TypeError, ValueError):
+        return "Unknown"
+    if when is None:
+        return "Unknown"
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt_util.UTC)
+
+    delta = dt_util.utcnow() - when
+    seconds = max(0, int(delta.total_seconds()))
+    if seconds < 60:
+        return "Just now"
+    if seconds < 3600:
+        minutes = seconds // 60
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    if seconds < 86400:
+        hours = seconds // 3600
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+    days = seconds // 86400
+    return f"{days} day{'s' if days != 1 else ''} ago"
+
+
 def _categories_from_entry(entry: ConfigEntry | None) -> list[str]:
     raw = _entry_value(entry, CONF_CATEGORIES, list(DEFAULT_CATEGORIES))
     if isinstance(raw, str):
@@ -139,13 +193,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
     store = GroceryLearningStore(hass)
     terms = await store.load(list(DEFAULT_CATEGORIES))
+    item_meta = await store.load_item_meta()
 
     data["store"] = store
     data["terms"] = terms
+    data["item_meta"] = item_meta
+    data["pending_duplicate"] = {}
     data["categories"] = list(DEFAULT_CATEGORIES)
 
     async def _save() -> None:
-        await store.save(hass.data[DOMAIN]["terms"])
+        await store.save(hass.data[DOMAIN]["terms"], hass.data[DOMAIN].get("item_meta", {}))
 
     def _active_categories() -> list[str]:
         return list(hass.data[DOMAIN].get("categories", list(DEFAULT_CATEGORIES)))
@@ -258,9 +315,59 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if attempt < 3:
                 await asyncio.sleep(0.25)
 
-    async def _has_open_duplicate(list_entity: str, item_summary: str) -> bool:
+    async def _user_name_from_context(call: ServiceCall) -> tuple[str, str]:
+        user_id = call.context.user_id or ""
+        if not user_id:
+            return "", "Voice Assistant"
+        user = await hass.auth.async_get_user(user_id)
+        if user and user.name:
+            return user_id, user.name
+        return user_id, "User"
+
+    def _source_from_call(call: ServiceCall) -> str:
+        explicit = str(call.data.get("source", "")).strip().lower()
+        if explicit:
+            return explicit
+        if call.context.user_id:
+            return "typed"
+        if call.context.parent_id:
+            return "automation"
+        return "voice_assistant"
+
+    def _meta_for_item(list_entity: str, normalized_item: str) -> dict[str, str]:
+        meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].get("item_meta", {})
+        return dict(meta_map.get(_item_meta_key(list_entity, normalized_item), {}))
+
+    async def _record_item_meta(
+        list_entity: str,
+        item_summary: str,
+        call: ServiceCall,
+        source_override: str | None = None,
+    ) -> None:
+        normalized_item = _normalize_term(item_summary)
+        if not normalized_item:
+            return
+
+        user_id, user_name = await _user_name_from_context(call)
+        source = source_override or _source_from_call(call)
+        meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].setdefault("item_meta", {})
+        key = _item_meta_key(list_entity, normalized_item)
+        now_iso = dt_util.utcnow().isoformat()
+        previous = meta_map.get(key, {})
+        count = int(previous.get("add_count", "0") or "0") + 1
+        meta_map[key] = {
+            "last_added_at": now_iso,
+            "last_added_by_user_id": user_id,
+            "last_added_by_name": user_name,
+            "last_source": source,
+            "last_item_text": item_summary.strip(),
+            "add_count": str(count),
+        }
+        await _save()
+
+    async def _find_open_duplicate(list_entity: str, item_summary: str) -> dict[str, Any] | None:
         if not list_entity or hass.states.get(list_entity) is None:
-            return False
+            return None
         response = await hass.services.async_call(
             "todo",
             "get_items",
@@ -275,8 +382,43 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         for item in items:
             existing = _normalize_term(str(item.get("summary", "")))
             if existing and existing == needle:
-                return True
-        return False
+                return item
+        return None
+
+    async def _clear_pending_duplicate() -> None:
+        hass.data[DOMAIN]["pending_duplicate"] = {}
+        await _set_helper_if_exists(DUPLICATE_PENDING_ITEM_HELPER, "")
+        await _set_helper_if_exists(DUPLICATE_PENDING_TARGET_HELPER, "")
+        await _set_helper_if_exists(DUPLICATE_PENDING_KEY_HELPER, "")
+        await _set_helper_if_exists(DUPLICATE_PENDING_BY_HELPER, "")
+        await _set_helper_if_exists(DUPLICATE_PENDING_WHEN_HELPER, "")
+        await _set_helper_if_exists(DUPLICATE_PENDING_SOURCE_HELPER, "")
+        await _set_helper_if_exists(DUPLICATE_PENDING_HELPER, "off")
+
+    async def _set_pending_duplicate(
+        *,
+        item: str,
+        target_list: str,
+        normalized: str,
+        existing_by: str,
+        existing_source: str,
+        existing_when: str,
+    ) -> None:
+        hass.data[DOMAIN]["pending_duplicate"] = {
+            "item": item,
+            "target_list": target_list,
+            "normalized": normalized,
+            "existing_by": existing_by,
+            "existing_source": existing_source,
+            "existing_when": existing_when,
+        }
+        await _set_helper_if_exists(DUPLICATE_PENDING_ITEM_HELPER, item)
+        await _set_helper_if_exists(DUPLICATE_PENDING_TARGET_HELPER, target_list)
+        await _set_helper_if_exists(DUPLICATE_PENDING_KEY_HELPER, normalized)
+        await _set_helper_if_exists(DUPLICATE_PENDING_BY_HELPER, existing_by)
+        await _set_helper_if_exists(DUPLICATE_PENDING_WHEN_HELPER, existing_when)
+        await _set_helper_if_exists(DUPLICATE_PENDING_SOURCE_HELPER, existing_source)
+        await _set_helper_if_exists(DUPLICATE_PENDING_HELPER, "on")
 
     async def _ensure_local_todo_list(entity_id: str, title: str) -> None:
         if hass.states.get(entity_id) is not None:
@@ -475,6 +617,56 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         cards.append(
             {
                 "type": "conditional",
+                "conditions": [{"entity": DUPLICATE_PENDING_HELPER, "state": "on"}],
+                "card": {
+                    "type": "vertical-stack",
+                    "cards": [
+                        {
+                            "type": "entities",
+                            "title": "Duplicate Found",
+                            "show_header_toggle": False,
+                            "entities": [
+                                {"entity": DUPLICATE_PENDING_ITEM_HELPER, "name": "Item"},
+                                {"entity": DUPLICATE_PENDING_TARGET_HELPER, "name": "List"},
+                                {"entity": DUPLICATE_PENDING_BY_HELPER, "name": "Added by"},
+                                {"entity": DUPLICATE_PENDING_WHEN_HELPER, "name": "Added"},
+                                {"entity": DUPLICATE_PENDING_SOURCE_HELPER, "name": "Source"},
+                            ],
+                        },
+                        {
+                            "type": "grid",
+                            "columns": 2,
+                            "square": False,
+                            "cards": [
+                                {
+                                    "type": "button",
+                                    "name": "Add Anyway",
+                                    "icon": "mdi:cart-plus",
+                                    "tap_action": {
+                                        "action": "call-service",
+                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                        "service_data": {"decision": "add"},
+                                    },
+                                },
+                                {
+                                    "type": "button",
+                                    "name": "Skip",
+                                    "icon": "mdi:close-circle-outline",
+                                    "tap_action": {
+                                        "action": "call-service",
+                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                        "service_data": {"decision": "skip"},
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            }
+        )
+        cards.append(
+            {
+                "type": "conditional",
                 "conditions": [{"entity": "input_boolean.grocery_review_pending", "state": "on"}],
                 "card": {
                     "type": "entities",
@@ -520,6 +712,54 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "icon": "mdi:shield-crown",
                         "type": "masonry",
                         "cards": [
+                            {
+                                "type": "conditional",
+                                "conditions": [{"entity": DUPLICATE_PENDING_HELPER, "state": "on"}],
+                                "card": {
+                                    "type": "vertical-stack",
+                                    "cards": [
+                                        {
+                                            "type": "entities",
+                                            "title": "Duplicate Pending",
+                                            "show_header_toggle": False,
+                                            "entities": [
+                                                {"entity": DUPLICATE_PENDING_ITEM_HELPER, "name": "Item"},
+                                                {"entity": DUPLICATE_PENDING_TARGET_HELPER, "name": "Target List"},
+                                                {"entity": DUPLICATE_PENDING_BY_HELPER, "name": "Added by"},
+                                                {"entity": DUPLICATE_PENDING_WHEN_HELPER, "name": "Added"},
+                                                {"entity": DUPLICATE_PENDING_SOURCE_HELPER, "name": "Source"},
+                                            ],
+                                        },
+                                        {
+                                            "type": "grid",
+                                            "columns": 2,
+                                            "square": False,
+                                            "cards": [
+                                                {
+                                                    "type": "button",
+                                                    "name": "Add Anyway",
+                                                    "icon": "mdi:cart-plus",
+                                                    "tap_action": {
+                                                        "action": "call-service",
+                                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                                        "service_data": {"decision": "add"},
+                                                    },
+                                                },
+                                                {
+                                                    "type": "button",
+                                                    "name": "Skip",
+                                                    "icon": "mdi:close-circle-outline",
+                                                    "tap_action": {
+                                                        "action": "call-service",
+                                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
+                                                        "service_data": {"decision": "skip"},
+                                                    },
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            },
                             {
                                 "type": "entities",
                                 "title": "Review Status",
@@ -601,24 +841,38 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             _LOGGER.warning("Target list %s missing for category %s", target_list, category)
             target_list = _target_list_for_category("other")
 
-        is_duplicate = await _has_open_duplicate(target_list, raw_item)
-        if is_duplicate and not allow_duplicate:
+        duplicate_item = await _find_open_duplicate(target_list, raw_item)
+        if duplicate_item and not allow_duplicate:
             target_state = hass.states.get(target_list)
             target_name = (
                 str(target_state.attributes.get("friendly_name", "")).strip()
                 if target_state is not None
                 else target_list
             )
-            await _set_helper_if_exists(DUPLICATE_PENDING_ITEM_HELPER, raw_item)
-            await _set_helper_if_exists(DUPLICATE_PENDING_TARGET_HELPER, target_list)
-            await _set_helper_if_exists(DUPLICATE_PENDING_KEY_HELPER, normalized)
-            await _set_helper_if_exists(DUPLICATE_PENDING_HELPER, "on")
+            meta = _meta_for_item(target_list, normalized)
+            existing_by = meta.get("last_added_by_name", "Unknown")
+            existing_source = _friendly_source(meta.get("last_source", "unknown"))
+            existing_when = _relative_time(meta.get("last_added_at", ""))
+            await _set_pending_duplicate(
+                item=raw_item,
+                target_list=target_list,
+                normalized=normalized,
+                existing_by=existing_by,
+                existing_source=existing_source,
+                existing_when=existing_when,
+            )
             await hass.services.async_call(
                 "persistent_notification",
                 "create",
                 {
                     "title": "Grocery duplicate",
-                    "message": f"{raw_item} is already on {target_name}. Say 'yes' to add another or 'no' to skip.",
+                    "message": (
+                        f"**{raw_item}** is already on **{target_name}**.\n\n"
+                        f"- Added by: **{existing_by}**\n"
+                        f"- Added: **{existing_when}**\n"
+                        f"- Source: **{existing_source}**\n\n"
+                        "Use the Grocery dashboard to **Add anyway** or **Skip**."
+                    ),
                     "notification_id": "grocery_duplicate",
                 },
                 blocking=True,
@@ -634,6 +888,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             target={"entity_id": target_list},
             blocking=True,
         )
+        await _record_item_meta(target_list, raw_item, call)
 
         if remove_from_source:
             await _remove_from_list(source_list, raw_item)
@@ -717,11 +972,51 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             blocking=True,
         )
 
+    async def _confirm_duplicate(call: ServiceCall) -> None:
+        decision = str(call.data.get("decision", "")).strip().lower()
+        if decision not in {"add", "skip"}:
+            raise vol.Invalid("decision must be 'add' or 'skip'")
+
+        pending = dict(hass.data[DOMAIN].get("pending_duplicate", {}))
+        item = str(pending.get("item", "")).strip()
+        target_list = str(pending.get("target_list", "")).strip()
+
+        if not item:
+            item_state = hass.states.get(DUPLICATE_PENDING_ITEM_HELPER)
+            item = str(item_state.state).strip() if item_state else ""
+        if not target_list:
+            target_state = hass.states.get(DUPLICATE_PENDING_TARGET_HELPER)
+            target_list = str(target_state.state).strip() if target_state else ""
+
+        if decision == "add" and item and target_list and hass.states.get(target_list) is not None:
+            await hass.services.async_call(
+                "todo",
+                "add_item",
+                {"item": item},
+                target={"entity_id": target_list},
+                blocking=True,
+            )
+            await _record_item_meta(target_list, item, call, source_override="duplicate_confirmation")
+
+        await _clear_pending_duplicate()
+        await hass.services.async_call(
+            "persistent_notification",
+            "dismiss",
+            {"notification_id": "grocery_duplicate"},
+            blocking=True,
+        )
+
     hass.services.async_register(DOMAIN, SERVICE_LEARN_TERM, _learn_term, schema=LEARN_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_FORGET_TERM, _forget_term, schema=FORGET_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SYNC_HELPERS, _sync_helpers)
     hass.services.async_register(DOMAIN, SERVICE_ROUTE_ITEM, _route_item, schema=ROUTE_ITEM_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_APPLY_REVIEW, _apply_review, schema=APPLY_REVIEW_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CONFIRM_DUPLICATE,
+        _confirm_duplicate,
+        schema=CONFIRM_DUPLICATE_SCHEMA,
+    )
 
     data["ensure_required_lists"] = _ensure_required_lists
     data["ensure_dashboards"] = _ensure_dashboards
@@ -737,6 +1032,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     store: GroceryLearningStore = data["store"]
     data["terms"] = await store.load(data["categories"])
+    data["item_meta"] = await store.load_item_meta()
 
     ensure_required_lists = data.get("ensure_required_lists")
     if ensure_required_lists:
@@ -766,8 +1062,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "source_list": inbox_entity,
                 "remove_from_source": True,
                 "review_on_other": True,
+                "source": "typed",
             },
             blocking=True,
+            context=event.context,
         )
 
     entry.async_on_unload(hass.bus.async_listen("call_service", _handle_call_service))
