@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.8
+## 0.1.9
 - Moved in-repo branding assets from `branding/` to `brands/` for HACS brand validation compatibility.
 - Normalized `brands/icon.png` and `brands/logo.png` to `256x256`.
 - Added `custom_components/grocery_learning/brand/icon.png` and `logo.png` for HACS action brand-path validation.
