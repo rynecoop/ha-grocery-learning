@@ -1093,7 +1093,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     data["runtime_ready"] = True
 
 
-    async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Local Grocery Assistant from config entry."""
     await _async_setup_runtime(hass)
     data = hass.data[DOMAIN]
