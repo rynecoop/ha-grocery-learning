@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.8
+- Moved in-repo branding assets from `branding/` to `brands/` for HACS brand validation compatibility.
+- Normalized `brands/icon.png` and `brands/logo.png` to `256x256`.
+- Updated documentation links to reference `brands/README.md`.
+
 ## 0.1.7
 - Restored duplicate-prevention flow in `route_item` with pending confirmation support.
 - Added `allow_duplicate` service option for explicit duplicate adds.

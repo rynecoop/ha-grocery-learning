@@ -22,4 +22,4 @@ For full end-user documentation, use the repo root README:
 ## Notes
 - Integration display name: `Local Grocery Assistant`
 - Domain/service namespace stays `grocery_learning` for compatibility
-- Branding assets guidance: `../../branding/README.md`
+- Branding assets guidance: `../../brands/README.md`

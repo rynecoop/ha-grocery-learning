@@ -78,7 +78,7 @@ Core services:
 ## Publishing Notes
 - HACS default listing is done through PR to `hacs/default` `integration` file.
 - Integration branding icon/logo is submitted to Home Assistant Brands for domain `grocery_learning`.
-- Starter branding assets: `branding/README.md`.
+- Starter branding assets: `brands/README.md`.
 
 ## Repo Layout
 - Integration: `custom_components/grocery_learning`
