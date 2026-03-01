@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+- Made uncategorized review flow fully actionable in dashboards with direct category action buttons (no fragile input-select dependency).
+- Added in-memory pending-review state so Review & Learn remains functional even if helper entities are temporarily unavailable.
+- Tuned todo list cards to keep completed items visible for easy undo after accidental check-offs.
+
 ## 0.3.2
 - Added item `description` metadata on all add paths so todo entries can show "added by/source" secondary text in compatible Home Assistant todo UIs.
 

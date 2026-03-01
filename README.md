@@ -12,6 +12,7 @@ It is designed for users moving away from Alexa Shopping List while keeping fast
 - Auto-provisioning of grocery todo lists
 - Auto-generated `Grocery` and `Grocery Admin` dashboards that work without helper YAML
 - Polished in-app shell layout with quick-add, list status, and operations-center admin controls
+- One-tap Review & Learn category action buttons directly in dashboards
 - Configurable categories and category order
 
 ## Install

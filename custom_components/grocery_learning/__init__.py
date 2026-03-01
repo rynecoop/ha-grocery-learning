@@ -200,6 +200,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     data["terms"] = terms
     data["item_meta"] = item_meta
     data["pending_duplicate"] = {}
+    data["pending_review"] = {}
     data["categories"] = list(DEFAULT_CATEGORIES)
 
     async def _save() -> None:
@@ -428,6 +429,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await _set_helper_if_exists(DUPLICATE_PENDING_WHEN_HELPER, existing_when)
         await _set_helper_if_exists(DUPLICATE_PENDING_SOURCE_HELPER, existing_source)
         await _set_helper_if_exists(DUPLICATE_PENDING_HELPER, "on")
+
+    async def _set_pending_review(item: str, source_list: str) -> None:
+        hass.data[DOMAIN]["pending_review"] = {"item": item, "source_list": source_list}
+        await _set_helper_if_exists(REVIEW_ITEM_HELPER, item)
+        await _set_helper_if_exists(REVIEW_SOURCE_HELPER, source_list)
+        await _set_helper_if_exists(REVIEW_PENDING_HELPER, "on")
+
+    async def _clear_pending_review() -> None:
+        hass.data[DOMAIN]["pending_review"] = {}
+        await _set_helper_if_exists(REVIEW_PENDING_HELPER, "off")
+        await _set_helper_if_exists(REVIEW_ITEM_HELPER, "")
+        await _set_helper_if_exists(REVIEW_SOURCE_HELPER, "")
 
     async def _ensure_local_todo_list(entity_id: str, title: str) -> None:
         if hass.states.get(entity_id) is not None:
@@ -703,7 +716,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "type": "todo-list",
                 "title": name,
                 "entity": entity,
-                "show_completed": False,
+                "show_completed": True,
+                "hide_completed": False,
                 "hide_create": True,
                 "hide_section_headers": True,
             },
@@ -832,32 +846,52 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 }
             )
 
-        has_review_helpers = all(
-            hass.states.get(entity_id) is not None
-            for entity_id in (
-                REVIEW_PENDING_HELPER,
-                REVIEW_ITEM_HELPER,
-                REVIEW_CATEGORY_HELPER,
-                "input_button.grocery_review_apply",
-            )
+        review_action_cards = [
+            {
+                "type": "button",
+                "name": _display_name_for_category(category),
+                "icon": "mdi:shape-outline",
+                "tap_action": {
+                    "action": "call-service",
+                    "service": f"{DOMAIN}.{SERVICE_APPLY_REVIEW}",
+                    "service_data": {"category": category, "learn": True},
+                },
+            }
+            for category in categories
+        ]
+        review_action_cards.append(
+            {
+                "type": "button",
+                "name": "Keep Other",
+                "icon": "mdi:archive-arrow-down-outline",
+                "tap_action": {
+                    "action": "call-service",
+                    "service": f"{DOMAIN}.{SERVICE_APPLY_REVIEW}",
+                    "service_data": {"category": "other", "learn": False},
+                },
+            }
         )
-        if has_review_helpers:
-            cards.append(
-                {
-                    "type": "conditional",
-                    "conditions": [{"entity": REVIEW_PENDING_HELPER, "state": "on"}],
-                    "card": {
-                        "type": "entities",
-                        "title": "Review & Learn",
-                        "show_header_toggle": False,
-                        "entities": [
-                            {"entity": REVIEW_ITEM_HELPER, "name": "Item to review"},
-                            {"entity": REVIEW_CATEGORY_HELPER, "name": "Move to category"},
-                            {"entity": "input_button.grocery_review_apply", "name": "Apply Category + Learn"},
-                        ],
-                    },
-                }
-            )
+        cards.append(
+            {
+                "type": "entities",
+                "title": "Review Pending Item",
+                "show_header_toggle": False,
+                "entities": [
+                    {"entity": REVIEW_PENDING_HELPER, "name": "Review Pending"},
+                    {"entity": REVIEW_ITEM_HELPER, "name": "Item"},
+                    {"entity": REVIEW_SOURCE_HELPER, "name": "Current List"},
+                ],
+            }
+        )
+        cards.append(
+            {
+                "type": "grid",
+                "title": "Review & Learn Actions",
+                "columns": 3,
+                "square": False,
+                "cards": review_action_cards,
+            }
+        )
 
         return {
             "config": {
@@ -1011,29 +1045,52 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 }
             )
 
-        has_review_helpers = all(
-            hass.states.get(entity_id) is not None
-            for entity_id in (
-                REVIEW_PENDING_HELPER,
-                REVIEW_ITEM_HELPER,
-                REVIEW_CATEGORY_HELPER,
-                "input_button.grocery_review_apply",
-            )
+        admin_review_buttons = [
+            {
+                "type": "button",
+                "name": _display_name_for_category(category),
+                "icon": "mdi:shape",
+                "tap_action": {
+                    "action": "call-service",
+                    "service": f"{DOMAIN}.{SERVICE_APPLY_REVIEW}",
+                    "service_data": {"category": category, "learn": True},
+                },
+            }
+            for category in categories
+        ]
+        admin_review_buttons.append(
+            {
+                "type": "button",
+                "name": "Keep Other",
+                "icon": "mdi:archive-arrow-down-outline",
+                "tap_action": {
+                    "action": "call-service",
+                    "service": f"{DOMAIN}.{SERVICE_APPLY_REVIEW}",
+                    "service_data": {"category": "other", "learn": False},
+                },
+            }
         )
-        if has_review_helpers:
-            cards.append(
-                {
-                    "type": "entities",
-                    "title": "Review Status",
-                    "show_header_toggle": False,
-                    "entities": [
-                        {"entity": REVIEW_PENDING_HELPER, "name": "Review Pending"},
-                        {"entity": REVIEW_ITEM_HELPER, "name": "Pending Item"},
-                        {"entity": REVIEW_CATEGORY_HELPER, "name": "Review Category"},
-                        {"entity": "input_button.grocery_review_apply", "name": "Apply Category + Learn"},
-                    ],
-                }
-            )
+        cards.append(
+            {
+                "type": "entities",
+                "title": "Review Status",
+                "show_header_toggle": False,
+                "entities": [
+                    {"entity": REVIEW_PENDING_HELPER, "name": "Review Pending"},
+                    {"entity": REVIEW_ITEM_HELPER, "name": "Pending Item"},
+                    {"entity": REVIEW_SOURCE_HELPER, "name": "Source List"},
+                ],
+            }
+        )
+        cards.append(
+            {
+                "type": "grid",
+                "title": "Review & Learn Actions",
+                "columns": 4,
+                "square": False,
+                "cards": admin_review_buttons,
+            }
+        )
 
         if learned_entities:
             cards.append(
@@ -1179,9 +1236,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _remove_from_list(source_list, raw_item)
 
         if category == "other" and review_on_other:
-            await _set_helper_if_exists(REVIEW_ITEM_HELPER, raw_item)
-            await _set_helper_if_exists(REVIEW_SOURCE_HELPER, target_list)
-            await _set_helper_if_exists(REVIEW_PENDING_HELPER, "on")
+            await _set_pending_review(raw_item, target_list)
             await hass.services.async_call(
                 "persistent_notification",
                 "create",
@@ -1220,10 +1275,17 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         else:
             target_category = "other"
 
+        pending_review = dict(hass.data[DOMAIN].get("pending_review", {}))
         review_item_state = hass.states.get(REVIEW_ITEM_HELPER)
         source_list_state = hass.states.get(REVIEW_SOURCE_HELPER)
         review_item = str(review_item_state.state).strip() if review_item_state else ""
-        source_list = str(source_list_state.state).strip() if source_list_state else _target_list_for_category("other")
+        source_list = str(source_list_state.state).strip() if source_list_state else ""
+        if not review_item:
+            review_item = str(pending_review.get("item", "")).strip()
+        if not source_list:
+            source_list = str(pending_review.get("source_list", "")).strip()
+        if not source_list:
+            source_list = _target_list_for_category("other")
         target_list = _target_list_for_category(target_category)
         if not review_item:
             return
@@ -1248,9 +1310,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 await _save()
                 await _sync_helpers_internal()
 
-        await _set_helper_if_exists(REVIEW_PENDING_HELPER, "off")
-        await _set_helper_if_exists(REVIEW_ITEM_HELPER, "")
-        await _set_helper_if_exists(REVIEW_SOURCE_HELPER, "")
+        await _clear_pending_review()
         await hass.services.async_call(
             "persistent_notification",
             "dismiss",
