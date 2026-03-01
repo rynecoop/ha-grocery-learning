@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.2
+- Added item `description` metadata on all add paths so todo entries can show "added by/source" secondary text in compatible Home Assistant todo UIs.
+
 ## 0.3.1
 - Added automatic helper provisioning (review, duplicate, and learned-term helpers) so the integration is self-contained without manual helper YAML setup.
 - Fixed admin dashboard missing/unavailable controls by ensuring required helper entities are created during setup.

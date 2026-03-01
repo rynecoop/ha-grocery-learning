@@ -135,6 +135,7 @@ def _friendly_source(source: str) -> str:
         "automation": "Automation",
         "service_call": "Service Call",
         "duplicate_confirmation": "Duplicate Confirmation",
+        "review_move": "Review Move",
         "unknown": "Unknown",
     }
     return lookup.get(source, source.replace("_", " ").title())
@@ -337,6 +338,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     def _meta_for_item(list_entity: str, normalized_item: str) -> dict[str, str]:
         meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].get("item_meta", {})
         return dict(meta_map.get(_item_meta_key(list_entity, normalized_item), {}))
+
+    async def _build_item_description(
+        call: ServiceCall,
+        source_override: str | None = None,
+    ) -> str:
+        _, user_name = await _user_name_from_context(call)
+        source = _friendly_source(source_override or _source_from_call(call))
+        return f"Added by {user_name} · just now · {source}"
 
     async def _record_item_meta(
         list_entity: str,
@@ -1160,7 +1169,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await hass.services.async_call(
             "todo",
             "add_item",
-            {"item": raw_item},
+            {"item": raw_item, "description": await _build_item_description(call)},
             target={"entity_id": target_list},
             blocking=True,
         )
@@ -1224,10 +1233,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await hass.services.async_call(
                 "todo",
                 "add_item",
-                {"item": review_item},
+                {"item": review_item, "description": await _build_item_description(call)},
                 target={"entity_id": target_list},
                 blocking=True,
             )
+            await _record_item_meta(target_list, review_item, call, source_override="review_move")
 
         if learn and target_category in categories:
             norm = _normalize_term(review_item)
@@ -1268,7 +1278,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await hass.services.async_call(
                 "todo",
                 "add_item",
-                {"item": item},
+                {"item": item, "description": await _build_item_description(call, source_override="duplicate_confirmation")},
                 target={"entity_id": target_list},
                 blocking=True,
             )
