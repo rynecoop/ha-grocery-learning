@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2
+- Fixed duplicate-prompt overlap for voice assistant list-alias intake flows (`shopping list` / `grocery list`).
+- Voice alias adds now bypass integration duplicate confirmation UI (`allow_duplicate=true`) so voice-confirmed duplicates do not trigger a second in-app decision loop.
+- Typed/in-app add flows still keep duplicate confirmation behavior.
+
 ## 0.5.1
 - Simplified main list UX by moving setup/settings behind a dedicated `Configure` button instead of always rendering wizard controls in the active shopping view.
 - Added first-run `Setup Needed` notice with quick open action, while keeping day-to-day list workflow clean.

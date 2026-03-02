@@ -2045,8 +2045,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             item_text = str(data_event.get("item", "")).strip()
             if not item_text:
                 return
-            if not _is_voice_intake_list(list_id, inbox_entity, tracked_lists):
+            is_intake_list = _is_voice_intake_list(list_id, inbox_entity, tracked_lists)
+            if not is_intake_list:
                 return
+            is_alias_voice_flow = list_id != inbox_entity
+            source_label = "voice_assistant" if is_alias_voice_flow else _source_from_event_context(event.context)
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_ROUTE_ITEM,
@@ -2055,7 +2058,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "source_list": list_id,
                     "remove_from_source": True,
                     "review_on_other": True,
-                    "source": _source_from_event_context(event.context),
+                    "allow_duplicate": is_alias_voice_flow,
+                    "source": source_label,
                 },
                 blocking=True,
                 context=event.context,
