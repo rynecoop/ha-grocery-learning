@@ -246,15 +246,50 @@ class GroceryLearningDashboardView(HomeAssistantView):
     name = "api:grocery_learning:dashboard"
     requires_auth = False
 
+    @staticmethod
+    def _empty_payload(error: str = "") -> dict[str, Any]:
+        return {
+            "categories": ["other"],
+            "groups": [
+                {
+                    "category": "other",
+                    "title": "Other",
+                    "items": [],
+                }
+            ],
+            "completed": [],
+            "pending_review": {"pending": False, "item": "", "source_list": ""},
+            "pending_duplicate": {"pending": False, "item": "", "target": ""},
+            "error": error,
+        }
+
     async def get(self, request):
-        builder = self.hass.data.get(DOMAIN, {}).get("build_dashboard_payload")
-        if builder is None:
-            return self.json({"error": "not_ready"})
         try:
-            return self.json(await builder())
+            domain_data = self.hass.data.get(DOMAIN, {})
+            if not isinstance(domain_data, Mapping):
+                return web.json_response(self._empty_payload("runtime_state_invalid"))
+
+            builder = domain_data.get("build_dashboard_payload")
+            if not callable(builder):
+                return web.json_response(self._empty_payload("not_ready"))
+
+            payload = await builder()
+            if not isinstance(payload, dict):
+                return web.json_response(self._empty_payload("invalid_payload"))
+
+            payload.setdefault("categories", ["other"])
+            payload.setdefault("groups", [])
+            payload.setdefault("completed", [])
+            payload.setdefault("pending_review", {"pending": False, "item": "", "source_list": ""})
+            payload.setdefault("pending_duplicate", {"pending": False, "item": "", "target": ""})
+            payload.setdefault("error", "")
+            return web.json_response(payload)
         except Exception as err:  # pragma: no cover
             _LOGGER.exception("Failed to build Grocery dashboard payload")
-            return self.json({"error": str(err)})
+            try:
+                return web.json_response(self._empty_payload(str(err)))
+            except Exception:
+                return web.Response(status=200, text='{"error":"unknown"}', content_type="application/json")
 
 
 class GroceryLearningActionView(HomeAssistantView):
@@ -1510,7 +1545,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass,
             "iframe",
             frontend_url_path="grocery-app",
-            sidebar_title="Grocery App",
+            sidebar_title="Grocery List",
             sidebar_icon="mdi:cart-variant",
             config={"url": "/api/grocery_learning/app"},
             require_admin=False,

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.5
+- Renamed the Home Assistant sidebar panel title from `Grocery App` to `Grocery List`.
+- Hardened `/api/grocery_learning/dashboard` to always return a safe JSON payload shape (including startup/not-ready states) so the custom app no longer fails with raw 500 responses.
+- Added dashboard payload type/state guards to prevent malformed runtime state from breaking app load.
+
 ## 0.4.4
 - Fixed custom app load reliability by hardening todo list reads in dashboard payload generation (graceful fallback instead of fatal 500).
 - Updated integration-managed dashboards to be hidden from sidebar so users go directly to the `Grocery App` sidebar entry.
