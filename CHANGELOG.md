@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+- Introduced a self-contained custom Grocery web app served by the integration at `/api/grocery_learning/app` (no native todo-card dependency for core UX).
+- Switched Grocery and Grocery Admin dashboards to embedded app-shell views.
+- Added app API endpoints for dashboard data and actions (`add`, `recategorize`, `complete`, `undo`, review, duplicate resolution).
+- Added robust one-list style grouped UI with top-of-screen attention queues for duplicates/review to prevent missed routing decisions.
+- Added default `pharmacy` category and preserved completed-list move/restore workflow.
+
 ## 0.3.5
 - Added new default `pharmacy` category with starter keywords.
 - Added dedicated `Grocery Completed` list flow: checked items move out of active category cards into a completed card, and unchecking in completed restores the item to its original category.

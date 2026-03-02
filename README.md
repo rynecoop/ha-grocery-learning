@@ -11,8 +11,8 @@ It is designed for users moving away from Alexa Shopping List while keeping fast
 - Duplicate context: who added it, when it was added, and source (typed/voice/automation)
 - Dedicated `Grocery Completed` list with quick undo support (unchecked items return to original category list)
 - Auto-provisioning of grocery todo lists
-- Auto-generated `Grocery` and `Grocery Admin` dashboards that work without helper YAML
-- Polished in-app shell layout with quick-add, list status, and operations-center admin controls
+- Self-contained custom Grocery app UI served by the integration (`/api/grocery_learning/app`)
+- Auto-generated `Grocery` and `Grocery Admin` dashboards embed the custom app shell
 - One-tap Review & Learn category action buttons directly in dashboards
 - Includes default `pharmacy` category for hygiene/medicine items
 - Configurable categories and category order

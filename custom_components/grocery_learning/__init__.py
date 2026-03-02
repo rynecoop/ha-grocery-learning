@@ -9,6 +9,8 @@ from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
+from aiohttp import web
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import Context, HomeAssistant, ServiceCall
@@ -101,6 +103,169 @@ DUPLICATE_STATUS_TARGET_ENTITY = "sensor.grocery_duplicate_target"
 DUPLICATE_STATUS_BY_ENTITY = "sensor.grocery_duplicate_added_by"
 DUPLICATE_STATUS_WHEN_ENTITY = "sensor.grocery_duplicate_added_when"
 DUPLICATE_STATUS_SOURCE_ENTITY = "sensor.grocery_duplicate_source"
+
+
+class GroceryLearningAppView(HomeAssistantView):
+    """Serve a self-contained Grocery web app inside Home Assistant."""
+
+    url = "/api/grocery_learning/app"
+    name = "api:grocery_learning:app"
+    requires_auth = True
+
+    async def get(self, request):
+        html = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grocery App</title>
+  <style>
+    :root { --bg:#11161c; --panel:#1a212a; --muted:#8ea0b5; --text:#f4f7fb; --accent:#3ea6ff; --ok:#39c27f; --warn:#ffbf47; --danger:#ff6b6b; }
+    * { box-sizing:border-box; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    body { margin:0; background:linear-gradient(180deg,#0f141a,#0b1016); color:var(--text); }
+    .wrap { max-width:1100px; margin:0 auto; padding:16px; }
+    .header { background:var(--panel); border-radius:14px; padding:16px; margin-bottom:12px; border:1px solid #263241; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; }
+    .input { flex:1; min-width:220px; background:#0f141a; color:var(--text); border:1px solid #314154; border-radius:10px; padding:10px; }
+    .btn { background:#243447; border:1px solid #3a506a; color:#eaf2fb; border-radius:10px; padding:10px 12px; cursor:pointer; }
+    .btn.primary { background:#1f4f78; border-color:#3ea6ff; }
+    .btn.warn { background:#5a4416; border-color:#ffbf47; }
+    .btn.danger { background:#5f2424; border-color:#ff6b6b; }
+    .section { background:var(--panel); border:1px solid #263241; border-radius:14px; padding:12px; margin-bottom:12px; }
+    .title { font-size:20px; font-weight:700; margin:0 0 10px 0; }
+    .sub { color:var(--muted); font-size:13px; margin-top:2px; }
+    .item { padding:10px; border:1px solid #2a3848; border-radius:10px; margin-bottom:8px; background:#121922; }
+    .item-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .small { font-size:12px; color:var(--muted); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
+    .pill { display:inline-block; font-size:11px; padding:3px 8px; border-radius:999px; background:#203445; color:#b9dbff; margin-right:6px; }
+    select { background:#0f141a; color:var(--text); border:1px solid #314154; border-radius:8px; padding:6px; }
+    .empty { color:var(--muted); font-size:13px; padding:4px 0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div class="title">Local Grocery Assistant</div>
+      <div class="sub">Single-list app shell with categories, review queue, duplicates, and completed history.</div>
+      <div class="row" style="margin-top:10px;">
+        <input id="quickAdd" class="input" placeholder="Add item" />
+        <button id="addBtn" class="btn primary">Add</button>
+      </div>
+    </div>
+    <div id="attention"></div>
+    <div id="lists"></div>
+    <div class="section">
+      <div class="title">Completed</div>
+      <div id="completed"></div>
+    </div>
+  </div>
+  <script>
+    let state = null;
+    const byId = (id) => document.getElementById(id);
+    const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+    async function api(path, method='GET', body=null){
+      const res = await fetch(path, {method, headers: {'Content-Type':'application/json'}, body: body?JSON.stringify(body):null});
+      if(!res.ok){ throw new Error(await res.text()); }
+      return await res.json();
+    }
+    async function act(payload){ await api('/api/grocery_learning/action','POST',payload); await load(); }
+
+    function itemRow(item, categories){
+      const options = categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+      return `
+        <div class="item">
+          <div class="item-top">
+            <label><input type="checkbox" onchange="window.__g.complete('${esc(item.list_entity)}','${esc(item.item_ref)}',this.checked)" /> <strong>${esc(item.summary)}</strong></label>
+            <span class="pill">${esc(item.category_display)}</span>
+          </div>
+          <div class="small">${esc(item.description || '')}</div>
+          <div class="row" style="margin-top:8px;">
+            <select id="cat_${esc(item.item_ref)}">${options}</select>
+            <button class="btn" onclick="window.__g.move('${esc(item.list_entity)}','${esc(item.item_ref)}')">Move</button>
+          </div>
+        </div>`;
+    }
+
+    function render(){
+      if(!state) return;
+      const attention = [];
+      if(state.pending_duplicate?.pending){
+        attention.push(`<div class="section"><div class="title">Duplicate Needs Decision</div>
+          <div class="small">${esc(state.pending_duplicate.item)} is already in ${esc(state.pending_duplicate.target)}.</div>
+          <div class="row" style="margin-top:8px;">
+            <button class="btn warn" onclick="window.__g.confirmDup('add')">Add Anyway</button>
+            <button class="btn" onclick="window.__g.confirmDup('skip')">Skip</button>
+          </div></div>`);
+      }
+      if(state.pending_review?.pending){
+        const buttons = state.categories.map(c => `<button class="btn" onclick="window.__g.review('${esc(c)}')">${esc(c.replaceAll('_',' '))}</button>`).join('');
+        attention.push(`<div class="section"><div class="title">Review Needed</div>
+          <div class="small">Item: <strong>${esc(state.pending_review.item)}</strong> (from ${esc(state.pending_review.source_list)})</div>
+          <div class="row" style="margin-top:8px;">${buttons}<button class="btn" onclick="window.__g.review('other', false)">Keep Other</button></div></div>`);
+      }
+      byId('attention').innerHTML = attention.join('');
+
+      const groups = state.groups.map(g => {
+        const items = g.items.length ? g.items.map(i => itemRow(i, state.categories)).join('') : `<div class="empty">No items.</div>`;
+        return `<div class="section"><div class="title">${esc(g.title)}</div>${items}</div>`;
+      }).join('');
+      byId('lists').innerHTML = groups;
+
+      byId('completed').innerHTML = state.completed.length
+        ? state.completed.map(i => `<div class="item"><label><input type="checkbox" checked onchange="window.__g.undo('${esc(i.item_ref)}',this.checked)" /> <strong>${esc(i.summary)}</strong></label><div class="small">${esc(i.description || '')}</div></div>`).join('')
+        : '<div class="empty">No completed items.</div>';
+    }
+
+    async function load(){ state = await api('/api/grocery_learning/dashboard'); render(); }
+
+    window.__g = {
+      async add(){ const val = byId('quickAdd').value.trim(); if(!val) return; byId('quickAdd').value=''; await act({action:'add_item', item:val}); },
+      async complete(listEntity,itemRef,checked){ if(checked) await act({action:'set_status', list_entity:listEntity, item:itemRef, status:'completed'}); },
+      async undo(itemRef,checked){ if(!checked) await act({action:'set_status', list_entity:'todo.grocery_completed', item:itemRef, status:'needs_action'}); },
+      async move(fromList,itemRef){ const sel = byId('cat_'+itemRef); await act({action:'recategorize', from_list:fromList, item:itemRef, target_category:sel.value, learn:true}); },
+      async review(category, learn=true){ await act({action:'apply_review', category, learn}); },
+      async confirmDup(decision){ await act({action:'confirm_duplicate', decision}); }
+    };
+
+    byId('addBtn').addEventListener('click', () => window.__g.add());
+    byId('quickAdd').addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); window.__g.add(); }});
+    load().catch((err) => { byId('lists').innerHTML = `<div class="section"><div class="title">Error</div><div class="small">${esc(err.message)}</div></div>`; });
+  </script>
+</body>
+</html>"""
+        return web.Response(text=html, content_type="text/html")
+
+
+class GroceryLearningDashboardView(HomeAssistantView):
+    """Return dashboard payload for custom Grocery app."""
+
+    url = "/api/grocery_learning/dashboard"
+    name = "api:grocery_learning:dashboard"
+    requires_auth = True
+
+    async def get(self, request):
+        builder = self.hass.data.get(DOMAIN, {}).get("build_dashboard_payload")
+        if builder is None:
+            return self.json({"error": "not_ready"})
+        return self.json(await builder())
+
+
+class GroceryLearningActionView(HomeAssistantView):
+    """Handle custom app actions."""
+
+    url = "/api/grocery_learning/action"
+    name = "api:grocery_learning:action"
+    requires_auth = True
+
+    async def post(self, request):
+        handler = self.hass.data.get(DOMAIN, {}).get("handle_dashboard_action")
+        if handler is None:
+            return self.json({"ok": False, "error": "not_ready"})
+        payload = await request.json()
+        result = await handler(payload)
+        return self.json(result)
 
 
 def _normalize_term(value: str) -> str:
@@ -504,6 +669,177 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return None
         return items[0] if isinstance(items[0], dict) else None
 
+    async def _list_items(list_entity: str, status: str) -> list[dict[str, Any]]:
+        if not list_entity or hass.states.get(list_entity) is None:
+            return []
+        response = await hass.services.async_call(
+            "todo",
+            "get_items",
+            {"status": status},
+            target={"entity_id": list_entity},
+            blocking=True,
+            return_response=True,
+        )
+        resp = response.get(list_entity, response) if isinstance(response, dict) else {}
+        items = resp.get("items", []) if isinstance(resp, dict) else []
+        return [item for item in items if isinstance(item, dict)]
+
+    async def _resolve_item_ref(list_entity: str, item_ref: str) -> dict[str, Any] | None:
+        statuses = ["needs_action", "completed"]
+        normalized_ref = _normalize_term(item_ref)
+        for status in statuses:
+            items = await _list_items(list_entity, status)
+            for item in items:
+                uid = str(item.get("uid", "")).strip()
+                summary = str(item.get("summary", "")).strip()
+                if uid and uid == item_ref:
+                    return item
+                if summary and (summary == item_ref or _normalize_term(summary) == normalized_ref):
+                    return item
+        return None
+
+    async def _build_dashboard_payload() -> dict[str, Any]:
+        categories = _active_categories()
+        grouped: list[dict[str, Any]] = []
+        for category in categories + ["other"]:
+            entity_id = _target_list_for_category(category)
+            raw_items = await _list_items(entity_id, "needs_action")
+            grouped.append(
+                {
+                    "category": category,
+                    "title": _display_name_for_category(category),
+                    "items": [
+                        {
+                            "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
+                            "summary": str(item.get("summary", "")).strip(),
+                            "description": str(item.get("description", "")).strip(),
+                            "list_entity": entity_id,
+                            "category": category,
+                            "category_display": _display_name_for_category(category),
+                        }
+                        for item in raw_items
+                    ],
+                }
+            )
+
+        completed_items = await _list_items(COMPLETED_LIST_ENTITY, "completed")
+        pending_review = dict(hass.data[DOMAIN].get("pending_review", {}))
+        pending_duplicate = dict(hass.data[DOMAIN].get("pending_duplicate", {}))
+
+        return {
+            "categories": categories + ["other"],
+            "groups": grouped,
+            "completed": [
+                {
+                    "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
+                    "summary": str(item.get("summary", "")).strip(),
+                    "description": str(item.get("description", "")).strip(),
+                    "list_entity": COMPLETED_LIST_ENTITY,
+                }
+                for item in completed_items
+            ],
+            "pending_review": {
+                "pending": bool(pending_review.get("item")),
+                "item": str(pending_review.get("item", "")),
+                "source_list": str(pending_review.get("source_list", "")),
+            },
+            "pending_duplicate": {
+                "pending": bool(pending_duplicate.get("item")),
+                "item": str(pending_duplicate.get("item", "")),
+                "target": str(pending_duplicate.get("target_list", "")),
+            },
+        }
+
+    async def _handle_dashboard_action(payload: dict[str, Any]) -> dict[str, Any]:
+        action = str(payload.get("action", "")).strip()
+        if action == "add_item":
+            item = str(payload.get("item", "")).strip()
+            if item:
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_ROUTE_ITEM,
+                    {"item": item, "review_on_other": True, "source": "typed"},
+                    blocking=True,
+                )
+            return {"ok": True}
+
+        if action == "set_status":
+            list_entity = str(payload.get("list_entity", "")).strip()
+            item_ref = str(payload.get("item", "")).strip()
+            status = str(payload.get("status", "")).strip().lower()
+            if list_entity and item_ref and status in {"completed", "needs_action"}:
+                await hass.services.async_call(
+                    "todo",
+                    "update_item",
+                    {"item": item_ref, "status": status},
+                    target={"entity_id": list_entity},
+                    blocking=True,
+                )
+            return {"ok": True}
+
+        if action == "recategorize":
+            from_list = str(payload.get("from_list", "")).strip()
+            item_ref = str(payload.get("item", "")).strip()
+            target_category = _normalize_category(str(payload.get("target_category", "")).strip())
+            learn = bool(payload.get("learn", True))
+            categories = _active_categories()
+            if target_category not in categories and target_category != "other":
+                target_category = "other"
+            target_list = _target_list_for_category(target_category)
+            found = await _resolve_item_ref(from_list, item_ref)
+            if found is not None:
+                summary = str(found.get("summary", "")).strip()
+                description = str(found.get("description", "")).strip()
+                remove_id = str(found.get("uid", "")).strip() or summary
+                if summary:
+                    await hass.services.async_call(
+                        "todo",
+                        "add_item",
+                        {"item": summary, "description": description},
+                        target={"entity_id": target_list},
+                        blocking=True,
+                    )
+                    if remove_id:
+                        await hass.services.async_call(
+                            "todo",
+                            "remove_item",
+                            {"item": remove_id},
+                            target={"entity_id": from_list},
+                            blocking=True,
+                        )
+                    if learn and target_category in categories:
+                        norm = _normalize_term(summary)
+                        terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
+                        existing = set(terms_obj.data.get(target_category, []))
+                        if norm and norm not in existing:
+                            terms_obj.data.setdefault(target_category, []).append(norm)
+                            await _save()
+            await _clear_pending_review()
+            return {"ok": True}
+
+        if action == "apply_review":
+            category = str(payload.get("category", "")).strip()
+            learn = bool(payload.get("learn", True))
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_APPLY_REVIEW,
+                {"category": category, "learn": learn},
+                blocking=True,
+            )
+            return {"ok": True}
+
+        if action == "confirm_duplicate":
+            decision = str(payload.get("decision", "skip")).strip().lower()
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_CONFIRM_DUPLICATE,
+                {"decision": decision if decision in {"add", "skip"} else "skip"},
+                blocking=True,
+            )
+            return {"ok": True}
+
+        return {"ok": False, "error": "unknown_action"}
+
     async def _clear_pending_duplicate() -> None:
         hass.data[DOMAIN]["pending_duplicate"] = {}
         await _set_helper_if_exists(DUPLICATE_PENDING_ITEM_HELPER, "")
@@ -845,176 +1181,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         }
 
     def _build_main_dashboard_config(entry: ConfigEntry | None) -> dict[str, Any]:
-        categories = _active_categories()
-        inbox_entity = str(_entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox"))
-        lane_entities = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [_target_list_for_category("other"), COMPLETED_LIST_ENTITY]
-        lane_tiles = [
-            {
-                "type": "tile",
-                "entity": entity_id,
-                "vertical": True,
-                "state_content": ["state"],
-                "icon_tap_action": {"action": "more-info"},
-            }
-            for entity_id in lane_entities
-            if hass.states.get(entity_id) is not None
-        ]
-
-        cards: list[dict[str, Any]] = [
-            {
-                "type": "markdown",
-                "title": "Local Grocery Assistant",
-                "content": (
-                    "Add items fast, keep aisle order, and route everything automatically.\n\n"
-                    "Use **Quick Add** below, then shop directly from category lists."
-                ),
-            },
-            {
-                "type": "todo-list",
-                "display_order": "none",
-                "item_tap_action": "toggle",
-                "entity": inbox_entity,
-                "hide_completed": True,
-                "hide_section_headers": True,
-                "title": "Quick Add",
-                "hide_create": False,
-            },
-        ]
-
-        if lane_tiles:
-            cards.append(
-                {
-                    "type": "grid",
-                    "title": "List Status",
-                    "columns": 3,
-                    "square": False,
-                    "cards": lane_tiles,
-                }
-            )
-            cards.append(
-                {
-                    "type": "markdown",
-                    "content": "## Shopping Lanes",
-                }
-            )
-
-        for category in categories:
-            cards.append(_empty_card_for(category))
-            cards.append(_todo_card_for(category))
-
-        cards.append(_empty_card_for("other"))
-        cards.append(_todo_card_for("other"))
-        cards.append(
-            {
-                "type": "conditional",
-                "conditions": [{"entity": DUPLICATE_STATUS_PENDING_ENTITY, "state": "on"}],
-                "card": {
-                    "type": "vertical-stack",
-                    "cards": [
-                        {
-                            "type": "entities",
-                            "title": "Duplicate Found",
-                            "show_header_toggle": False,
-                            "entities": [
-                                {"entity": DUPLICATE_STATUS_ITEM_ENTITY, "name": "Item"},
-                                {"entity": DUPLICATE_STATUS_TARGET_ENTITY, "name": "List"},
-                                {"entity": DUPLICATE_STATUS_BY_ENTITY, "name": "Added by"},
-                                {"entity": DUPLICATE_STATUS_WHEN_ENTITY, "name": "Added"},
-                                {"entity": DUPLICATE_STATUS_SOURCE_ENTITY, "name": "Source"},
-                            ],
-                        },
-                        {
-                            "type": "grid",
-                            "columns": 2,
-                            "square": False,
-                            "cards": [
-                                {
-                                    "type": "button",
-                                    "name": "Add Anyway",
-                                    "icon": "mdi:cart-plus",
-                                    "tap_action": {
-                                        "action": "call-service",
-                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                        "service_data": {"decision": "add"},
-                                    },
-                                },
-                                {
-                                    "type": "button",
-                                    "name": "Skip",
-                                    "icon": "mdi:close-circle-outline",
-                                    "tap_action": {
-                                        "action": "call-service",
-                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                        "service_data": {"decision": "skip"},
-                                    },
-                                },
-                            ],
-                        },
-                    ],
-                },
-            }
-        )
-
-        review_action_cards = [
-            {
-                "type": "button",
-                "name": _display_name_for_category(category),
-                "icon": "mdi:shape-outline",
-                "tap_action": {
-                    "action": "call-service",
-                    "service": f"{DOMAIN}.{SERVICE_APPLY_REVIEW}",
-                    "service_data": {"category": category, "learn": True},
-                },
-            }
-            for category in categories
-        ]
-        review_action_cards.append(
-            {
-                "type": "button",
-                "name": "Keep Other",
-                "icon": "mdi:archive-arrow-down-outline",
-                "tap_action": {
-                    "action": "call-service",
-                    "service": f"{DOMAIN}.{SERVICE_APPLY_REVIEW}",
-                    "service_data": {"category": "other", "learn": False},
-                },
-            }
-        )
-        cards.append(
-            {
-                "type": "entities",
-                "title": "Review Pending Item",
-                "show_header_toggle": False,
-                "entities": [
-                    {"entity": REVIEW_STATUS_PENDING_ENTITY, "name": "Review Pending"},
-                    {"entity": REVIEW_STATUS_ITEM_ENTITY, "name": "Item"},
-                    {"entity": REVIEW_STATUS_SOURCE_ENTITY, "name": "Current List"},
-                ],
-            }
-        )
-        cards.append(
-            {
-                "type": "grid",
-                "title": "Review & Learn Actions",
-                "columns": 3,
-                "square": False,
-                "cards": review_action_cards,
-            }
-        )
-        if hass.states.get(COMPLETED_LIST_ENTITY) is not None:
-            cards.append({"type": "markdown", "content": "## Completed (Tap To Undo)"})
-            cards.append(
-                {
-                    "type": "todo-list",
-                    "title": "Completed Items",
-                    "entity": COMPLETED_LIST_ENTITY,
-                    "show_completed": True,
-                    "hide_completed": False,
-                    "hide_create": True,
-                    "hide_section_headers": True,
-                }
-            )
-
         return {
             "config": {
                 "title": "Grocery",
@@ -1024,202 +1190,20 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "path": "grocery",
                         "icon": "mdi:cart-variant",
                         "type": "masonry",
-                        "cards": cards,
+                        "cards": [
+                            {
+                                "type": "iframe",
+                                "url": "/api/grocery_learning/app",
+                                "aspect_ratio": "56%",
+                                "title": "Grocery App",
+                            }
+                        ],
                     }
                 ],
             }
         }
 
     def _build_admin_dashboard_config() -> dict[str, Any]:
-        categories = _active_categories()
-        learned_entities = [
-            {"entity": _helper_for_category(category), "name": f"{_display_name_for_category(category)} Learned Terms"}
-            for category in categories
-            if hass.states.get(_helper_for_category(category)) is not None
-        ]
-        cards: list[dict[str, Any]] = [
-            {
-                "type": "markdown",
-                "title": "Operations Center",
-                "content": (
-                    "This panel controls routing behavior and keeps the Grocery app healthy.\n\n"
-                    "Everything here is local and managed by the integration."
-                ),
-            }
-        ]
-        order_text = " -> ".join([_display_name_for_category(c) for c in categories] + ["Other"])
-        cards.append(
-            {
-                "type": "markdown",
-                "title": "Admin Overview",
-                "content": (
-                    "Local Grocery Assistant is running in integration-managed mode.\n\n"
-                    f"**Current category order:** {order_text}\n\n"
-                    "To change routing order or categories, open the integration options in "
-                    "`Settings -> Devices & Services`."
-                ),
-            }
-        )
-        cards.append(
-            {
-                "type": "button",
-                "name": "Sync Learned Terms",
-                "icon": "mdi:sync",
-                "tap_action": {
-                    "action": "call-service",
-                    "service": f"{DOMAIN}.{SERVICE_SYNC_HELPERS}",
-                    "service_data": {},
-                },
-            }
-        )
-
-        inbox_entity = str(_entry_value(hass.data[DOMAIN].get("entry"), CONF_INBOX_ENTITY, "todo.grocery_inbox"))
-        list_entities = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [_target_list_for_category("other"), COMPLETED_LIST_ENTITY]
-        tile_cards = [
-            {
-                "type": "tile",
-                "entity": ent,
-                "vertical": True,
-                "state_content": ["state"],
-            }
-            for ent in list_entities
-            if hass.states.get(ent) is not None
-        ]
-        if tile_cards:
-            cards.append(
-                {
-                    "type": "grid",
-                    "title": "Current Queue Depth",
-                    "columns": 3,
-                    "square": False,
-                    "cards": tile_cards,
-                }
-            )
-        cards.append(
-            {
-                "type": "entities",
-                "title": "List Status",
-                "show_header_toggle": False,
-                "entities": [{"entity": ent} for ent in list_entities if hass.states.get(ent) is not None],
-            }
-        )
-
-        cards.append(
-            {
-                "type": "conditional",
-                "conditions": [{"entity": DUPLICATE_STATUS_PENDING_ENTITY, "state": "on"}],
-                "card": {
-                    "type": "vertical-stack",
-                    "cards": [
-                        {
-                            "type": "entities",
-                            "title": "Duplicate Pending",
-                            "show_header_toggle": False,
-                            "entities": [
-                                {"entity": DUPLICATE_STATUS_ITEM_ENTITY, "name": "Item"},
-                                {"entity": DUPLICATE_STATUS_TARGET_ENTITY, "name": "Target List"},
-                                {"entity": DUPLICATE_STATUS_BY_ENTITY, "name": "Added by"},
-                                {"entity": DUPLICATE_STATUS_WHEN_ENTITY, "name": "Added"},
-                                {"entity": DUPLICATE_STATUS_SOURCE_ENTITY, "name": "Source"},
-                            ],
-                        },
-                        {
-                            "type": "grid",
-                            "columns": 2,
-                            "square": False,
-                            "cards": [
-                                {
-                                    "type": "button",
-                                    "name": "Add Anyway",
-                                    "icon": "mdi:cart-plus",
-                                    "tap_action": {
-                                        "action": "call-service",
-                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                        "service_data": {"decision": "add"},
-                                    },
-                                },
-                                {
-                                    "type": "button",
-                                    "name": "Skip",
-                                    "icon": "mdi:close-circle-outline",
-                                    "tap_action": {
-                                        "action": "call-service",
-                                        "service": f"{DOMAIN}.{SERVICE_CONFIRM_DUPLICATE}",
-                                        "service_data": {"decision": "skip"},
-                                    },
-                                },
-                            ],
-                        },
-                    ],
-                },
-            }
-        )
-
-        admin_review_buttons = [
-            {
-                "type": "button",
-                "name": _display_name_for_category(category),
-                "icon": "mdi:shape",
-                "tap_action": {
-                    "action": "call-service",
-                    "service": f"{DOMAIN}.{SERVICE_APPLY_REVIEW}",
-                    "service_data": {"category": category, "learn": True},
-                },
-            }
-            for category in categories
-        ]
-        admin_review_buttons.append(
-            {
-                "type": "button",
-                "name": "Keep Other",
-                "icon": "mdi:archive-arrow-down-outline",
-                "tap_action": {
-                    "action": "call-service",
-                    "service": f"{DOMAIN}.{SERVICE_APPLY_REVIEW}",
-                    "service_data": {"category": "other", "learn": False},
-                },
-            }
-        )
-        cards.append(
-            {
-                "type": "entities",
-                "title": "Review Status",
-                "show_header_toggle": False,
-                "entities": [
-                    {"entity": REVIEW_STATUS_PENDING_ENTITY, "name": "Review Pending"},
-                    {"entity": REVIEW_STATUS_ITEM_ENTITY, "name": "Pending Item"},
-                    {"entity": REVIEW_STATUS_SOURCE_ENTITY, "name": "Source List"},
-                ],
-            }
-        )
-        cards.append(
-            {
-                "type": "grid",
-                "title": "Review & Learn Actions",
-                "columns": 4,
-                "square": False,
-                "cards": admin_review_buttons,
-            }
-        )
-
-        if learned_entities:
-            cards.append(
-                {
-                    "type": "entities",
-                    "title": "Learned Terms (Admin)",
-                    "show_header_toggle": False,
-                    "entities": learned_entities,
-                }
-            )
-
-        if not cards:
-            cards.append(
-                {
-                    "type": "markdown",
-                    "content": "No admin entities available yet. Reload integration after setup.",
-                }
-            )
-
         return {
             "config": {
                 "title": "Grocery Admin",
@@ -1229,7 +1213,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "path": "grocery-admin",
                         "icon": "mdi:shield-crown",
                         "type": "masonry",
-                        "cards": cards,
+                        "cards": [
+                            {
+                                "type": "iframe",
+                                "url": "/api/grocery_learning/app?mode=admin",
+                                "aspect_ratio": "56%",
+                                "title": "Grocery Admin App",
+                            }
+                        ],
                     }
                 ],
             }
@@ -1486,6 +1477,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     _update_review_status_entities(pending=False)
     _update_duplicate_status_entities(pending=False)
 
+    if not data.get("views_registered"):
+        hass.http.register_view(GroceryLearningAppView())
+        hass.http.register_view(GroceryLearningDashboardView())
+        hass.http.register_view(GroceryLearningActionView())
+        data["views_registered"] = True
+
+    data["build_dashboard_payload"] = _build_dashboard_payload
+    data["handle_dashboard_action"] = _handle_dashboard_action
     data["ensure_required_lists"] = _ensure_required_lists
     data["ensure_required_helpers"] = _ensure_required_helpers
     data["ensure_dashboards"] = _ensure_dashboards
