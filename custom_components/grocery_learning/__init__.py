@@ -147,6 +147,7 @@ class GroceryLearningAppView(HomeAssistantView):
     .field { display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1; }
     .label { font-size:12px; color:var(--muted); }
     .checkbox { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
+    .config-panel { margin-top:12px; }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
     .pill { display:inline-block; font-size:11px; padding:3px 8px; border-radius:999px; background:#203445; color:#b9dbff; margin-right:6px; }
     select { background:#0f141a; color:var(--text); border:1px solid #314154; border-radius:8px; padding:6px; }
@@ -161,10 +162,11 @@ class GroceryLearningAppView(HomeAssistantView):
       <div class="row" style="margin-top:10px;">
         <input id="quickAdd" class="input" placeholder="Add item" />
         <button id="addBtn" class="btn primary">Add</button>
+        <button id="configureBtn" class="btn">Configure</button>
       </div>
+      <div id="configPanel" class="config-panel"></div>
     </div>
     <div id="attention"></div>
-    <div id="setup"></div>
     <div id="lists"></div>
     <div class="section">
       <div class="section-head">
@@ -176,6 +178,7 @@ class GroceryLearningAppView(HomeAssistantView):
   </div>
   <script>
     let state = null;
+    let configOpen = false;
     const byId = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -242,6 +245,9 @@ class GroceryLearningAppView(HomeAssistantView):
       if(state.error){
         attention.push(`<div class="section"><div class="title">App Error</div><div class="small">${esc(state.error)}</div></div>`);
       }
+      if(!state.setup?.completed){
+        attention.push(`<div class="section"><div class="title">Setup Needed</div><div class="small">Finish initial configuration for best results.</div><div class="row" style="margin-top:8px;"><button class="btn warn" onclick="window.__g.openConfig()">Open Setup</button></div></div>`);
+      }
       if(state.pending_duplicate?.pending){
         attention.push(`<div class="section"><div class="title">Duplicate Needs Decision</div>
           <div class="small">${esc(state.pending_duplicate.item)} is already in ${esc(state.pending_duplicate.target)}.</div>
@@ -257,35 +263,38 @@ class GroceryLearningAppView(HomeAssistantView):
           <div class="row" style="margin-top:8px;">${buttons}<button class="btn" onclick="window.__g.review('other', false)">Keep Other</button></div></div>`);
       }
       byId('attention').innerHTML = attention.join('');
-
-      const setupCard = `
-        <div class="section">
-          <div class="title">${state.setup?.completed ? 'Settings' : 'Setup Wizard'}</div>
-          <div class="small">Configure categories/order and self-heal required lists/helpers for plug-and-play installs.</div>
-          <div class="row" style="margin-top:10px;">
-            <div class="field">
-              <div class="label">Categories (order controls aisle flow)</div>
-              <input id="settingsCategories" class="input" value="${esc((state.settings?.categories || []).join(', '))}" />
+      const configPanel = byId('configPanel');
+      if(configOpen || !state.setup?.completed){
+        configPanel.innerHTML = `
+          <div class="section">
+            <div class="title">${state.setup?.completed ? 'Configure Grocery List' : 'Setup Wizard'}</div>
+            <div class="small">Manage categories/order and repair required entities.</div>
+            <div class="row" style="margin-top:10px;">
+              <div class="field">
+                <div class="label">Categories (order controls aisle flow)</div>
+                <input id="settingsCategories" class="input" value="${esc((state.settings?.categories || []).join(', '))}" />
+              </div>
+              <div class="field">
+                <div class="label">Inbox Entity</div>
+                <input id="settingsInbox" class="input" value="${esc(state.settings?.inbox_entity || 'todo.grocery_inbox')}" />
+              </div>
             </div>
-            <div class="field">
-              <div class="label">Inbox Entity</div>
-              <input id="settingsInbox" class="input" value="${esc(state.settings?.inbox_entity || 'todo.grocery_inbox')}" />
+            <div class="row" style="margin-top:10px;">
+              <label class="checkbox"><input id="settingsAutoRoute" type="checkbox" ${state.settings?.auto_route_inbox ? 'checked' : ''} /> Auto route inbox/voice intake</label>
+              <label class="checkbox"><input id="settingsAutoProvision" type="checkbox" ${state.settings?.auto_provision ? 'checked' : ''} /> Auto provision missing lists</label>
             </div>
-          </div>
-          <div class="row" style="margin-top:10px;">
-            <label class="checkbox"><input id="settingsAutoRoute" type="checkbox" ${state.settings?.auto_route_inbox ? 'checked' : ''} /> Auto route inbox/voice intake</label>
-            <label class="checkbox"><input id="settingsAutoProvision" type="checkbox" ${state.settings?.auto_provision ? 'checked' : ''} /> Auto provision missing lists</label>
-          </div>
-          <div class="row" style="margin-top:10px;">
-            <button class="btn primary" onclick="window.__g.saveSettings(false)">Save Settings</button>
-            <button class="btn" onclick="window.__g.repair()">Repair/Provision</button>
-            ${state.setup?.completed ? '' : '<button class="btn warn" onclick="window.__g.saveSettings(true)">Complete Setup</button>'}
-          </div>
-          <div class="small" style="margin-top:8px;">
-            Health: ${state.system?.missing_lists?.length ? ('Missing lists: ' + esc(state.system.missing_lists.join(', '))) : 'All required lists detected'}
-          </div>
-        </div>`;
-      byId('setup').innerHTML = setupCard;
+            <div class="row" style="margin-top:10px;">
+              <button class="btn primary" onclick="window.__g.saveSettings(false)">Save</button>
+              <button class="btn" onclick="window.__g.repair()">Repair/Provision</button>
+              ${state.setup?.completed ? '<button class="btn" onclick="window.__g.closeConfig()">Done</button>' : '<button class="btn warn" onclick="window.__g.saveSettings(true)">Complete Setup</button>'}
+            </div>
+            <div class="small" style="margin-top:8px;">
+              Health: ${state.system?.missing_lists?.length ? ('Missing lists: ' + esc(state.system.missing_lists.join(', '))) : 'All required lists detected'}
+            </div>
+          </div>`;
+      } else {
+        configPanel.innerHTML = '';
+      }
 
       const groups = state.groups.map(g => {
         const items = g.items.length ? g.items.map(i => itemRow(i, state.categories)).join('') : `<div class="empty">No items.</div>`;
@@ -310,6 +319,8 @@ class GroceryLearningAppView(HomeAssistantView):
       async confirmDup(decision){ await act({action:'confirm_duplicate', decision}); },
       async clearCompleted(){ await act({action:'clear_completed'}); },
       async repair(){ await act({action:'repair_system'}); },
+      openConfig(){ configOpen = true; render(); },
+      closeConfig(){ configOpen = false; render(); },
       async saveSettings(completeSetup){
         const categories = (byId('settingsCategories')?.value || '').trim();
         const inboxEntity = (byId('settingsInbox')?.value || '').trim();
@@ -323,10 +334,12 @@ class GroceryLearningAppView(HomeAssistantView):
           auto_provision: autoProvision,
           complete_setup: !!completeSetup
         });
+        if(completeSetup){ configOpen = false; }
       }
     };
 
     byId('addBtn').addEventListener('click', () => window.__g.add());
+    byId('configureBtn').addEventListener('click', () => window.__g.openConfig());
     byId('clearCompletedBtn').addEventListener('click', () => window.__g.clearCompleted());
     byId('quickAdd').addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); window.__g.add(); }});
     load().catch((err) => { byId('lists').innerHTML = `<div class="section"><div class="title">Error</div><div class="small">${esc(err.message)}</div></div>`; });
@@ -425,6 +438,9 @@ class GroceryLearningActionView(HomeAssistantView):
             return self.json({"ok": False, "error": "not_ready"})
         try:
             payload = await request.json()
+            request_user = request.get("hass_user")
+            if request_user is not None:
+                payload["_request_user_id"] = str(getattr(request_user, "id", "") or "").strip()
             result = await handler(payload)
             return self.json(result)
         except Exception as err:  # pragma: no cover
@@ -962,11 +978,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if action == "add_item":
             item = str(payload.get("item", "")).strip()
             if item:
+                request_user_id = str(payload.get("_request_user_id", "")).strip()
+                request_context = Context(user_id=request_user_id) if request_user_id else None
                 await hass.services.async_call(
                     DOMAIN,
                     SERVICE_ROUTE_ITEM,
                     {"item": item, "review_on_other": True, "source": "typed"},
                     blocking=True,
+                    context=request_context,
                 )
             return {"ok": True}
 

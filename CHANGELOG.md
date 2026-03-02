@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+- Simplified main list UX by moving setup/settings behind a dedicated `Configure` button instead of always rendering wizard controls in the active shopping view.
+- Added first-run `Setup Needed` notice with quick open action, while keeping day-to-day list workflow clean.
+- Fixed quick-add user attribution by forwarding the authenticated Home Assistant user ID from the app API request context into routing service calls.
+
 ## 0.5.0
 - Added an in-app Setup Wizard / Settings panel directly in the Grocery app.
 - Added in-app reconfiguration for categories and category order (order now driven by the categories field in wizard/settings).
