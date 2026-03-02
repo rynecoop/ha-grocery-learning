@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+- Added an in-app Setup Wizard / Settings panel directly in the Grocery app.
+- Added in-app reconfiguration for categories and category order (order now driven by the categories field in wizard/settings).
+- Added in-app inbox entity, auto-route, and auto-provision controls.
+- Added one-tap `Repair/Provision` action to self-heal required Grocery lists/helpers without manual YAML/helper setup.
+- Added built-in system health display (missing required lists + runtime readiness) in the app.
+- Preserved custom wizard-complete state across native HA options updates.
+
 ## 0.4.9
 - Expanded add-item intake routing to support voice-assistant adds from common list aliases (for example `shopping list` / `grocery list`), not just the configured inbox entity.
 - Intake routing now removes items from the source alias list after routing so items appear in the Grocery app lists instead of being stranded in generic todo lists.

@@ -104,6 +104,7 @@ DUPLICATE_STATUS_TARGET_ENTITY = "sensor.grocery_duplicate_target"
 DUPLICATE_STATUS_BY_ENTITY = "sensor.grocery_duplicate_added_by"
 DUPLICATE_STATUS_WHEN_ENTITY = "sensor.grocery_duplicate_added_when"
 DUPLICATE_STATUS_SOURCE_ENTITY = "sensor.grocery_duplicate_source"
+CONF_WIZARD_COMPLETED = "wizard_completed"
 
 
 class GroceryLearningAppView(HomeAssistantView):
@@ -143,6 +144,9 @@ class GroceryLearningAppView(HomeAssistantView):
     .editor { display:none; }
     .editor.open { display:flex; }
     .small { font-size:12px; color:var(--muted); }
+    .field { display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1; }
+    .label { font-size:12px; color:var(--muted); }
+    .checkbox { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
     .pill { display:inline-block; font-size:11px; padding:3px 8px; border-radius:999px; background:#203445; color:#b9dbff; margin-right:6px; }
     select { background:#0f141a; color:var(--text); border:1px solid #314154; border-radius:8px; padding:6px; }
@@ -160,6 +164,7 @@ class GroceryLearningAppView(HomeAssistantView):
       </div>
     </div>
     <div id="attention"></div>
+    <div id="setup"></div>
     <div id="lists"></div>
     <div class="section">
       <div class="section-head">
@@ -253,6 +258,35 @@ class GroceryLearningAppView(HomeAssistantView):
       }
       byId('attention').innerHTML = attention.join('');
 
+      const setupCard = `
+        <div class="section">
+          <div class="title">${state.setup?.completed ? 'Settings' : 'Setup Wizard'}</div>
+          <div class="small">Configure categories/order and self-heal required lists/helpers for plug-and-play installs.</div>
+          <div class="row" style="margin-top:10px;">
+            <div class="field">
+              <div class="label">Categories (order controls aisle flow)</div>
+              <input id="settingsCategories" class="input" value="${esc((state.settings?.categories || []).join(', '))}" />
+            </div>
+            <div class="field">
+              <div class="label">Inbox Entity</div>
+              <input id="settingsInbox" class="input" value="${esc(state.settings?.inbox_entity || 'todo.grocery_inbox')}" />
+            </div>
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <label class="checkbox"><input id="settingsAutoRoute" type="checkbox" ${state.settings?.auto_route_inbox ? 'checked' : ''} /> Auto route inbox/voice intake</label>
+            <label class="checkbox"><input id="settingsAutoProvision" type="checkbox" ${state.settings?.auto_provision ? 'checked' : ''} /> Auto provision missing lists</label>
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <button class="btn primary" onclick="window.__g.saveSettings(false)">Save Settings</button>
+            <button class="btn" onclick="window.__g.repair()">Repair/Provision</button>
+            ${state.setup?.completed ? '' : '<button class="btn warn" onclick="window.__g.saveSettings(true)">Complete Setup</button>'}
+          </div>
+          <div class="small" style="margin-top:8px;">
+            Health: ${state.system?.missing_lists?.length ? ('Missing lists: ' + esc(state.system.missing_lists.join(', '))) : 'All required lists detected'}
+          </div>
+        </div>`;
+      byId('setup').innerHTML = setupCard;
+
       const groups = state.groups.map(g => {
         const items = g.items.length ? g.items.map(i => itemRow(i, state.categories)).join('') : `<div class="empty">No items.</div>`;
         return `<div class="section"><div class="title">${esc(g.title)}</div>${items}</div>`;
@@ -274,7 +308,22 @@ class GroceryLearningAppView(HomeAssistantView):
       async move(fromList,itemRef,targetCategory){ if(!targetCategory) return; await act({action:'recategorize', from_list:fromList, item:itemRef, target_category:targetCategory, learn:true}); },
       async review(category, learn=true){ await act({action:'apply_review', category, learn}); },
       async confirmDup(decision){ await act({action:'confirm_duplicate', decision}); },
-      async clearCompleted(){ await act({action:'clear_completed'}); }
+      async clearCompleted(){ await act({action:'clear_completed'}); },
+      async repair(){ await act({action:'repair_system'}); },
+      async saveSettings(completeSetup){
+        const categories = (byId('settingsCategories')?.value || '').trim();
+        const inboxEntity = (byId('settingsInbox')?.value || '').trim();
+        const autoRoute = !!byId('settingsAutoRoute')?.checked;
+        const autoProvision = !!byId('settingsAutoProvision')?.checked;
+        await act({
+          action:'save_settings',
+          categories,
+          inbox_entity: inboxEntity,
+          auto_route_inbox: autoRoute,
+          auto_provision: autoProvision,
+          complete_setup: !!completeSetup
+        });
+      }
     };
 
     byId('addBtn').addEventListener('click', () => window.__g.add());
@@ -308,6 +357,14 @@ class GroceryLearningDashboardView(HomeAssistantView):
             "completed": [],
             "pending_review": {"pending": False, "item": "", "source_list": ""},
             "pending_duplicate": {"pending": False, "item": "", "target": ""},
+            "settings": {
+                "categories": [],
+                "inbox_entity": "todo.grocery_inbox",
+                "auto_route_inbox": True,
+                "auto_provision": True,
+            },
+            "system": {"missing_lists": [], "runtime_ready": False},
+            "setup": {"completed": False},
             "error": error,
         }
 
@@ -335,6 +392,12 @@ class GroceryLearningDashboardView(HomeAssistantView):
             payload.setdefault("completed", [])
             payload.setdefault("pending_review", {"pending": False, "item": "", "source_list": ""})
             payload.setdefault("pending_duplicate", {"pending": False, "item": "", "target": ""})
+            payload.setdefault(
+                "settings",
+                {"categories": [], "inbox_entity": "todo.grocery_inbox", "auto_route_inbox": True, "auto_provision": True},
+            )
+            payload.setdefault("system", {"missing_lists": [], "runtime_ready": False})
+            payload.setdefault("setup", {"completed": False})
             payload.setdefault("error", "")
             return web.json_response(payload)
         except Exception as err:  # pragma: no cover
@@ -454,6 +517,10 @@ def _relative_time(iso_value: str) -> str:
 
 def _categories_from_entry(entry: ConfigEntry | None) -> list[str]:
     raw = _entry_value(entry, CONF_CATEGORIES, list(DEFAULT_CATEGORIES))
+    return _categories_from_raw(raw)
+
+
+def _categories_from_raw(raw: Any) -> list[str]:
     if isinstance(raw, str):
         values = [_normalize_category(v) for v in raw.replace("\n", ",").split(",")]
     elif isinstance(raw, list):
@@ -820,6 +887,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
     async def _build_dashboard_payload() -> dict[str, Any]:
         categories = _active_categories()
+        active_entry = hass.data.get(DOMAIN, {}).get("entry")
+        inbox_entity = str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip()
+        required_lists = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [
+            _target_list_for_category("other"),
+            COMPLETED_LIST_ENTITY,
+        ]
+        missing_lists = [entity_id for entity_id in required_lists if hass.states.get(entity_id) is None]
         grouped: list[dict[str, Any]] = []
         for category in categories + ["other"]:
             entity_id = _target_list_for_category(category)
@@ -867,6 +941,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "pending": bool(pending_duplicate.get("item")),
                 "item": str(pending_duplicate.get("item", "")),
                 "target": str(pending_duplicate.get("target_list", "")),
+            },
+            "settings": {
+                "categories": categories,
+                "inbox_entity": inbox_entity,
+                "auto_route_inbox": bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True)),
+                "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
+            },
+            "system": {
+                "missing_lists": missing_lists,
+                "runtime_ready": bool(hass.data.get(DOMAIN, {}).get("runtime_ready")),
+            },
+            "setup": {
+                "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
             },
         }
 
@@ -955,6 +1042,59 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     target={"entity_id": COMPLETED_LIST_ENTITY},
                     blocking=True,
                 )
+            return {"ok": True}
+
+        if action == "repair_system":
+            categories = _active_categories()
+            active_entry = hass.data.get(DOMAIN, {}).get("entry")
+            inbox_entity = str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip()
+            await _ensure_local_todo_list(inbox_entity, "Grocery Inbox")
+            for category in categories:
+                await _ensure_local_todo_list(
+                    _target_list_for_category(category),
+                    f"Grocery {_display_name_for_category(category)}",
+                )
+            await _ensure_local_todo_list(_target_list_for_category("other"), "Grocery Other")
+            await _ensure_local_todo_list(COMPLETED_LIST_ENTITY, "Grocery Completed")
+            await _ensure_required_helpers()
+            if active_entry is not None and bool(_entry_value(active_entry, CONF_AUTO_DASHBOARD, True)):
+                await _ensure_dashboards(active_entry)
+            return {"ok": True}
+
+        if action == "save_settings":
+            active_entry: ConfigEntry | None = hass.data.get(DOMAIN, {}).get("entry")
+            if active_entry is None:
+                return {"ok": False, "error": "entry_not_loaded"}
+
+            categories = _categories_from_raw(payload.get("categories", _active_categories()))
+            inbox_entity = str(payload.get("inbox_entity", "todo.grocery_inbox")).strip() or "todo.grocery_inbox"
+            if "." not in inbox_entity:
+                inbox_entity = f"todo.{_normalize_category(inbox_entity)}"
+
+            auto_route = bool(payload.get("auto_route_inbox", True))
+            auto_provision = bool(payload.get("auto_provision", True))
+            complete_setup = bool(payload.get("complete_setup", False))
+
+            new_options = dict(active_entry.options)
+            new_options[CONF_CATEGORIES] = categories
+            new_options[CONF_INBOX_ENTITY] = inbox_entity
+            new_options[CONF_AUTO_ROUTE_INBOX] = auto_route
+            new_options[CONF_AUTO_PROVISION] = auto_provision
+            if complete_setup:
+                new_options[CONF_WIZARD_COMPLETED] = True
+
+            hass.config_entries.async_update_entry(active_entry, options=new_options)
+            hass.data[DOMAIN]["categories"] = categories
+
+            store_obj: GroceryLearningStore = hass.data[DOMAIN]["store"]
+            hass.data[DOMAIN]["terms"] = await store_obj.load(categories)
+            hass.data[DOMAIN]["item_meta"] = await store_obj.load_item_meta()
+
+            await _ensure_required_lists(active_entry)
+            await _ensure_required_helpers()
+            if bool(_entry_value(active_entry, CONF_AUTO_DASHBOARD, True)):
+                await _ensure_dashboards(active_entry)
+            await _sync_helpers_internal()
             return {"ok": True}
 
         if action == "apply_review":

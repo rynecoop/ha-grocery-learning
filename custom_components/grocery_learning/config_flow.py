@@ -74,7 +74,9 @@ class GroceryLearningOptionsFlow(config_entries.OptionsFlow):
         current_data = {**self._config_entry.data, **self._config_entry.options}
         if user_input is not None:
             user_input[CONF_CATEGORIES] = _normalize_categories(user_input.get(CONF_CATEGORIES, ""))
-            return self.async_create_entry(data=user_input)
+            merged = dict(self._config_entry.options)
+            merged.update(user_input)
+            return self.async_create_entry(data=merged)
 
         schema = vol.Schema(
             {
