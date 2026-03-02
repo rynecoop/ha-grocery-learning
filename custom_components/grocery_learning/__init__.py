@@ -168,10 +168,17 @@ class GroceryLearningAppView(HomeAssistantView):
 
     async function api(path, method='GET', body=null){
       const res = await fetch(path, {method, headers: {'Content-Type':'application/json'}, body: body?JSON.stringify(body):null});
-      if(!res.ok){ throw new Error(await res.text()); }
-      return await res.json();
+      const text = await res.text();
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text || 'invalid_json_response' }; }
+      if(!res.ok){ throw new Error(data.error || text || (`HTTP ${res.status}`)); }
+      return data;
     }
-    async function act(payload){ await api('/api/grocery_learning/action','POST',payload); await load(); }
+    async function act(payload){
+      const result = await api('/api/grocery_learning/action','POST',payload);
+      if(result && result.ok === false){ throw new Error(result.error || 'action_failed'); }
+      await load();
+    }
 
     function itemRow(item, categories){
       const options = categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -192,6 +199,9 @@ class GroceryLearningAppView(HomeAssistantView):
     function render(){
       if(!state) return;
       const attention = [];
+      if(state.error){
+        attention.push(`<div class="section"><div class="title">App Error</div><div class="small">${esc(state.error)}</div></div>`);
+      }
       if(state.pending_duplicate?.pending){
         attention.push(`<div class="section"><div class="title">Duplicate Needs Decision</div>
           <div class="small">${esc(state.pending_duplicate.item)} is already in ${esc(state.pending_duplicate.target)}.</div>
@@ -271,7 +281,11 @@ class GroceryLearningDashboardView(HomeAssistantView):
 
             builder = domain_data.get("build_dashboard_payload")
             if not callable(builder):
-                return web.json_response(self._empty_payload("not_ready"))
+                await _async_setup_runtime(self.hass)
+                domain_data = self.hass.data.get(DOMAIN, {})
+                builder = domain_data.get("build_dashboard_payload") if isinstance(domain_data, Mapping) else None
+                if not callable(builder):
+                    return web.json_response(self._empty_payload("not_ready"))
 
             payload = await builder()
             if not isinstance(payload, dict):
@@ -301,6 +315,9 @@ class GroceryLearningActionView(HomeAssistantView):
 
     async def post(self, request):
         handler = self.hass.data.get(DOMAIN, {}).get("handle_dashboard_action")
+        if handler is None:
+            await _async_setup_runtime(self.hass)
+            handler = self.hass.data.get(DOMAIN, {}).get("handle_dashboard_action")
         if handler is None:
             return self.json({"ok": False, "error": "not_ready"})
         try:
@@ -421,8 +438,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         return
 
     store = GroceryLearningStore(hass)
-    terms = await store.load(list(DEFAULT_CATEGORIES))
-    item_meta = await store.load_item_meta()
+    try:
+        terms = await store.load(list(DEFAULT_CATEGORIES))
+    except Exception as err:  # pragma: no cover
+        _LOGGER.warning("Failed loading grocery terms storage, using defaults: %s", err)
+        terms = LearnedTerms.empty(list(DEFAULT_CATEGORIES))
+    try:
+        item_meta = await store.load_item_meta()
+    except Exception as err:  # pragma: no cover
+        _LOGGER.warning("Failed loading grocery item metadata, using empty map: %s", err)
+        item_meta = {}
 
     data["store"] = store
     data["terms"] = terms

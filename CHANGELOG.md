@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.6
+- Fixed custom app add-action reliability by lazily initializing integration runtime from API views when state is not ready.
+- Added storage-load fallbacks so runtime still starts even if saved data is malformed or migration metadata is missing.
+- Updated app-shell API handling to surface backend errors in the UI instead of silently failing actions.
+
 ## 0.4.5
 - Renamed the Home Assistant sidebar panel title from `Grocery App` to `Grocery List`.
 - Hardened `/api/grocery_learning/dashboard` to always return a safe JSON payload shape (including startup/not-ready states) so the custom app no longer fails with raw 500 responses.
