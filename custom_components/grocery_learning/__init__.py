@@ -681,14 +681,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     async def _list_items(list_entity: str, status: str) -> list[dict[str, Any]]:
         if not list_entity or hass.states.get(list_entity) is None:
             return []
-        response = await hass.services.async_call(
-            "todo",
-            "get_items",
-            {"status": status},
-            target={"entity_id": list_entity},
-            blocking=True,
-            return_response=True,
-        )
+        try:
+            response = await hass.services.async_call(
+                "todo",
+                "get_items",
+                {"status": status},
+                target={"entity_id": list_entity},
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed to fetch todo items for %s (%s): %s", list_entity, status, err)
+            return []
+
         resp = response.get(list_entity, response) if isinstance(response, dict) else {}
         items = resp.get("items", []) if isinstance(resp, dict) else []
         return [item for item in items if isinstance(item, dict)]
@@ -1124,6 +1129,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         icon: str,
         require_admin: bool,
         url_path: str,
+        show_in_sidebar: bool = True,
     ) -> None:
         dashboards_store = Store(hass, 1, "lovelace_dashboards")
         dashboards = await dashboards_store.async_load() or {}
@@ -1139,7 +1145,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "id": dashboard_id,
                     "title": title,
                     "icon": icon,
-                    "show_in_sidebar": True,
+                    "show_in_sidebar": show_in_sidebar,
                     "require_admin": require_admin,
                     "mode": "storage",
                     "url_path": url_path,
@@ -1153,7 +1159,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "id": dashboard_id,
                     "title": title,
                     "icon": icon,
-                    "show_in_sidebar": True,
+                    "show_in_sidebar": show_in_sidebar,
                     "require_admin": require_admin,
                     "mode": "storage",
                     "url_path": url_path,
@@ -1239,8 +1245,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not bool(_entry_value(entry, CONF_AUTO_DASHBOARD, True)):
             return
 
-        await _upsert_storage_dashboard_meta("grocery", "Grocery", "mdi:cart-variant", False, "grocery")
-        await _upsert_storage_dashboard_meta("grocery_admin", "Grocery Admin", "mdi:shield-crown", True, "grocery-admin")
+        await _upsert_storage_dashboard_meta("grocery", "Grocery", "mdi:cart-variant", False, "grocery", show_in_sidebar=False)
+        await _upsert_storage_dashboard_meta(
+            "grocery_admin",
+            "Grocery Admin",
+            "mdi:shield-crown",
+            True,
+            "grocery-admin",
+            show_in_sidebar=False,
+        )
 
         main_store = Store(hass, 1, "lovelace.grocery")
         admin_store = Store(hass, 1, "lovelace.grocery_admin")

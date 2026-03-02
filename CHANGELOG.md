@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4
+- Fixed custom app load reliability by hardening todo list reads in dashboard payload generation (graceful fallback instead of fatal 500).
+- Updated integration-managed dashboards to be hidden from sidebar so users go directly to the `Grocery App` sidebar entry.
+- Removed dependency on opening nested dashboard launch cards for normal use.
+
 ## 0.4.3
 - Replaced nested dashboard iframe usage with a full-height Home Assistant sidebar panel (`/grocery-app`) for proper mobile scrolling and large-list usability.
 - Hardened custom app API endpoints with exception handling to avoid opaque 500 responses and surface actionable errors.
