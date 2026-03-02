@@ -133,10 +133,15 @@ class GroceryLearningAppView(HomeAssistantView):
     .btn.warn { background:#5a4416; border-color:#ffbf47; }
     .btn.danger { background:#5f2424; border-color:#ff6b6b; }
     .section { background:var(--panel); border:1px solid #263241; border-radius:14px; padding:12px; margin-bottom:12px; }
+    .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
     .title { font-size:20px; font-weight:700; margin:0 0 10px 0; }
     .sub { color:var(--muted); font-size:13px; margin-top:2px; }
     .item { padding:10px; border:1px solid #2a3848; border-radius:10px; margin-bottom:8px; background:#121922; }
     .item-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .item-main { cursor:pointer; }
+    .item-main strong { user-select:none; }
+    .editor { display:none; }
+    .editor.open { display:flex; }
     .small { font-size:12px; color:var(--muted); }
     .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
     .pill { display:inline-block; font-size:11px; padding:3px 8px; border-radius:999px; background:#203445; color:#b9dbff; margin-right:6px; }
@@ -157,7 +162,10 @@ class GroceryLearningAppView(HomeAssistantView):
     <div id="attention"></div>
     <div id="lists"></div>
     <div class="section">
-      <div class="title">Completed</div>
+      <div class="section-head">
+        <div class="title">Completed</div>
+        <button id="clearCompletedBtn" class="btn danger">Clear Completed</button>
+      </div>
       <div id="completed"></div>
     </div>
   </div>
@@ -183,17 +191,44 @@ class GroceryLearningAppView(HomeAssistantView):
     function itemRow(item, categories){
       const options = categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
       return `
-        <div class="item">
-          <div class="item-top">
-            <label><input type="checkbox" onchange="window.__g.complete('${esc(item.list_entity)}','${esc(item.item_ref)}',this.checked)" /> <strong>${esc(item.summary)}</strong></label>
+        <div class="item" data-list-entity="${esc(item.list_entity)}" data-item-ref="${esc(item.item_ref)}">
+          <div class="item-top item-main">
+            <label><input class="complete-toggle" type="checkbox" /> <strong>${esc(item.summary)}</strong></label>
             <span class="pill">${esc(item.category_display)}</span>
           </div>
           <div class="small">${esc(item.description || '')}</div>
-          <div class="row" style="margin-top:8px;">
-            <select id="cat_${esc(item.item_ref)}">${options}</select>
-            <button class="btn" onclick="window.__g.move('${esc(item.list_entity)}','${esc(item.item_ref)}')">Move</button>
+          <div class="row editor" style="margin-top:8px;">
+            <select class="cat-select">${options}</select>
+            <button class="btn move-btn">Move</button>
           </div>
         </div>`;
+    }
+
+    function bindEvents(){
+      document.querySelectorAll('.item').forEach((row) => {
+        const itemRef = row.dataset.itemRef || '';
+        const listEntity = row.dataset.listEntity || '';
+        const main = row.querySelector('.item-main');
+        const editor = row.querySelector('.editor');
+        const complete = row.querySelector('.complete-toggle');
+        const moveBtn = row.querySelector('.move-btn');
+        const select = row.querySelector('.cat-select');
+        if(complete){
+          complete.addEventListener('change', () => window.__g.complete(listEntity, itemRef, complete.checked));
+          complete.addEventListener('click', (ev) => ev.stopPropagation());
+        }
+        if(main && editor){
+          main.addEventListener('click', () => editor.classList.toggle('open'));
+        }
+        if(moveBtn && select){
+          moveBtn.addEventListener('click', () => window.__g.move(listEntity, itemRef, select.value));
+        }
+      });
+
+      document.querySelectorAll('.completed-toggle').forEach((el) => {
+        const itemRef = el.dataset.itemRef || '';
+        el.addEventListener('change', () => window.__g.undo(itemRef, el.checked));
+      });
     }
 
     function render(){
@@ -225,8 +260,9 @@ class GroceryLearningAppView(HomeAssistantView):
       byId('lists').innerHTML = groups;
 
       byId('completed').innerHTML = state.completed.length
-        ? state.completed.map(i => `<div class="item"><label><input type="checkbox" checked onchange="window.__g.undo('${esc(i.item_ref)}',this.checked)" /> <strong>${esc(i.summary)}</strong></label><div class="small">${esc(i.description || '')}</div></div>`).join('')
+        ? state.completed.map(i => `<div class="item"><label><input class="completed-toggle" data-item-ref="${esc(i.item_ref)}" type="checkbox" checked /> <strong>${esc(i.summary)}</strong></label><div class="small">${esc(i.description || '')}</div></div>`).join('')
         : '<div class="empty">No completed items.</div>';
+      bindEvents();
     }
 
     async function load(){ state = await api('/api/grocery_learning/dashboard'); render(); }
@@ -235,12 +271,14 @@ class GroceryLearningAppView(HomeAssistantView):
       async add(){ const val = byId('quickAdd').value.trim(); if(!val) return; byId('quickAdd').value=''; await act({action:'add_item', item:val}); },
       async complete(listEntity,itemRef,checked){ if(checked) await act({action:'set_status', list_entity:listEntity, item:itemRef, status:'completed'}); },
       async undo(itemRef,checked){ if(!checked) await act({action:'set_status', list_entity:'todo.grocery_completed', item:itemRef, status:'needs_action'}); },
-      async move(fromList,itemRef){ const sel = byId('cat_'+itemRef); await act({action:'recategorize', from_list:fromList, item:itemRef, target_category:sel.value, learn:true}); },
+      async move(fromList,itemRef,targetCategory){ if(!targetCategory) return; await act({action:'recategorize', from_list:fromList, item:itemRef, target_category:targetCategory, learn:true}); },
       async review(category, learn=true){ await act({action:'apply_review', category, learn}); },
-      async confirmDup(decision){ await act({action:'confirm_duplicate', decision}); }
+      async confirmDup(decision){ await act({action:'confirm_duplicate', decision}); },
+      async clearCompleted(){ await act({action:'clear_completed'}); }
     };
 
     byId('addBtn').addEventListener('click', () => window.__g.add());
+    byId('clearCompletedBtn').addEventListener('click', () => window.__g.clearCompleted());
     byId('quickAdd').addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); window.__g.add(); }});
     load().catch((err) => { byId('lists').innerHTML = `<div class="section"><div class="title">Error</div><div class="small">${esc(err.message)}</div></div>`; });
   </script>
@@ -668,6 +706,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].get("item_meta", {})
         return dict(meta_map.get(_item_meta_key(list_entity, normalized_item), {}))
 
+    def _clean_helper_state_value(value: str) -> str:
+        cleaned = value.strip()
+        if cleaned.lower() in {"", "unknown", "unavailable", "none", "null"}:
+            return ""
+        return cleaned
+
     async def _build_item_description(
         call: ServiceCall,
         source_override: str | None = None,
@@ -862,6 +906,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if target_category not in categories and target_category != "other":
                 target_category = "other"
             target_list = _target_list_for_category(target_category)
+            if not from_list or not item_ref:
+                return {"ok": False, "error": "missing_item_reference"}
             found = await _resolve_item_ref(from_list, item_ref)
             if found is not None:
                 summary = str(found.get("summary", "")).strip()
@@ -890,7 +936,25 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         if norm and norm not in existing:
                             terms_obj.data.setdefault(target_category, []).append(norm)
                             await _save()
+                    await _clear_pending_review()
+                    return {"ok": True}
+                return {"ok": False, "error": "item_summary_missing"}
             await _clear_pending_review()
+            return {"ok": False, "error": "item_not_found"}
+
+        if action == "clear_completed":
+            completed_items = await _list_items(COMPLETED_LIST_ENTITY, "completed")
+            for item in completed_items:
+                remove_id = str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip()
+                if not remove_id:
+                    continue
+                await hass.services.async_call(
+                    "todo",
+                    "remove_item",
+                    {"item": remove_id},
+                    target={"entity_id": COMPLETED_LIST_ENTITY},
+                    blocking=True,
+                )
             return {"ok": True}
 
         if action == "apply_review":
@@ -1463,8 +1527,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         pending_review = dict(hass.data[DOMAIN].get("pending_review", {}))
         review_item_state = hass.states.get(REVIEW_ITEM_HELPER)
         source_list_state = hass.states.get(REVIEW_SOURCE_HELPER)
-        review_item = str(review_item_state.state).strip() if review_item_state else ""
-        source_list = str(source_list_state.state).strip() if source_list_state else ""
+        review_item = _clean_helper_state_value(str(review_item_state.state)) if review_item_state else ""
+        source_list = _clean_helper_state_value(str(source_list_state.state)) if source_list_state else ""
         if not review_item:
             review_item = str(pending_review.get("item", "")).strip()
         if not source_list:
@@ -1523,10 +1587,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         if not item:
             item_state = hass.states.get(DUPLICATE_PENDING_ITEM_HELPER)
-            item = str(item_state.state).strip() if item_state else ""
+            item = _clean_helper_state_value(str(item_state.state)) if item_state else ""
         if not target_list:
             target_state = hass.states.get(DUPLICATE_PENDING_TARGET_HELPER)
-            target_list = str(target_state.state).strip() if target_state else ""
+            target_list = _clean_helper_state_value(str(target_state.state)) if target_state else ""
 
         if decision == "add" and item and target_list and hass.states.get(target_list) is not None:
             await hass.services.async_call(

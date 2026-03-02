@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.8
+- Added a `Clear Completed` button in the app to purge completed grocery history in one tap.
+- Simplified item UI by hiding category controls by default; click an item row to open category reassignment.
+- Reworked item-row event handling to avoid inline JS reference bugs that could break recategorization for certain item IDs.
+- Fixed review/duplicate fallback reads so helper states like `unknown`/`unavailable` are ignored instead of being treated as real item names.
+- Hardened recategorize action responses with explicit backend errors (`item_not_found`, `missing_item_reference`, `item_summary_missing`) instead of false-success responses.
+
 ## 0.4.7
 - Fixed custom app API view crash (`'GroceryLearningDashboardView' object has no attribute 'hass'`) by resolving Home Assistant runtime from `request.app["hass"]`.
 - Restored dashboard load and add-action functionality for the sidebar app panel.
