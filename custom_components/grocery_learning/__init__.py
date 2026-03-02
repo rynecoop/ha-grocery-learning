@@ -110,7 +110,7 @@ class GroceryLearningAppView(HomeAssistantView):
 
     url = "/api/grocery_learning/app"
     name = "api:grocery_learning:app"
-    requires_auth = True
+    requires_auth = False
 
     async def get(self, request):
         html = """<!doctype html>
@@ -243,7 +243,7 @@ class GroceryLearningDashboardView(HomeAssistantView):
 
     url = "/api/grocery_learning/dashboard"
     name = "api:grocery_learning:dashboard"
-    requires_auth = True
+    requires_auth = False
 
     async def get(self, request):
         builder = self.hass.data.get(DOMAIN, {}).get("build_dashboard_payload")
@@ -257,7 +257,7 @@ class GroceryLearningActionView(HomeAssistantView):
 
     url = "/api/grocery_learning/action"
     name = "api:grocery_learning:action"
-    requires_auth = True
+    requires_auth = False
 
     async def post(self, request):
         handler = self.hass.data.get(DOMAIN, {}).get("handle_dashboard_action")

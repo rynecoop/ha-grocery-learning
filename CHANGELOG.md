@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.2
+- Fixed iframe app-shell `401 Unauthorized` issue by allowing embedded Grocery app endpoints to load inside Lovelace iframe cards.
+
 ## 0.4.1
 - Added missing Home Assistant manifest dependency declaration for `http` required by the custom Grocery app API views.
 
