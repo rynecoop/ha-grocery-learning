@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.1
+- Added missing Home Assistant manifest dependency declaration for `http` required by the custom Grocery app API views.
+
 ## 0.4.0
 - Introduced a self-contained custom Grocery web app served by the integration at `/api/grocery_learning/app` (no native todo-card dependency for core UX).
 - Switched Grocery and Grocery Admin dashboards to embedded app-shell views.
