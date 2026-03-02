@@ -20,8 +20,10 @@
 1. Click an item row to open category controls.
 2. Select target category.
 3. Click `Move`.
+4. Demo: [change-category.mp4](videos/change-category.mp4)
 
 ## Completed Items
 - Completed items move into the completed section.
 - Uncheck from completed to restore.
 - Use `Clear Completed` to purge history quickly.
+- Demo: [completed-clear.mp4](videos/completed-clear.mp4)

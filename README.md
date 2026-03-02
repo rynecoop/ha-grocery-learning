@@ -25,6 +25,10 @@ Local Grocery Assistant is a Home Assistant custom integration that gives you a 
 - Duplicate flow: [docs/screenshots/duplicate-review.png](docs/screenshots/duplicate-review.png)
 - Mobile view: [docs/screenshots/mobile-view.png](docs/screenshots/mobile-view.png)
 
+## Demo Videos
+- Change category flow: [docs/videos/change-category.mp4](docs/videos/change-category.mp4)
+- Uncheck + clear completed flow: [docs/videos/completed-clear.mp4](docs/videos/completed-clear.mp4)
+
 ## Install
 ### HACS (recommended)
 1. Add this repository as a custom repository in HACS (`Integration`) if not in default yet.
