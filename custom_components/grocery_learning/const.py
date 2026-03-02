@@ -21,6 +21,7 @@ DEFAULT_CATEGORIES = [
     "frozen",
     "pantry",
     "household",
+    "pharmacy",
 ]
 
 DEFAULT_KEYWORDS_BY_CATEGORY: dict[str, tuple[str, ...]] = {
@@ -60,6 +61,26 @@ DEFAULT_KEYWORDS_BY_CATEGORY: dict[str, tuple[str, ...]] = {
         "ziploc",
         "cloth",
     ),
+    "pharmacy": (
+        "medicine",
+        "medication",
+        "pain relief",
+        "ibuprofen",
+        "acetaminophen",
+        "tylenol",
+        "advil",
+        "vitamin",
+        "supplement",
+        "toothpaste",
+        "mouthwash",
+        "floss",
+        "deodorant",
+        "shampoo",
+        "conditioner",
+        "razor",
+        "bandage",
+        "first aid",
+    ),
     "pantry": (
         "soda",
         "pop",
@@ -98,6 +119,7 @@ HELPER_BY_CATEGORY = {
     "frozen": "input_text.grocery_learned_frozen",
     "pantry": "input_text.grocery_learned_pantry",
     "household": "input_text.grocery_learned_household",
+    "pharmacy": "input_text.grocery_learned_pharmacy",
 }
 
 TARGET_LIST_BY_CATEGORY = {
@@ -108,8 +130,11 @@ TARGET_LIST_BY_CATEGORY = {
     "frozen": "todo.grocery_frozen",
     "pantry": "todo.grocery_pantry",
     "household": "todo.grocery_household",
+    "pharmacy": "todo.grocery_pharmacy",
     "other": "todo.grocery_other",
 }
+
+COMPLETED_LIST_ENTITY = "todo.grocery_completed"
 
 REVIEW_ITEM_HELPER = "input_text.grocery_review_item"
 REVIEW_SOURCE_HELPER = "input_text.grocery_review_source_list"

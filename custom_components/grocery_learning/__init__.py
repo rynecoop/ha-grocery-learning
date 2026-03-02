@@ -11,7 +11,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -23,6 +23,7 @@ from .const import (
     CONF_CATEGORIES,
     CONF_INBOX_ENTITY,
     CONF_NOTIFY_SERVICE,
+    COMPLETED_LIST_ENTITY,
     DEFAULT_CATEGORIES,
     DEFAULT_KEYWORDS_BY_CATEGORY,
     DUPLICATE_PENDING_BY_HELPER,
@@ -125,6 +126,13 @@ def _helper_for_category(category: str) -> str:
     if category in HELPER_BY_CATEGORY:
         return HELPER_BY_CATEGORY[category]
     return f"input_text.grocery_learned_{category}"
+
+
+def _category_for_list_entity(list_entity: str) -> str:
+    for category, entity_id in TARGET_LIST_BY_CATEGORY.items():
+        if entity_id == list_entity:
+            return category
+    return "other"
 
 
 def _entry_value(entry: ConfigEntry | None, key: str, default: Any) -> Any:
@@ -618,6 +626,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 f"Grocery {_display_name_for_category(category)}",
             )
         await _ensure_local_todo_list(_target_list_for_category("other"), "Grocery Other")
+        await _ensure_local_todo_list(COMPLETED_LIST_ENTITY, "Grocery Completed")
 
     async def _ensure_helper_entity(
         helper_domain: str,
@@ -828,8 +837,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "type": "todo-list",
                 "title": name,
                 "entity": entity,
-                "show_completed": True,
-                "hide_completed": False,
+                "show_completed": False,
+                "hide_completed": True,
                 "hide_create": True,
                 "hide_section_headers": True,
             },
@@ -838,7 +847,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     def _build_main_dashboard_config(entry: ConfigEntry | None) -> dict[str, Any]:
         categories = _active_categories()
         inbox_entity = str(_entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox"))
-        lane_entities = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [_target_list_for_category("other")]
+        lane_entities = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [_target_list_for_category("other"), COMPLETED_LIST_ENTITY]
         lane_tiles = [
             {
                 "type": "tile",
@@ -992,6 +1001,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "cards": review_action_cards,
             }
         )
+        if hass.states.get(COMPLETED_LIST_ENTITY) is not None:
+            cards.append({"type": "markdown", "content": "## Completed (Tap To Undo)"})
+            cards.append(
+                {
+                    "type": "todo-list",
+                    "title": "Completed Items",
+                    "entity": COMPLETED_LIST_ENTITY,
+                    "show_completed": True,
+                    "hide_completed": False,
+                    "hide_create": True,
+                    "hide_section_headers": True,
+                }
+            )
 
         return {
             "config": {
@@ -1052,7 +1074,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         )
 
         inbox_entity = str(_entry_value(hass.data[DOMAIN].get("entry"), CONF_INBOX_ENTITY, "todo.grocery_inbox"))
-        list_entities = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [_target_list_for_category("other")]
+        list_entities = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [_target_list_for_category("other"), COMPLETED_LIST_ENTITY]
         tile_cards = [
             {
                 "type": "tile",
@@ -1493,46 +1515,202 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if ensure_dashboards:
         await ensure_dashboards(entry)
 
-    async def _handle_call_service(event) -> None:
-        if not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
-            return
-        data_event = event.data.get("service_data", {})
-        if event.data.get("domain") != "todo" or event.data.get("service") != "add_item":
-            return
+    internal_context_ids: set[str] = data.setdefault("internal_context_ids", set())
 
-        def _extract_entity_id() -> str:
-            top_target = event.data.get("target", {})
-            service_target = data_event.get("target", {})
-            candidates: list[Any] = [
-                data_event.get("entity_id", ""),
-                service_target.get("entity_id", "") if isinstance(service_target, dict) else "",
-                top_target.get("entity_id", "") if isinstance(top_target, dict) else "",
-            ]
-            for candidate in candidates:
-                if isinstance(candidate, list) and candidate:
-                    return str(candidate[0]).strip()
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip()
-            return ""
+    def _extract_entity_id(event_data: dict[str, Any], service_data: dict[str, Any]) -> str:
+        top_target = event_data.get("target", {})
+        service_target = service_data.get("target", {})
+        candidates: list[Any] = [
+            service_data.get("entity_id", ""),
+            service_target.get("entity_id", "") if isinstance(service_target, dict) else "",
+            top_target.get("entity_id", "") if isinstance(top_target, dict) else "",
+        ]
+        for candidate in candidates:
+            if isinstance(candidate, list) and candidate:
+                return str(candidate[0]).strip()
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+        return ""
 
-        list_id = _extract_entity_id()
-        inbox_entity = _entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")
-        item_text = str(data_event.get("item", "")).strip()
-        if list_id != inbox_entity or not item_text:
-            return
-        await hass.services.async_call(
-            DOMAIN,
-            SERVICE_ROUTE_ITEM,
-            {
-                "item": item_text,
-                "source_list": inbox_entity,
-                "remove_from_source": True,
-                "review_on_other": True,
-                "source": "typed",
-            },
+    async def _get_items(list_entity: str, status: str) -> list[dict[str, Any]]:
+        if not list_entity or hass.states.get(list_entity) is None:
+            return []
+        response = await hass.services.async_call(
+            "todo",
+            "get_items",
+            {"status": status},
+            target={"entity_id": list_entity},
             blocking=True,
-            context=event.context,
+            return_response=True,
         )
+        resp = response.get(list_entity, response) if isinstance(response, dict) else {}
+        items = resp.get("items", []) if isinstance(resp, dict) else []
+        return [item for item in items if isinstance(item, dict)]
+
+    async def _find_item(list_entity: str, item_ref: str, statuses: list[str]) -> dict[str, Any] | None:
+        normalized_ref = _normalize_term(item_ref)
+        for status in statuses:
+            items = await _get_items(list_entity, status)
+            for item in items:
+                uid = str(item.get("uid", "")).strip()
+                summary = str(item.get("summary", "")).strip()
+                if uid and item_ref == uid:
+                    return item
+                if summary and (item_ref == summary or _normalize_term(summary) == normalized_ref):
+                    return item
+        return None
+
+    def _split_original_list_marker(description: str) -> tuple[str, str]:
+        marker = "Original list:"
+        clean_lines: list[str] = []
+        original_list = ""
+        for line in description.splitlines():
+            line_clean = line.strip()
+            if line_clean.lower().startswith(marker.lower()):
+                original_list = line_clean.split(":", 1)[1].strip()
+                continue
+            clean_lines.append(line)
+        clean_description = "\n".join([line for line in clean_lines if line.strip()]).strip()
+        return clean_description, original_list
+
+    async def _move_checked_item_to_completed(source_list: str, item_ref: str) -> None:
+        found = await _find_item(source_list, item_ref, ["completed", "needs_action"])
+        if not found:
+            return
+        summary = str(found.get("summary", "")).strip()
+        if not summary:
+            return
+        source_uid = str(found.get("uid", "")).strip() or summary
+        description = str(found.get("description", "")).strip()
+        marker = f"Original list: {source_list}"
+        if marker not in description:
+            description = f"{description}\n{marker}".strip() if description else marker
+
+        add_ctx = Context()
+        internal_context_ids.add(add_ctx.id)
+        await hass.services.async_call(
+            "todo",
+            "add_item",
+            {"item": summary, "description": description},
+            target={"entity_id": COMPLETED_LIST_ENTITY},
+            blocking=True,
+            context=add_ctx,
+        )
+
+        added = await _find_item(COMPLETED_LIST_ENTITY, summary, ["needs_action"])
+        if added:
+            complete_ctx = Context()
+            internal_context_ids.add(complete_ctx.id)
+            await hass.services.async_call(
+                "todo",
+                "update_item",
+                {"item": str(added.get("uid", "")).strip() or summary, "status": "completed"},
+                target={"entity_id": COMPLETED_LIST_ENTITY},
+                blocking=True,
+                context=complete_ctx,
+            )
+
+        remove_ctx = Context()
+        internal_context_ids.add(remove_ctx.id)
+        await hass.services.async_call(
+            "todo",
+            "remove_item",
+            {"item": source_uid},
+            target={"entity_id": source_list},
+            blocking=True,
+            context=remove_ctx,
+        )
+
+    async def _restore_unchecked_item_from_completed(item_ref: str) -> None:
+        found = await _find_item(COMPLETED_LIST_ENTITY, item_ref, ["needs_action", "completed"])
+        if not found:
+            return
+        summary = str(found.get("summary", "")).strip()
+        if not summary:
+            return
+        completed_uid = str(found.get("uid", "")).strip() or summary
+        description = str(found.get("description", "")).strip()
+        clean_description, original_list = _split_original_list_marker(description)
+        if not original_list:
+            original_list = _target_list_for_category("other")
+        if hass.states.get(original_list) is None:
+            original_list = _target_list_for_category("other")
+
+        add_ctx = Context()
+        internal_context_ids.add(add_ctx.id)
+        await hass.services.async_call(
+            "todo",
+            "add_item",
+            {"item": summary, "description": clean_description},
+            target={"entity_id": original_list},
+            blocking=True,
+            context=add_ctx,
+        )
+
+        remove_ctx = Context()
+        internal_context_ids.add(remove_ctx.id)
+        await hass.services.async_call(
+            "todo",
+            "remove_item",
+            {"item": completed_uid},
+            target={"entity_id": COMPLETED_LIST_ENTITY},
+            blocking=True,
+            context=remove_ctx,
+        )
+
+    async def _handle_call_service(event) -> None:
+        if event.context and event.context.id in internal_context_ids:
+            internal_context_ids.discard(event.context.id)
+            return
+
+        data_event = event.data.get("service_data", {})
+        if event.data.get("domain") != "todo":
+            return
+
+        service_name = str(event.data.get("service", "")).strip()
+        list_id = _extract_entity_id(event.data, data_event)
+        if not list_id:
+            return
+        inbox_entity = _entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")
+        category_lists = [_target_list_for_category(category) for category in data.get("categories", list(DEFAULT_CATEGORIES))]
+        tracked_lists = category_lists + [_target_list_for_category("other")]
+
+        if service_name == "add_item":
+            if not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
+                return
+            item_text = str(data_event.get("item", "")).strip()
+            if list_id != inbox_entity or not item_text:
+                return
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_ROUTE_ITEM,
+                {
+                    "item": item_text,
+                    "source_list": inbox_entity,
+                    "remove_from_source": True,
+                    "review_on_other": True,
+                    "source": "typed",
+                },
+                blocking=True,
+                context=event.context,
+            )
+            return
+
+        if service_name != "update_item":
+            return
+
+        item_ref = str(data_event.get("item", "")).strip()
+        status = str(data_event.get("status", "")).strip().lower()
+        if not item_ref:
+            return
+
+        if list_id in tracked_lists and status == "completed":
+            await _move_checked_item_to_completed(list_id, item_ref)
+            return
+
+        if list_id == COMPLETED_LIST_ENTITY and status == "needs_action":
+            await _restore_unchecked_item_from_completed(item_ref)
+            return
 
     entry.async_on_unload(hass.bus.async_listen("call_service", _handle_call_service))
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))

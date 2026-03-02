@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.5
+- Added new default `pharmacy` category with starter keywords.
+- Added dedicated `Grocery Completed` list flow: checked items move out of active category cards into a completed card, and unchecking in completed restores the item to its original category.
+- Improved self-contained event handling for `todo.update_item` so completion and restore behavior work without extra YAML automations.
+
 ## 0.3.4
 - Replaced dashboard review/duplicate status display with integration-managed sensor entities so UI remains functional even if helper YAML/entities are removed.
 - Added fallback review behavior: category action buttons now pull the next uncategorized item from `Other` when pending state is missing.

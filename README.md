@@ -9,10 +9,12 @@ It is designed for users moving away from Alexa Shopping List while keeping fast
 - Auto-learning from review decisions
 - Duplicate-prevention flow with pending confirmation + Add Anyway/Skip actions
 - Duplicate context: who added it, when it was added, and source (typed/voice/automation)
+- Dedicated `Grocery Completed` list with quick undo support (unchecked items return to original category list)
 - Auto-provisioning of grocery todo lists
 - Auto-generated `Grocery` and `Grocery Admin` dashboards that work without helper YAML
 - Polished in-app shell layout with quick-add, list status, and operations-center admin controls
 - One-tap Review & Learn category action buttons directly in dashboards
+- Includes default `pharmacy` category for hygiene/medicine items
 - Configurable categories and category order
 
 ## Install
