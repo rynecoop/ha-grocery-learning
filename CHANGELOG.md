@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.3
+- Replaced nested dashboard iframe usage with a full-height Home Assistant sidebar panel (`/grocery-app`) for proper mobile scrolling and large-list usability.
+- Hardened custom app API endpoints with exception handling to avoid opaque 500 responses and surface actionable errors.
+- Grocery and Grocery Admin dashboards now provide clean launch buttons into the dedicated app panel.
+
 ## 0.4.2
 - Fixed iframe app-shell `401 Unauthorized` issue by allowing embedded Grocery app endpoints to load inside Lovelace iframe cards.
 

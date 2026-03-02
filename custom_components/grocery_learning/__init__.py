@@ -10,6 +10,7 @@ from typing import Any
 
 import voluptuous as vol
 from aiohttp import web
+from homeassistant.components.frontend import async_register_built_in_panel
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -249,7 +250,11 @@ class GroceryLearningDashboardView(HomeAssistantView):
         builder = self.hass.data.get(DOMAIN, {}).get("build_dashboard_payload")
         if builder is None:
             return self.json({"error": "not_ready"})
-        return self.json(await builder())
+        try:
+            return self.json(await builder())
+        except Exception as err:  # pragma: no cover
+            _LOGGER.exception("Failed to build Grocery dashboard payload")
+            return self.json({"error": str(err)})
 
 
 class GroceryLearningActionView(HomeAssistantView):
@@ -263,9 +268,13 @@ class GroceryLearningActionView(HomeAssistantView):
         handler = self.hass.data.get(DOMAIN, {}).get("handle_dashboard_action")
         if handler is None:
             return self.json({"ok": False, "error": "not_ready"})
-        payload = await request.json()
-        result = await handler(payload)
-        return self.json(result)
+        try:
+            payload = await request.json()
+            result = await handler(payload)
+            return self.json(result)
+        except Exception as err:  # pragma: no cover
+            _LOGGER.exception("Failed Grocery dashboard action")
+            return self.json({"ok": False, "error": str(err)})
 
 
 def _normalize_term(value: str) -> str:
@@ -1192,10 +1201,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "type": "masonry",
                         "cards": [
                             {
-                                "type": "iframe",
-                                "url": "/api/grocery_learning/app",
-                                "aspect_ratio": "56%",
-                                "title": "Grocery App",
+                                "type": "button",
+                                "name": "Open Grocery App",
+                                "icon": "mdi:cart-variant",
+                                "tap_action": {"action": "navigate", "navigation_path": "/grocery-app"},
                             }
                         ],
                     }
@@ -1215,10 +1224,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "type": "masonry",
                         "cards": [
                             {
-                                "type": "iframe",
-                                "url": "/api/grocery_learning/app?mode=admin",
-                                "aspect_ratio": "56%",
-                                "title": "Grocery Admin App",
+                                "type": "button",
+                                "name": "Open Grocery App",
+                                "icon": "mdi:cart-variant",
+                                "tap_action": {"action": "navigate", "navigation_path": "/grocery-app"},
                             }
                         ],
                     }
@@ -1482,6 +1491,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         hass.http.register_view(GroceryLearningDashboardView())
         hass.http.register_view(GroceryLearningActionView())
         data["views_registered"] = True
+
+    if not data.get("panel_registered"):
+        async_register_built_in_panel(
+            hass,
+            "iframe",
+            frontend_url_path="grocery-app",
+            sidebar_title="Grocery App",
+            sidebar_icon="mdi:cart-variant",
+            config={"url": "/api/grocery_learning/app"},
+            require_admin=False,
+            update=True,
+        )
+        data["panel_registered"] = True
 
     data["build_dashboard_payload"] = _build_dashboard_payload
     data["handle_dashboard_action"] = _handle_dashboard_action
