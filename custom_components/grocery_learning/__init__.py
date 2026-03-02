@@ -1692,6 +1692,51 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 return candidate.strip()
         return ""
 
+    def _normalize_label(value: str) -> str:
+        cleaned = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+        return re.sub(r"\s+", " ", cleaned)
+
+    def _is_voice_intake_list(
+        list_entity: str,
+        inbox_entity: str,
+        tracked_lists: list[str],
+    ) -> bool:
+        if not list_entity:
+            return False
+        if list_entity == inbox_entity:
+            return True
+        if list_entity in tracked_lists or list_entity == COMPLETED_LIST_ENTITY:
+            return False
+
+        state_obj = hass.states.get(list_entity)
+        friendly_name = str(state_obj.attributes.get("friendly_name", "")).strip() if state_obj else ""
+        slug_name = list_entity.split(".", 1)[1] if "." in list_entity else list_entity
+        slug_name = slug_name.replace("_", " ")
+
+        haystack = " | ".join(
+            value for value in (_normalize_label(friendly_name), _normalize_label(slug_name)) if value
+        )
+        if not haystack:
+            return False
+
+        aliases = {
+            "shopping list",
+            "grocery list",
+            "shopping",
+            "groceries",
+            "grocery",
+        }
+        return any(alias in haystack for alias in aliases)
+
+    def _source_from_event_context(service_context: Context | None) -> str:
+        if service_context is None:
+            return "voice_assistant"
+        if service_context.user_id:
+            return "typed"
+        if service_context.parent_id:
+            return "automation"
+        return "voice_assistant"
+
     async def _get_items(list_entity: str, status: str) -> list[dict[str, Any]]:
         if not list_entity or hass.states.get(list_entity) is None:
             return []
@@ -1839,17 +1884,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
                 return
             item_text = str(data_event.get("item", "")).strip()
-            if list_id != inbox_entity or not item_text:
+            if not item_text:
+                return
+            if not _is_voice_intake_list(list_id, inbox_entity, tracked_lists):
                 return
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_ROUTE_ITEM,
                 {
                     "item": item_text,
-                    "source_list": inbox_entity,
+                    "source_list": list_id,
                     "remove_from_source": True,
                     "review_on_other": True,
-                    "source": "typed",
+                    "source": _source_from_event_context(event.context),
                 },
                 blocking=True,
                 context=event.context,

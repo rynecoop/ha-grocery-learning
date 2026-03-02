@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.9
+- Expanded add-item intake routing to support voice-assistant adds from common list aliases (for example `shopping list` / `grocery list`), not just the configured inbox entity.
+- Intake routing now removes items from the source alias list after routing so items appear in the Grocery app lists instead of being stranded in generic todo lists.
+- Added context-aware source labeling for routed items (`voice_assistant`, `typed`, `automation`) based on service call context.
+
 ## 0.4.8
 - Added a `Clear Completed` button in the app to purge completed grocery history in one tap.
 - Simplified item UI by hiding category controls by default; click an item row to open category reassignment.
