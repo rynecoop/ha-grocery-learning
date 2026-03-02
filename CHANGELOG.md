@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.7
+- Fixed custom app API view crash (`'GroceryLearningDashboardView' object has no attribute 'hass'`) by resolving Home Assistant runtime from `request.app["hass"]`.
+- Restored dashboard load and add-action functionality for the sidebar app panel.
+
 ## 0.4.6
 - Fixed custom app add-action reliability by lazily initializing integration runtime from API views when state is not ready.
 - Added storage-load fallbacks so runtime still starts even if saved data is malformed or migration metadata is missing.

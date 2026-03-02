@@ -275,14 +275,15 @@ class GroceryLearningDashboardView(HomeAssistantView):
 
     async def get(self, request):
         try:
-            domain_data = self.hass.data.get(DOMAIN, {})
+            hass = request.app["hass"]
+            domain_data = hass.data.get(DOMAIN, {})
             if not isinstance(domain_data, Mapping):
                 return web.json_response(self._empty_payload("runtime_state_invalid"))
 
             builder = domain_data.get("build_dashboard_payload")
             if not callable(builder):
-                await _async_setup_runtime(self.hass)
-                domain_data = self.hass.data.get(DOMAIN, {})
+                await _async_setup_runtime(hass)
+                domain_data = hass.data.get(DOMAIN, {})
                 builder = domain_data.get("build_dashboard_payload") if isinstance(domain_data, Mapping) else None
                 if not callable(builder):
                     return web.json_response(self._empty_payload("not_ready"))
@@ -314,10 +315,11 @@ class GroceryLearningActionView(HomeAssistantView):
     requires_auth = False
 
     async def post(self, request):
-        handler = self.hass.data.get(DOMAIN, {}).get("handle_dashboard_action")
+        hass = request.app["hass"]
+        handler = hass.data.get(DOMAIN, {}).get("handle_dashboard_action")
         if handler is None:
-            await _async_setup_runtime(self.hass)
-            handler = self.hass.data.get(DOMAIN, {}).get("handle_dashboard_action")
+            await _async_setup_runtime(hass)
+            handler = hass.data.get(DOMAIN, {}).get("handle_dashboard_action")
         if handler is None:
             return self.json({"ok": False, "error": "not_ready"})
         try:
