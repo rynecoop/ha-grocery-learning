@@ -769,7 +769,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     async def _user_name_from_context(call: ServiceCall) -> tuple[str, str]:
         user_id = call.context.user_id or ""
         if not user_id:
-            return "", "Voice Assistant"
+            return "", ""
         user = await hass.auth.async_get_user(user_id)
         if user and user.name:
             return user_id, user.name
@@ -799,8 +799,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         call: ServiceCall,
         source_override: str | None = None,
     ) -> str:
+        resolved_source = source_override or _source_from_call(call)
         _, user_name = await _user_name_from_context(call)
-        source = _friendly_source(source_override or _source_from_call(call))
+        if not user_name:
+            if resolved_source == "typed":
+                user_name = "User"
+            elif resolved_source == "voice_assistant":
+                user_name = "Voice Assistant"
+            elif resolved_source == "automation":
+                user_name = "Automation"
+            else:
+                user_name = "Unknown"
+        source = _friendly_source(resolved_source)
         return f"Added by {user_name} · just now · {source}"
 
     async def _record_item_meta(
@@ -1890,10 +1900,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _source_from_event_context(service_context: Context | None) -> str:
         if service_context is None:
             return "voice_assistant"
-        if service_context.user_id:
-            return "typed"
+        if service_context.parent_id and service_context.user_id:
+            return "voice_assistant"
         if service_context.parent_id:
             return "automation"
+        if service_context.user_id:
+            return "typed"
         return "voice_assistant"
 
     async def _get_items(list_entity: str, status: str) -> list[dict[str, Any]]:
@@ -2048,8 +2060,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             is_intake_list = _is_voice_intake_list(list_id, inbox_entity, tracked_lists)
             if not is_intake_list:
                 return
-            is_alias_voice_flow = list_id != inbox_entity
-            source_label = "voice_assistant" if is_alias_voice_flow else _source_from_event_context(event.context)
+            source_label = _source_from_event_context(event.context)
+            is_voice_flow = source_label == "voice_assistant"
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_ROUTE_ITEM,
@@ -2058,7 +2070,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "source_list": list_id,
                     "remove_from_source": True,
                     "review_on_other": True,
-                    "allow_duplicate": is_alias_voice_flow,
+                    "allow_duplicate": is_voice_flow,
                     "source": source_label,
                 },
                 blocking=True,

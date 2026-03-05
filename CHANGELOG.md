@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3
+- Fixed voice-flow duplicate handling when intake comes through inbox-like paths by basing duplicate bypass on detected event source (`voice_assistant`) instead of only list alias mismatch.
+- Improved source detection priority for todo service events so contexts with both `parent_id` and `user_id` are treated as voice assistant calls.
+- Fixed attribution fallback so typed items without resolvable user context no longer default to `Voice Assistant`; they now default to `User`.
+
 ## 0.5.2
 - Fixed duplicate-prompt overlap for voice assistant list-alias intake flows (`shopping list` / `grocery list`).
 - Voice alias adds now bypass integration duplicate confirmation UI (`allow_duplicate=true`) so voice-confirmed duplicates do not trigger a second in-app decision loop.
