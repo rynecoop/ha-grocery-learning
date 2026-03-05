@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4
+- Fixed remaining duplicate-confirmation overlap by forcing `allow_duplicate=true` for all external todo intake listener routes (prevents secondary in-app duplicate prompt loops after voice/external add flows).
+- Added frontend current-user capture (`/api/auth/current_user`) and forwarded actor metadata for Quick Add, enabling user-name attribution when context user ID is unavailable.
+- Reworked item subtitle rendering to use stored metadata at read time (`last_added_at`, `last_added_by_name`, `last_source`) so timestamps show relative age (`Just now`, `5 minutes ago`, `2 hours ago`, `3 days ago`) instead of static `just now`.
+- Updated typed attribution fallback to `User` (instead of `Voice Assistant`) when user identity cannot be resolved.
+
 ## 0.5.3
 - Fixed voice-flow duplicate handling when intake comes through inbox-like paths by basing duplicate bypass on detected event source (`voice_assistant`) instead of only list alias mismatch.
 - Improved source detection priority for todo service events so contexts with both `parent_id` and `user_id` are treated as voice assistant calls.

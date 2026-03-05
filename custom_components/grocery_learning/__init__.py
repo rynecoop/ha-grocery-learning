@@ -78,6 +78,8 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
         vol.Optional("review_on_other", default=True): cv.boolean,
         vol.Optional("allow_duplicate", default=False): cv.boolean,
         vol.Optional("source", default=""): cv.string,
+        vol.Optional("actor_name", default=""): cv.string,
+        vol.Optional("actor_user_id", default=""): cv.string,
     }
 )
 
@@ -179,6 +181,7 @@ class GroceryLearningAppView(HomeAssistantView):
   <script>
     let state = null;
     let configOpen = false;
+    let actor = { id: '', name: '' };
     const byId = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -309,9 +312,16 @@ class GroceryLearningAppView(HomeAssistantView):
     }
 
     async function load(){ state = await api('/api/grocery_learning/dashboard'); render(); }
+    async function loadActor(){
+      try{
+        const me = await api('/api/auth/current_user');
+        actor.id = String(me?.id || '').trim();
+        actor.name = String(me?.name || '').trim();
+      } catch(_) {}
+    }
 
     window.__g = {
-      async add(){ const val = byId('quickAdd').value.trim(); if(!val) return; byId('quickAdd').value=''; await act({action:'add_item', item:val}); },
+      async add(){ const val = byId('quickAdd').value.trim(); if(!val) return; byId('quickAdd').value=''; await act({action:'add_item', item:val, actor_user_id:actor.id, actor_name:actor.name}); },
       async complete(listEntity,itemRef,checked){ if(checked) await act({action:'set_status', list_entity:listEntity, item:itemRef, status:'completed'}); },
       async undo(itemRef,checked){ if(!checked) await act({action:'set_status', list_entity:'todo.grocery_completed', item:itemRef, status:'needs_action'}); },
       async move(fromList,itemRef,targetCategory){ if(!targetCategory) return; await act({action:'recategorize', from_list:fromList, item:itemRef, target_category:targetCategory, learn:true}); },
@@ -342,7 +352,7 @@ class GroceryLearningAppView(HomeAssistantView):
     byId('configureBtn').addEventListener('click', () => window.__g.openConfig());
     byId('clearCompletedBtn').addEventListener('click', () => window.__g.clearCompleted());
     byId('quickAdd').addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); window.__g.add(); }});
-    load().catch((err) => { byId('lists').innerHTML = `<div class="section"><div class="title">Error</div><div class="small">${esc(err.message)}</div></div>`; });
+    loadActor().finally(() => load().catch((err) => { byId('lists').innerHTML = `<div class="section"><div class="title">Error</div><div class="small">${esc(err.message)}</div></div>`; }));
   </script>
 </body>
 </html>"""
@@ -519,10 +529,10 @@ def _relative_time(iso_value: str) -> str:
 
     delta = dt_util.utcnow() - when
     seconds = max(0, int(delta.total_seconds()))
-    if seconds < 60:
+    if seconds < 300:
         return "Just now"
     if seconds < 3600:
-        minutes = seconds // 60
+        minutes = max(5, (seconds // 300) * 5)
         return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
     if seconds < 86400:
         hours = seconds // 3600
@@ -769,6 +779,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     async def _user_name_from_context(call: ServiceCall) -> tuple[str, str]:
         user_id = call.context.user_id or ""
         if not user_id:
+            actor_id = str(call.data.get("actor_user_id", "")).strip()
+            actor_name = str(call.data.get("actor_name", "")).strip()
+            if actor_id and actor_name:
+                return actor_id, actor_name
+            if actor_name:
+                return "", actor_name
             return "", ""
         user = await hass.auth.async_get_user(user_id)
         if user and user.name:
@@ -788,6 +804,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     def _meta_for_item(list_entity: str, normalized_item: str) -> dict[str, str]:
         meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].get("item_meta", {})
         return dict(meta_map.get(_item_meta_key(list_entity, normalized_item), {}))
+
+    def _display_description(list_entity: str, summary: str, fallback: str) -> str:
+        normalized_item = _normalize_term(summary)
+        if not normalized_item:
+            return fallback
+        meta = _meta_for_item(list_entity, normalized_item)
+        if not meta:
+            return fallback
+        added_by = str(meta.get("last_added_by_name", "")).strip() or "Unknown"
+        source = _friendly_source(str(meta.get("last_source", "")).strip() or "unknown")
+        when = _relative_time(str(meta.get("last_added_at", "")).strip())
+        return f"Added by {added_by} · {when} · {source}"
 
     def _clean_helper_state_value(value: str) -> str:
         cleaned = value.strip()
@@ -932,7 +960,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         {
                             "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
                             "summary": str(item.get("summary", "")).strip(),
-                            "description": str(item.get("description", "")).strip(),
+                            "description": _display_description(
+                                entity_id,
+                                str(item.get("summary", "")).strip(),
+                                str(item.get("description", "")).strip(),
+                            ),
                             "list_entity": entity_id,
                             "category": category,
                             "category_display": _display_name_for_category(category),
@@ -953,7 +985,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 {
                     "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
                     "summary": str(item.get("summary", "")).strip(),
-                    "description": str(item.get("description", "")).strip(),
+                    "description": _display_description(
+                        COMPLETED_LIST_ENTITY,
+                        str(item.get("summary", "")).strip(),
+                        str(item.get("description", "")).strip(),
+                    ),
                     "list_entity": COMPLETED_LIST_ENTITY,
                 }
                 for item in completed_items
@@ -988,12 +1024,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if action == "add_item":
             item = str(payload.get("item", "")).strip()
             if item:
-                request_user_id = str(payload.get("_request_user_id", "")).strip()
+                request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
+                actor_name = str(payload.get("actor_name", "")).strip()
                 request_context = Context(user_id=request_user_id) if request_user_id else None
                 await hass.services.async_call(
                     DOMAIN,
                     SERVICE_ROUTE_ITEM,
-                    {"item": item, "review_on_other": True, "source": "typed"},
+                    {
+                        "item": item,
+                        "review_on_other": True,
+                        "source": "typed",
+                        "actor_user_id": request_user_id,
+                        "actor_name": actor_name,
+                    },
                     blocking=True,
                     context=request_context,
                 )
@@ -2061,7 +2104,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if not is_intake_list:
                 return
             source_label = _source_from_event_context(event.context)
-            is_voice_flow = source_label == "voice_assistant"
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_ROUTE_ITEM,
@@ -2070,7 +2112,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "source_list": list_id,
                     "remove_from_source": True,
                     "review_on_other": True,
-                    "allow_duplicate": is_voice_flow,
+                    "allow_duplicate": True,
                     "source": source_label,
                 },
                 blocking=True,
