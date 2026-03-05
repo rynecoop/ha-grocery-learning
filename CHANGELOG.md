@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.5
+- Fixed typed-user attribution by injecting current Home Assistant user identity into the app shell at render time and forwarding actor metadata on Quick Add requests.
+- Improved metadata persistence fallback so unresolved typed adds no longer store `Unknown`; they store actor name or `User`.
+- Added route-level guard to always bypass duplicate confirmation for `voice_assistant` source calls, ensuring voice-confirmed repeats do not trigger additional in-app duplicate prompts.
+
 ## 0.5.4
 - Fixed remaining duplicate-confirmation overlap by forcing `allow_duplicate=true` for all external todo intake listener routes (prevents secondary in-app duplicate prompt loops after voice/external add flows).
 - Added frontend current-user capture (`/api/auth/current_user`) and forwarded actor metadata for Quick Add, enabling user-name attribution when context user ID is unavailable.

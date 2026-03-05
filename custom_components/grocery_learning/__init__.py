@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import asyncio
@@ -181,7 +182,7 @@ class GroceryLearningAppView(HomeAssistantView):
   <script>
     let state = null;
     let configOpen = false;
-    let actor = { id: '', name: '' };
+    let actor = { id: '__ACTOR_ID__', name: '__ACTOR_NAME__' };
     const byId = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -313,6 +314,7 @@ class GroceryLearningAppView(HomeAssistantView):
 
     async function load(){ state = await api('/api/grocery_learning/dashboard'); render(); }
     async function loadActor(){
+      if(actor.name) return;
       try{
         const me = await api('/api/auth/current_user');
         actor.id = String(me?.id || '').trim();
@@ -355,7 +357,13 @@ class GroceryLearningAppView(HomeAssistantView):
     loadActor().finally(() => load().catch((err) => { byId('lists').innerHTML = `<div class="section"><div class="title">Error</div><div class="small">${esc(err.message)}</div></div>`; }));
   </script>
 </body>
-</html>"""
+"""
+        hass_user = request.get("hass_user")
+        actor_id = str(getattr(hass_user, "id", "") or "") if hass_user is not None else ""
+        actor_name = str(getattr(hass_user, "name", "") or "") if hass_user is not None else ""
+        actor_id_json = json.dumps(actor_id)
+        actor_name_json = json.dumps(actor_name)
+        html = html.replace("'__ACTOR_ID__'", actor_id_json).replace("'__ACTOR_NAME__'", actor_name_json)
         return web.Response(text=html, content_type="text/html")
 
 
@@ -853,6 +861,17 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         user_id, user_name = await _user_name_from_context(call)
         source = source_override or _source_from_call(call)
+        if not user_id:
+            user_id = str(call.data.get("actor_user_id", "")).strip()
+        if not user_name:
+            if source == "typed":
+                user_name = str(call.data.get("actor_name", "")).strip() or "User"
+            elif source == "voice_assistant":
+                user_name = "Voice Assistant"
+            elif source == "automation":
+                user_name = "Automation"
+            else:
+                user_name = "Unknown"
         meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].setdefault("item_meta", {})
         key = _item_meta_key(list_entity, normalized_item)
         now_iso = dt_util.utcnow().isoformat()
@@ -1629,6 +1648,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         remove_from_source = bool(call.data["remove_from_source"])
         review_on_other = bool(call.data["review_on_other"])
         allow_duplicate = bool(call.data["allow_duplicate"])
+        source = _source_from_call(call)
+        if source == "voice_assistant":
+            allow_duplicate = True
         normalized = _normalize_term(raw_item)
         if not normalized:
             return
