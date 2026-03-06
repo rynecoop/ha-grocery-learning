@@ -287,15 +287,22 @@ class GroceryLearningAppView(HomeAssistantView):
       if(multilistEnabled){
         const listOptions = (state.lists || []).map((l) => `<option value="${esc(l.id)}" ${l.active ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
         const active = (state.lists || []).find((l) => !!l.active);
+        const activeCategories = (state.settings?.categories || []).join(', ');
         listManager.innerHTML = `
           <div class="row">
             <select id="activeListSelect" class="input" style="max-width:280px; min-width:220px;">${listOptions}</select>
             <input id="newListName" class="input" placeholder="New list name" style="max-width:260px;" />
+            <input id="newListCategories" class="input" placeholder="Optional categories (comma separated)" style="max-width:360px;" />
             <button class="btn" onclick="window.__g.createList()">Create List</button>
             <button class="btn" onclick="window.__g.renameList()">Rename Active</button>
             <button class="btn danger" onclick="window.__g.archiveList()">Archive Active</button>
           </div>
-          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong></div>`;
+          <div class="row" style="margin-top:6px;">
+            <input id="activeListCategories" class="input" value="${esc(activeCategories)}" placeholder="Active list categories (comma separated)" style="max-width:420px;" />
+            <button class="btn" onclick="window.__g.saveListCategories()">Save Categories</button>
+            <button class="btn" onclick="window.__g.clearListCategories()">No Categories</button>
+          </div>
+          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong>. Leave categories blank to keep one flat list.</div>`;
       } else {
         listManager.innerHTML = '';
       }
@@ -384,9 +391,25 @@ class GroceryLearningAppView(HomeAssistantView):
       async createList(){
         const name = byId('newListName')?.value?.trim() || '';
         if(!name) return;
-        await act({action:'create_list', name});
+        const categories = (byId('newListCategories')?.value || '').trim();
+        await act({action:'create_list', name, categories});
         const el = byId('newListName');
         if(el) el.value = '';
+        const catEl = byId('newListCategories');
+        if(catEl) catEl.value = '';
+      },
+      async saveListCategories(){
+        const sel = byId('activeListSelect');
+        const listId = sel?.value || '';
+        if(!listId) return;
+        const categories = (byId('activeListCategories')?.value || '').trim();
+        await act({action:'save_list_categories', list_id:listId, categories});
+      },
+      async clearListCategories(){
+        const sel = byId('activeListSelect');
+        const listId = sel?.value || '';
+        if(!listId) return;
+        await act({action:'save_list_categories', list_id:listId, categories:''});
       },
       async renameList(){
         const sel = byId('activeListSelect');
@@ -779,6 +802,25 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     def _normalize_list_id(value: str) -> str:
         cleaned = _normalize_category(value)
         return cleaned or "list"
+
+    def _categories_from_list_input(raw: Any) -> list[str]:
+        if isinstance(raw, str):
+            values = [_normalize_category(v) for v in raw.replace("\n", ",").split(",")]
+        elif isinstance(raw, list):
+            values = [_normalize_category(str(v)) for v in raw]
+        else:
+            values = []
+        out: list[str] = []
+        for value in values:
+            if not value or value == "other":
+                continue
+            if value not in out:
+                out.append(value)
+        return out
+
+    def _looks_like_grocery_list(name: str) -> bool:
+        normalized = _normalize_term(name)
+        return "grocery" in normalized or "shopping" in normalized
 
     def _internal_list_catalog() -> list[dict[str, Any]]:
         _ensure_multilist_model()
@@ -1200,7 +1242,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     async def _build_dashboard_payload_internal() -> dict[str, Any]:
         active_entry = hass.data.get(DOMAIN, {}).get("entry")
         list_id, list_obj = _active_internal_list()
-        categories = [c for c in list_obj.get("categories", []) if c != "other"] or _active_categories()
+        categories = [c for c in list_obj.get("categories", []) if c != "other"]
+        has_custom_categories = len(categories) > 0
         items = list_obj.get("items", [])
         grouped: list[dict[str, Any]] = []
         for category in categories + ["other"]:
@@ -1225,7 +1268,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             grouped.append(
                 {
                     "category": category,
-                    "title": _display_name_for_category(category),
+                    "title": _display_name_for_category(category) if (category != "other" or has_custom_categories) else "Items",
                     "items": grouped_items,
                 }
             )
@@ -1392,11 +1435,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         _, list_obj = _active_internal_list()
         items: list[dict[str, Any]] = list_obj.setdefault("items", [])
-        categories = [c for c in list_obj.get("categories", []) if c != "other"] or _active_categories()
+        categories = [c for c in list_obj.get("categories", []) if c != "other"]
 
         terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
-        category = _get_category_for_term(terms_obj, normalized)
-        if category not in categories:
+        category = _get_category_for_term(terms_obj, normalized) if categories else "other"
+        if categories and category not in categories:
             category = "other"
 
         duplicate_item = next(
@@ -1456,7 +1499,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     async def _apply_review_internal(call: ServiceCall) -> None:
         category_in = str(call.data.get("category", "")).strip().lower()
         learn = bool(call.data.get("learn", True))
-        categories = _active_categories()
+        _, list_obj = _active_internal_list()
+        categories = [c for c in list_obj.get("categories", []) if c != "other"]
         normalized_category = _normalize_category(category_in)
         if category_in == "keep other":
             target_category = "other"
@@ -1471,7 +1515,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not review_item:
             return
 
-        _, list_obj = _active_internal_list()
         items: list[dict[str, Any]] = list_obj.setdefault("items", [])
         item = _internal_find_item(items, review_item)
         if item is None:
@@ -1559,14 +1602,39 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             lists = model.get("lists", {})
             if list_id in lists:
                 return {"ok": False, "error": "list_exists"}
-            _, active_list = _active_internal_list()
-            base_categories = [c for c in active_list.get("categories", []) if c != "other"] or _active_categories()
+            custom_categories = _categories_from_list_input(payload.get("categories", ""))
+            if custom_categories:
+                base_categories = custom_categories
+            elif _looks_like_grocery_list(name):
+                base_categories = _active_categories()
+            else:
+                base_categories = []
             lists[list_id] = {
                 "name": name,
                 "categories": base_categories + ["other"],
                 "items": [],
             }
             model["active_list_id"] = list_id
+            await _save()
+            return {"ok": True}
+
+        if action == "save_list_categories":
+            if not multilist_mode:
+                return {"ok": False, "error": "multilist_disabled"}
+            list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            lists = model.get("lists", {})
+            list_obj = lists.get(list_id)
+            if not isinstance(list_obj, dict):
+                return {"ok": False, "error": "list_not_found"}
+            categories = _categories_from_list_input(payload.get("categories", ""))
+            list_obj["categories"] = categories + ["other"]
+            items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+            allowed_categories = set(categories) | {"other"}
+            for item in items:
+                if str(item.get("category", "other")).strip() not in allowed_categories:
+                    item["category"] = "other"
             await _save()
             return {"ok": True}
 
@@ -1645,13 +1713,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             target_category = _normalize_category(str(payload.get("target_category", "")).strip())
             learn = bool(payload.get("learn", True))
             categories = _active_categories()
-            if target_category not in categories and target_category != "other":
-                target_category = "other"
-            target_list = _target_list_for_category(target_category)
             if not from_list or not item_ref:
                 return {"ok": False, "error": "missing_item_reference"}
             if multilist_mode:
                 _, list_obj = _active_internal_list()
+                list_categories = [c for c in list_obj.get("categories", []) if c != "other"]
+                if target_category not in list_categories and target_category != "other":
+                    target_category = "other"
                 items: list[dict[str, Any]] = list_obj.setdefault("items", [])
                 found_internal = _internal_find_item(items, item_ref)
                 if found_internal is None:
@@ -1670,6 +1738,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 await _clear_pending_review()
                 await _save()
                 return {"ok": True}
+            if target_category not in categories and target_category != "other":
+                target_category = "other"
+            target_list = _target_list_for_category(target_category)
             found = await _resolve_item_ref(from_list, item_ref)
             if found is not None:
                 summary = str(found.get("summary", "")).strip()
@@ -1776,8 +1847,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN]["item_meta"] = await store_obj.load_item_meta()
             hass.data[DOMAIN]["multilist"] = await store_obj.load_multilist(categories)
             _ensure_multilist_model()
-            _, internal_list = _active_internal_list()
-            internal_list["categories"] = categories + ["other"]
+            default_list = hass.data[DOMAIN]["multilist"].get("lists", {}).get("default")
+            if isinstance(default_list, dict):
+                default_list["categories"] = categories + ["other"]
             await _save()
 
             if not experimental_multilist:

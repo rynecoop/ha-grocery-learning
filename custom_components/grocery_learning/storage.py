@@ -94,7 +94,9 @@ class GroceryLearningStore:
             name = str(list_obj.get("name", normalized_id.title())).strip() or normalized_id.title()
             categories_raw = list_obj.get("categories", [])
             categories_clean = [str(c).strip().lower() for c in categories_raw if str(c).strip()] if isinstance(categories_raw, list) else []
-            category_order = [c for c in categories_clean if c != "completed"] or list(categories)
+            category_order = [c for c in categories_clean if c != "completed"]
+            if not category_order and normalized_id == "default":
+                category_order = list(categories)
             if "other" not in category_order:
                 category_order.append("other")
             items_raw = list_obj.get("items", [])

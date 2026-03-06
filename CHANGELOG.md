@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.16
+- Added per-list category control for experimental multi-list mode, including support for empty category sets (flat list behavior).
+- New lists no longer inherit grocery categories by default; they start uncategorized unless custom categories are provided.
+- Added smart grocery-category defaulting only when list names look grocery/shopping-oriented.
+- Added app controls to set/clear active-list categories and optional categories at list creation time.
+
 ## 0.5.15
 - Added experimental multi-list management actions: create list, switch active list, rename list, and archive non-default lists.
 - Added app UI controls (experimental mode only) for managing internal lists directly from the Grocery app shell.
