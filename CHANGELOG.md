@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.6
+- Improved Quick Add user attribution by resolving current HA user from local `hassTokens` access token against `/api/auth/current_user` when standard unauthenticated panel context does not include `hass_user`.
+- Added stale duplicate-state cleanup on non-prompt duplicate-allowed routes so previously pending duplicate prompts do not persist into later voice/external add flows.
+
 ## 0.5.5
 - Fixed typed-user attribution by injecting current Home Assistant user identity into the app shell at render time and forwarding actor metadata on Quick Add requests.
 - Improved metadata persistence fallback so unresolved typed adds no longer store `Unknown`; they store actor name or `User`.

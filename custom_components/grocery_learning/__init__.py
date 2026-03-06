@@ -316,6 +316,22 @@ class GroceryLearningAppView(HomeAssistantView):
     async function loadActor(){
       if(actor.name) return;
       try{
+        const tokenRaw = window.localStorage.getItem('hassTokens');
+        if(tokenRaw){
+          const tokenObj = JSON.parse(tokenRaw);
+          const accessToken = String(tokenObj?.access_token || '').trim();
+          if(accessToken){
+            const res = await fetch('/api/auth/current_user', { headers: { Authorization: `Bearer ${accessToken}` }});
+            if(res.ok){
+              const me = await res.json();
+              actor.id = String(me?.id || '').trim();
+              actor.name = String(me?.name || '').trim();
+              if(actor.name) return;
+            }
+          }
+        }
+      } catch(_) {}
+      try{
         const me = await api('/api/auth/current_user');
         actor.id = String(me?.id || '').trim();
         actor.name = String(me?.name || '').trim();
@@ -1651,6 +1667,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         source = _source_from_call(call)
         if source == "voice_assistant":
             allow_duplicate = True
+        if allow_duplicate:
+            await _clear_pending_duplicate()
         normalized = _normalize_term(raw_item)
         if not normalized:
             return
