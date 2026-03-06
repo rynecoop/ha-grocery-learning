@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.8
+- Fixed regression where app actions (add, recategorize, complete, clear completed) could fail in panel context after auth hardening changes.
+- Restored action endpoint compatibility while adding token-aware frontend API requests (`Authorization: Bearer <hassTokens.access_token>` + same-origin credentials) for reliable authenticated API behavior in the iframe app shell.
+
 ## 0.5.7
 - Enforced authenticated action endpoint requests so Quick Add has stable Home Assistant user identity context.
 - Added server-side user display-name resolution from user ID for both quick-add action handling and route metadata fallback, ensuring subtitles use actual display names (e.g., `Ryne`, `Maang`) instead of generic `User`.

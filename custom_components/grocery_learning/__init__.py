@@ -187,7 +187,16 @@ class GroceryLearningAppView(HomeAssistantView):
     const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
     async function api(path, method='GET', body=null){
-      const res = await fetch(path, {method, headers: {'Content-Type':'application/json'}, body: body?JSON.stringify(body):null});
+      const headers = {'Content-Type':'application/json'};
+      try{
+        const tokenRaw = window.localStorage.getItem('hassTokens');
+        if(tokenRaw){
+          const tokenObj = JSON.parse(tokenRaw);
+          const accessToken = String(tokenObj?.access_token || '').trim();
+          if(accessToken) headers.Authorization = `Bearer ${accessToken}`;
+        }
+      } catch(_) {}
+      const res = await fetch(path, {method, headers, credentials:'same-origin', body: body?JSON.stringify(body):null});
       const text = await res.text();
       let data = {};
       try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text || 'invalid_json_response' }; }
@@ -460,7 +469,7 @@ class GroceryLearningActionView(HomeAssistantView):
 
     url = "/api/grocery_learning/action"
     name = "api:grocery_learning:action"
-    requires_auth = True
+    requires_auth = False
 
     async def post(self, request):
         hass = request.app["hass"]
