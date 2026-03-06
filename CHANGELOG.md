@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.14
+- Added experimental internal multi-list storage model (`multilist`) persisted by the integration store to begin decoupling app data from Home Assistant `todo.*` entities.
+- Added runtime/internal routing path for `route_item`, `apply_review`, and `confirm_duplicate` when `experimental_multilist` is enabled.
+- Added internal dashboard/action execution for add, complete/restore, recategorize, and clear-completed flows when the experimental flag is enabled.
+- Kept legacy `todo.*` behavior unchanged when `experimental_multilist` is disabled (default).
+
 ## 0.5.13
 - Fixed app-side user attribution to prefer Home Assistant `display_name` everywhere (panel actor bootstrap, quick-add action fallback, and service-call metadata resolution), so typed entries show real names instead of `User`.
 - Hardened subtitle metadata parsing by matching `GLMETA` markers anywhere in the stored description payload, restoring relative-time rendering even when newline formatting differs.

@@ -8,6 +8,7 @@ import re
 import asyncio
 from collections.abc import Mapping
 from typing import Any
+from uuid import uuid4
 
 import voluptuous as vol
 from aiohttp import web
@@ -637,19 +638,87 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     except Exception as err:  # pragma: no cover
         _LOGGER.warning("Failed loading grocery item metadata, using empty map: %s", err)
         item_meta = {}
+    try:
+        multilist = await store.load_multilist(list(DEFAULT_CATEGORIES))
+    except Exception as err:  # pragma: no cover
+        _LOGGER.warning("Failed loading grocery multilist storage, using defaults: %s", err)
+        multilist = {
+            "active_list_id": "default",
+            "lists": {
+                "default": {
+                    "name": "Grocery List",
+                    "categories": list(DEFAULT_CATEGORIES) + ["other"],
+                    "items": [],
+                }
+            },
+        }
 
     data["store"] = store
     data["terms"] = terms
     data["item_meta"] = item_meta
+    data["multilist"] = multilist
     data["pending_duplicate"] = {}
     data["pending_review"] = {}
     data["categories"] = list(DEFAULT_CATEGORIES)
 
     async def _save() -> None:
-        await store.save(hass.data[DOMAIN]["terms"], hass.data[DOMAIN].get("item_meta", {}))
+        await store.save(
+            hass.data[DOMAIN]["terms"],
+            hass.data[DOMAIN].get("item_meta", {}),
+            hass.data[DOMAIN].get("multilist"),
+        )
 
     def _active_categories() -> list[str]:
         return list(hass.data[DOMAIN].get("categories", list(DEFAULT_CATEGORIES)))
+
+    def _multilist_enabled() -> bool:
+        entry = hass.data.get(DOMAIN, {}).get("entry")
+        return bool(_entry_value(entry, CONF_EXPERIMENTAL_MULTILIST, False))
+
+    def _ensure_multilist_model() -> None:
+        model = hass.data[DOMAIN].setdefault("multilist", {})
+        if not isinstance(model, dict):
+            model = {}
+            hass.data[DOMAIN]["multilist"] = model
+        active_list_id = str(model.get("active_list_id", "default")).strip() or "default"
+        lists = model.get("lists")
+        if not isinstance(lists, dict):
+            lists = {}
+            model["lists"] = lists
+        if "default" not in lists or not isinstance(lists.get("default"), dict):
+            lists["default"] = {
+                "name": "Grocery List",
+                "categories": _active_categories() + ["other"],
+                "items": [],
+            }
+        default_list = lists["default"]
+        categories = default_list.get("categories")
+        if not isinstance(categories, list):
+            categories = _active_categories() + ["other"]
+        cleaned_categories = [str(c).strip().lower() for c in categories if str(c).strip()]
+        if not cleaned_categories:
+            cleaned_categories = _active_categories()
+        if "other" not in cleaned_categories:
+            cleaned_categories.append("other")
+        default_list["categories"] = cleaned_categories
+        items = default_list.get("items")
+        if not isinstance(items, list):
+            default_list["items"] = []
+        model["active_list_id"] = active_list_id if active_list_id in lists else "default"
+
+    def _active_internal_list() -> tuple[str, dict[str, Any]]:
+        _ensure_multilist_model()
+        model = hass.data[DOMAIN]["multilist"]
+        active_list_id = str(model.get("active_list_id", "default")).strip() or "default"
+        lists = model.get("lists", {})
+        list_obj = lists.get(active_list_id)
+        if not isinstance(list_obj, dict):
+            active_list_id = "default"
+            list_obj = lists.get("default", {})
+        return active_list_id, list_obj
+
+    def _internal_list_entity(category: str) -> str:
+        return f"internal:{_normalize_category(category)}"
 
     async def _learn_term(call: ServiceCall) -> None:
         category = _normalize_category(call.data["category"])
@@ -1037,7 +1106,107 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     return item
         return None
 
+    def _internal_find_item(items: list[dict[str, Any]], item_ref: str) -> dict[str, Any] | None:
+        normalized_ref = _normalize_term(item_ref)
+        for item in items:
+            item_id = str(item.get("id", "")).strip()
+            summary = str(item.get("summary", "")).strip()
+            if item_id and item_ref == item_id:
+                return item
+            if summary and (item_ref == summary or _normalize_term(summary) == normalized_ref):
+                return item
+        return None
+
+    async def _build_dashboard_payload_internal() -> dict[str, Any]:
+        active_entry = hass.data.get(DOMAIN, {}).get("entry")
+        list_id, list_obj = _active_internal_list()
+        categories = [c for c in list_obj.get("categories", []) if c != "other"] or _active_categories()
+        items = list_obj.get("items", [])
+        grouped: list[dict[str, Any]] = []
+        for category in categories + ["other"]:
+            grouped_items = []
+            for item in items:
+                if str(item.get("status", "")).strip() != "needs_action":
+                    continue
+                if str(item.get("category", "other")).strip() != category:
+                    continue
+                summary = str(item.get("summary", "")).strip()
+                description = str(item.get("description", "")).strip()
+                grouped_items.append(
+                    {
+                        "item_ref": str(item.get("id", "")).strip() or summary,
+                        "summary": summary,
+                        "description": _display_description(_internal_list_entity(category), summary, description),
+                        "list_entity": _internal_list_entity(category),
+                        "category": category,
+                        "category_display": _display_name_for_category(category),
+                    }
+                )
+            grouped.append(
+                {
+                    "category": category,
+                    "title": _display_name_for_category(category),
+                    "items": grouped_items,
+                }
+            )
+
+        completed = []
+        for item in items:
+            if str(item.get("status", "")).strip() != "completed":
+                continue
+            category = str(item.get("category", "other")).strip() or "other"
+            summary = str(item.get("summary", "")).strip()
+            description = str(item.get("description", "")).strip()
+            completed.append(
+                {
+                    "item_ref": str(item.get("id", "")).strip() or summary,
+                    "summary": summary,
+                    "description": _display_description(_internal_list_entity(category), summary, description),
+                    "list_entity": "internal:completed",
+                }
+            )
+
+        pending_review = dict(hass.data[DOMAIN].get("pending_review", {}))
+        pending_duplicate = dict(hass.data[DOMAIN].get("pending_duplicate", {}))
+        if pending_duplicate and not bool(pending_duplicate.get("interactive", False)):
+            await _clear_pending_duplicate()
+            pending_duplicate = {}
+
+        return {
+            "categories": categories + ["other"],
+            "groups": grouped,
+            "completed": completed,
+            "pending_review": {
+                "pending": bool(pending_review.get("item")),
+                "item": str(pending_review.get("item", "")),
+                "source_list": str(pending_review.get("source_list", "")),
+            },
+            "pending_duplicate": {
+                "pending": bool(pending_duplicate.get("item")),
+                "item": str(pending_duplicate.get("item", "")),
+                "target": str(pending_duplicate.get("target_list", "")),
+            },
+            "settings": {
+                "categories": categories,
+                "inbox_entity": str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip(),
+                "auto_route_inbox": bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True)),
+                "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
+                "experimental_multilist": True,
+            },
+            "system": {
+                "missing_lists": [],
+                "runtime_ready": bool(hass.data.get(DOMAIN, {}).get("runtime_ready")),
+                "active_list_id": list_id,
+                "active_list_name": str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
+            },
+            "setup": {
+                "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
+            },
+        }
+
     async def _build_dashboard_payload() -> dict[str, Any]:
+        if _multilist_enabled():
+            return await _build_dashboard_payload_internal()
         categories = _active_categories()
         active_entry = hass.data.get(DOMAIN, {}).get("entry")
         inbox_entity = str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip()
@@ -1121,8 +1290,154 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             },
         }
 
+    async def _route_item_internal(call: ServiceCall) -> None:
+        raw_item = str(call.data.get("item", "")).strip()
+        if not raw_item:
+            return
+        source_list = str(call.data.get("source_list", "")).strip()
+        remove_from_source = bool(call.data.get("remove_from_source", False))
+        review_on_other = bool(call.data.get("review_on_other", True))
+        allow_duplicate = bool(call.data.get("allow_duplicate", False))
+        interactive_duplicate = bool(call.data.get("interactive_duplicate", False))
+        source = _source_from_call(call)
+        should_prompt_duplicate = interactive_duplicate and source == "typed" and not source_list and not remove_from_source
+        if not should_prompt_duplicate:
+            await _clear_pending_duplicate()
+
+        normalized = _normalize_term(raw_item)
+        if not normalized:
+            return
+
+        _, list_obj = _active_internal_list()
+        items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+        categories = [c for c in list_obj.get("categories", []) if c != "other"] or _active_categories()
+
+        terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
+        category = _get_category_for_term(terms_obj, normalized)
+        if category not in categories:
+            category = "other"
+
+        duplicate_item = next(
+            (
+                item
+                for item in items
+                if str(item.get("status", "")).strip() == "needs_action"
+                and str(item.get("category", "")).strip() == category
+                and _normalize_term(str(item.get("summary", "")).strip()) == normalized
+            ),
+            None,
+        )
+        target_entity = _internal_list_entity(category)
+        if duplicate_item and not allow_duplicate:
+            if not should_prompt_duplicate:
+                if remove_from_source:
+                    await _remove_from_list(source_list, raw_item)
+                return
+            existing_description = str(duplicate_item.get("description", "")).strip()
+            existing_display = _display_description(target_entity, str(duplicate_item.get("summary", "")).strip(), existing_description)
+            parts = [p.strip() for p in existing_display.replace("Added by ", "").split("·")]
+            existing_by = parts[0] if parts else "Unknown"
+            existing_when = parts[1] if len(parts) > 1 else "Unknown"
+            existing_source = parts[2] if len(parts) > 2 else "Unknown"
+            await _set_pending_duplicate(
+                item=raw_item,
+                target_list=target_entity,
+                normalized=normalized,
+                existing_by=existing_by,
+                existing_source=existing_source,
+                existing_when=existing_when,
+                interactive=True,
+            )
+            if remove_from_source:
+                await _remove_from_list(source_list, raw_item)
+            return
+
+        description = await _build_item_description(call)
+        items.append(
+            {
+                "id": uuid4().hex,
+                "summary": raw_item,
+                "category": category,
+                "status": "needs_action",
+                "description": description,
+            }
+        )
+        await _record_item_meta(target_entity, raw_item, call)
+        await _save()
+
+        if remove_from_source:
+            await _remove_from_list(source_list, raw_item)
+
+        if category == "other" and review_on_other:
+            await _set_pending_review(raw_item, target_entity)
+
+    async def _apply_review_internal(call: ServiceCall) -> None:
+        category_in = str(call.data.get("category", "")).strip().lower()
+        learn = bool(call.data.get("learn", True))
+        categories = _active_categories()
+        normalized_category = _normalize_category(category_in)
+        if category_in == "keep other":
+            target_category = "other"
+        elif normalized_category in categories:
+            target_category = normalized_category
+        else:
+            target_category = "other"
+
+        pending_review = dict(hass.data[DOMAIN].get("pending_review", {}))
+        review_item = str(pending_review.get("item", "")).strip()
+        source_list = str(pending_review.get("source_list", "")).strip() or _internal_list_entity("other")
+        if not review_item:
+            return
+
+        _, list_obj = _active_internal_list()
+        items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+        item = _internal_find_item(items, review_item)
+        if item is None:
+            await _clear_pending_review()
+            return
+
+        item["category"] = target_category
+        item["description"] = await _build_item_description(call, source_override="review_move")
+        await _record_item_meta(_internal_list_entity(target_category), str(item.get("summary", "")).strip(), call, source_override="review_move")
+        if learn and target_category in categories:
+            norm = _normalize_term(str(item.get("summary", "")).strip())
+            terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
+            existing = set(terms_obj.data.get(target_category, []))
+            if norm and norm not in existing:
+                terms_obj.data.setdefault(target_category, []).append(norm)
+        await _clear_pending_review()
+        await _save()
+
+    async def _confirm_duplicate_internal(call: ServiceCall) -> None:
+        decision = str(call.data.get("decision", "")).strip().lower()
+        if decision not in {"add", "skip"}:
+            raise vol.Invalid("decision must be 'add' or 'skip'")
+        pending = dict(hass.data[DOMAIN].get("pending_duplicate", {}))
+        item = str(pending.get("item", "")).strip()
+        target_list = str(pending.get("target_list", "")).strip() or _internal_list_entity("other")
+        target_category = _normalize_category(target_list.replace("internal:", "")) if target_list.startswith("internal:") else "other"
+
+        if decision == "add" and item:
+            _, list_obj = _active_internal_list()
+            items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+            description = await _build_item_description(call, source_override="duplicate_confirmation")
+            items.append(
+                {
+                    "id": uuid4().hex,
+                    "summary": item,
+                    "category": target_category if target_category else "other",
+                    "status": "needs_action",
+                    "description": description,
+                }
+            )
+            await _record_item_meta(_internal_list_entity(target_category or "other"), item, call, source_override="duplicate_confirmation")
+            await _save()
+
+        await _clear_pending_duplicate()
+
     async def _handle_dashboard_action(payload: dict[str, Any]) -> dict[str, Any]:
         action = str(payload.get("action", "")).strip()
+        multilist_mode = _multilist_enabled()
         if action == "add_item":
             item = str(payload.get("item", "")).strip()
             if item:
@@ -1140,6 +1455,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "review_on_other": True,
                         "source": "typed",
                         "interactive_duplicate": True,
+                        "allow_duplicate": False,
                         "actor_user_id": request_user_id,
                         "actor_name": actor_name,
                     },
@@ -1153,6 +1469,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             item_ref = str(payload.get("item", "")).strip()
             status = str(payload.get("status", "")).strip().lower()
             if list_entity and item_ref and status in {"completed", "needs_action"}:
+                if multilist_mode:
+                    _, list_obj = _active_internal_list()
+                    items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+                    item = _internal_find_item(items, item_ref)
+                    if item is not None:
+                        item["status"] = status
+                        await _save()
+                    return {"ok": True}
                 await hass.services.async_call(
                     "todo",
                     "update_item",
@@ -1173,6 +1497,26 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             target_list = _target_list_for_category(target_category)
             if not from_list or not item_ref:
                 return {"ok": False, "error": "missing_item_reference"}
+            if multilist_mode:
+                _, list_obj = _active_internal_list()
+                items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+                found_internal = _internal_find_item(items, item_ref)
+                if found_internal is None:
+                    await _clear_pending_review()
+                    return {"ok": False, "error": "item_not_found"}
+                summary = str(found_internal.get("summary", "")).strip()
+                if not summary:
+                    return {"ok": False, "error": "item_summary_missing"}
+                found_internal["category"] = target_category
+                if learn and target_category in categories:
+                    norm = _normalize_term(summary)
+                    terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
+                    existing = set(terms_obj.data.get(target_category, []))
+                    if norm and norm not in existing:
+                        terms_obj.data.setdefault(target_category, []).append(norm)
+                await _clear_pending_review()
+                await _save()
+                return {"ok": True}
             found = await _resolve_item_ref(from_list, item_ref)
             if found is not None:
                 summary = str(found.get("summary", "")).strip()
@@ -1208,6 +1552,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return {"ok": False, "error": "item_not_found"}
 
         if action == "clear_completed":
+            if multilist_mode:
+                _, list_obj = _active_internal_list()
+                items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+                list_obj["items"] = [i for i in items if str(i.get("status", "")).strip() != "completed"]
+                await _save()
+                return {"ok": True}
             completed_items = await _list_items(COMPLETED_LIST_ENTITY, "completed")
             for item in completed_items:
                 remove_id = str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip()
@@ -1223,6 +1573,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return {"ok": True}
 
         if action == "repair_system":
+            if multilist_mode:
+                return {"ok": True}
             categories = _active_categories()
             active_entry = hass.data.get(DOMAIN, {}).get("entry")
             inbox_entity = str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip()
@@ -1251,6 +1603,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
             auto_route = bool(payload.get("auto_route_inbox", True))
             auto_provision = bool(payload.get("auto_provision", True))
+            experimental_multilist = bool(payload.get("experimental_multilist", bool(_entry_value(active_entry, CONF_EXPERIMENTAL_MULTILIST, False))))
             complete_setup = bool(payload.get("complete_setup", False))
 
             new_options = dict(active_entry.options)
@@ -1258,6 +1611,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             new_options[CONF_INBOX_ENTITY] = inbox_entity
             new_options[CONF_AUTO_ROUTE_INBOX] = auto_route
             new_options[CONF_AUTO_PROVISION] = auto_provision
+            new_options[CONF_EXPERIMENTAL_MULTILIST] = experimental_multilist
             if complete_setup:
                 new_options[CONF_WIZARD_COMPLETED] = True
 
@@ -1267,15 +1621,31 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             store_obj: GroceryLearningStore = hass.data[DOMAIN]["store"]
             hass.data[DOMAIN]["terms"] = await store_obj.load(categories)
             hass.data[DOMAIN]["item_meta"] = await store_obj.load_item_meta()
+            hass.data[DOMAIN]["multilist"] = await store_obj.load_multilist(categories)
+            _ensure_multilist_model()
+            _, internal_list = _active_internal_list()
+            internal_list["categories"] = categories + ["other"]
+            await _save()
 
-            await _ensure_required_lists(active_entry)
-            await _ensure_required_helpers()
-            if bool(_entry_value(active_entry, CONF_AUTO_DASHBOARD, True)):
-                await _ensure_dashboards(active_entry)
+            if not experimental_multilist:
+                await _ensure_required_lists(active_entry)
+                await _ensure_required_helpers()
+                if bool(_entry_value(active_entry, CONF_AUTO_DASHBOARD, True)):
+                    await _ensure_dashboards(active_entry)
             await _sync_helpers_internal()
             return {"ok": True}
 
         if action == "apply_review":
+            if multilist_mode:
+                category = str(payload.get("category", "")).strip()
+                learn = bool(payload.get("learn", True))
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_APPLY_REVIEW,
+                    {"category": category, "learn": learn},
+                    blocking=True,
+                )
+                return {"ok": True}
             category = str(payload.get("category", "")).strip()
             learn = bool(payload.get("learn", True))
             await hass.services.async_call(
@@ -1292,8 +1662,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             actor_name = str(payload.get("actor_name", "")).strip()
             if actor_user_id and not actor_name:
                 dup_user = await hass.auth.async_get_user(actor_user_id)
-                if dup_user and dup_user.name:
-                    actor_name = dup_user.name
+                actor_name = _display_name_from_user(dup_user)
+            if multilist_mode:
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_CONFIRM_DUPLICATE,
+                    {
+                        "decision": decision if decision in {"add", "skip"} else "skip",
+                        "actor_user_id": actor_user_id,
+                        "actor_name": actor_name,
+                    },
+                    blocking=True,
+                )
+                return {"ok": True}
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_CONFIRM_DUPLICATE,
@@ -1742,6 +2123,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         return "other"
 
     async def _route_item(call: ServiceCall) -> None:
+        if _multilist_enabled():
+            await _route_item_internal(call)
+            return
         raw_item = call.data["item"]
         source_list = call.data["source_list"].strip()
         remove_from_source = bool(call.data["remove_from_source"])
@@ -1851,6 +2235,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 )
 
     async def _apply_review(call: ServiceCall) -> None:
+        if _multilist_enabled():
+            await _apply_review_internal(call)
+            return
         category_in = str(call.data.get("category", "")).strip().lower()
         learn = bool(call.data.get("learn", True))
         if not category_in and hass.states.get(REVIEW_CATEGORY_HELPER):
@@ -1918,6 +2305,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         )
 
     async def _confirm_duplicate(call: ServiceCall) -> None:
+        if _multilist_enabled():
+            await _confirm_duplicate_internal(call)
+            return
         decision = str(call.data.get("decision", "")).strip().lower()
         if decision not in {"add", "skip"}:
             raise vol.Invalid("decision must be 'add' or 'skip'")
