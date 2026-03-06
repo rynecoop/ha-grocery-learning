@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.10
+- Added a strict duplicate-prompt qualifier: popup flow is only allowed for typed in-app Quick Add calls.
+- All non-QuickAdd routes (voice/external intake with `source_list`/`remove_from_source`) now clear pending duplicate state and skip duplicate popup flow.
+- Prevented stale duplicate-pending UI cards from carrying over into subsequent voice/external add events.
+
 ## 0.5.9
 - Fixed duplicate-entry attribution overwrite by rendering duplicate rows from each todo item's own description instead of shared normalized-item metadata.
 - Added actor metadata propagation to duplicate-confirm actions so manually confirmed duplicates retain the confirming user's display name.

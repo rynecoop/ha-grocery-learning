@@ -1704,9 +1704,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         review_on_other = bool(call.data["review_on_other"])
         allow_duplicate = bool(call.data["allow_duplicate"])
         source = _source_from_call(call)
-        if source == "voice_assistant" or bool(source_list) or remove_from_source:
-            allow_duplicate = True
-        if allow_duplicate:
+        should_prompt_duplicate = source == "typed" and not source_list and not remove_from_source
+        if not should_prompt_duplicate:
             await _clear_pending_duplicate()
         normalized = _normalize_term(raw_item)
         if not normalized:
@@ -1725,6 +1724,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         duplicate_item = await _find_open_duplicate(target_list, raw_item)
         if duplicate_item and not allow_duplicate:
+            if not should_prompt_duplicate:
+                await _clear_pending_duplicate()
+                if remove_from_source:
+                    await _remove_from_list(source_list, raw_item)
+                return
             target_state = hass.states.get(target_list)
             target_name = (
                 str(target_state.attributes.get("friendly_name", "")).strip()
