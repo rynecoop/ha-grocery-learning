@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.11
+- Implemented permanent interactive duplicate qualifier: pending duplicate UI can only be created by typed in-app Quick Add (`interactive_duplicate=true`).
+- Added schema/action wiring for `interactive_duplicate` so voice/external routes explicitly opt out.
+- Added dashboard-time cleanup of legacy/stale non-interactive pending duplicate state to prevent old popup cards from resurfacing.
+
 ## 0.5.10
 - Added a strict duplicate-prompt qualifier: popup flow is only allowed for typed in-app Quick Add calls.
 - All non-QuickAdd routes (voice/external intake with `source_list`/`remove_from_source`) now clear pending duplicate state and skip duplicate popup flow.

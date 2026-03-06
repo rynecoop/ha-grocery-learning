@@ -78,6 +78,7 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
         vol.Optional("remove_from_source", default=False): cv.boolean,
         vol.Optional("review_on_other", default=True): cv.boolean,
         vol.Optional("allow_duplicate", default=False): cv.boolean,
+        vol.Optional("interactive_duplicate", default=False): cv.boolean,
         vol.Optional("source", default=""): cv.string,
         vol.Optional("actor_name", default=""): cv.string,
         vol.Optional("actor_user_id", default=""): cv.string,
@@ -1037,6 +1038,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         completed_items = await _list_items(COMPLETED_LIST_ENTITY, "completed")
         pending_review = dict(hass.data[DOMAIN].get("pending_review", {}))
         pending_duplicate = dict(hass.data[DOMAIN].get("pending_duplicate", {}))
+        if pending_duplicate and not bool(pending_duplicate.get("interactive", False)):
+            await _clear_pending_duplicate()
+            pending_duplicate = {}
 
         return {
             "categories": categories + ["other"],
@@ -1098,6 +1102,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "item": item,
                         "review_on_other": True,
                         "source": "typed",
+                        "interactive_duplicate": True,
                         "actor_user_id": request_user_id,
                         "actor_name": actor_name,
                     },
@@ -1285,6 +1290,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         existing_by: str,
         existing_source: str,
         existing_when: str,
+        interactive: bool,
     ) -> None:
         hass.data[DOMAIN]["pending_duplicate"] = {
             "item": item,
@@ -1293,6 +1299,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "existing_by": existing_by,
             "existing_source": existing_source,
             "existing_when": existing_when,
+            "interactive": interactive,
         }
         await _set_helper_if_exists(DUPLICATE_PENDING_ITEM_HELPER, item)
         await _set_helper_if_exists(DUPLICATE_PENDING_TARGET_HELPER, target_list)
@@ -1703,8 +1710,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         remove_from_source = bool(call.data["remove_from_source"])
         review_on_other = bool(call.data["review_on_other"])
         allow_duplicate = bool(call.data["allow_duplicate"])
+        interactive_duplicate = bool(call.data.get("interactive_duplicate", False))
         source = _source_from_call(call)
-        should_prompt_duplicate = source == "typed" and not source_list and not remove_from_source
+        should_prompt_duplicate = interactive_duplicate and source == "typed" and not source_list and not remove_from_source
         if not should_prompt_duplicate:
             await _clear_pending_duplicate()
         normalized = _normalize_term(raw_item)
@@ -1746,6 +1754,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 existing_by=existing_by,
                 existing_source=existing_source,
                 existing_when=existing_when,
+                interactive=True,
             )
             await hass.services.async_call(
                 "persistent_notification",
@@ -2196,6 +2205,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "remove_from_source": True,
                     "review_on_other": True,
                     "allow_duplicate": True,
+                    "interactive_duplicate": False,
                     "source": source_label,
                 },
                 blocking=True,
