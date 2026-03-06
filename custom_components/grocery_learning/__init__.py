@@ -328,6 +328,14 @@ class GroceryLearningAppView(HomeAssistantView):
     async function loadActor(){
       if(actor.name) return;
       try{
+        const hassUser = window.hass?.user;
+        if(hassUser){
+          actor.id = String(hassUser.id || '').trim();
+          actor.name = String(hassUser.display_name || hassUser.name || hassUser.username || '').trim();
+          if(actor.name) return;
+        }
+      } catch(_) {}
+      try{
         const tokenRaw = window.localStorage.getItem('hassTokens');
         if(tokenRaw){
           const tokenObj = JSON.parse(tokenRaw);
@@ -337,7 +345,7 @@ class GroceryLearningAppView(HomeAssistantView):
             if(res.ok){
               const me = await res.json();
               actor.id = String(me?.id || '').trim();
-              actor.name = String(me?.name || '').trim();
+              actor.name = String(me?.display_name || me?.name || me?.username || '').trim();
               if(actor.name) return;
             }
           }
@@ -346,7 +354,7 @@ class GroceryLearningAppView(HomeAssistantView):
       try{
         const me = await api('/api/auth/current_user');
         actor.id = String(me?.id || '').trim();
-        actor.name = String(me?.name || '').trim();
+        actor.name = String(me?.display_name || me?.name || me?.username || '').trim();
       } catch(_) {}
     }
 
@@ -388,7 +396,11 @@ class GroceryLearningAppView(HomeAssistantView):
 """
         hass_user = request.get("hass_user")
         actor_id = str(getattr(hass_user, "id", "") or "") if hass_user is not None else ""
-        actor_name = str(getattr(hass_user, "name", "") or "") if hass_user is not None else ""
+        actor_name = (
+            str(getattr(hass_user, "display_name", "") or getattr(hass_user, "name", "") or getattr(hass_user, "username", "") or "")
+            if hass_user is not None
+            else ""
+        )
         actor_id_json = json.dumps(actor_id)
         actor_name_json = json.dumps(actor_name)
         html = html.replace("'__ACTOR_ID__'", actor_id_json).replace("'__ACTOR_NAME__'", actor_name_json)
@@ -400,7 +412,7 @@ class GroceryLearningDashboardView(HomeAssistantView):
 
     url = "/api/grocery_learning/dashboard"
     name = "api:grocery_learning:dashboard"
-    requires_auth = False
+    requires_auth = True
 
     @staticmethod
     def _empty_payload(error: str = "") -> dict[str, Any]:
@@ -472,7 +484,7 @@ class GroceryLearningActionView(HomeAssistantView):
 
     url = "/api/grocery_learning/action"
     name = "api:grocery_learning:action"
-    requires_auth = False
+    requires_auth = True
 
     async def post(self, request):
         hass = request.app["hass"]
@@ -812,6 +824,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if attempt < 3:
                 await asyncio.sleep(0.25)
 
+    def _display_name_from_user(user: Any) -> str:
+        if user is None:
+            return ""
+        return str(
+            getattr(user, "display_name", "")
+            or getattr(user, "name", "")
+            or getattr(user, "username", "")
+            or ""
+        ).strip()
+
     async def _user_name_from_context(call: ServiceCall) -> tuple[str, str]:
         user_id = call.context.user_id or ""
         if not user_id:
@@ -819,16 +841,21 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             actor_name = str(call.data.get("actor_name", "")).strip()
             if actor_id:
                 actor_user = await hass.auth.async_get_user(actor_id)
-                if actor_user and actor_user.name:
-                    return actor_id, actor_user.name
+                display_name = _display_name_from_user(actor_user)
+                if display_name:
+                    return actor_id, display_name
                 if actor_name:
                     return actor_id, actor_name
             if actor_name:
                 return "", actor_name
             return "", ""
         user = await hass.auth.async_get_user(user_id)
-        if user and user.name:
-            return user_id, user.name
+        display_name = _display_name_from_user(user)
+        if display_name:
+            return user_id, display_name
+        actor_name = str(call.data.get("actor_name", "")).strip()
+        if actor_name:
+            return user_id, actor_name
         return user_id, "User"
 
     def _source_from_call(call: ServiceCall) -> str:
@@ -846,6 +873,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         return dict(meta_map.get(_item_meta_key(list_entity, normalized_item), {}))
 
     def _display_description(list_entity: str, summary: str, fallback: str) -> str:
+        marker = "GLMETA|"
+        if marker in fallback:
+            match = re.search(r"GLMETA\|([^|]+)\|([^|]*)\|([^\r\n|]+)", fallback)
+            if match:
+                added_at, added_by, source_key = match.groups()
+                added_by = added_by.strip() or "Unknown"
+                source = _friendly_source(source_key.strip() or "unknown")
+                when = _relative_time(added_at.strip())
+                return f"Added by {added_by} · {when} · {source}"
         normalized_item = _normalize_term(summary)
         if not normalized_item:
             return fallback
@@ -879,7 +915,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             else:
                 user_name = "Unknown"
         source = _friendly_source(resolved_source)
-        return f"Added by {user_name} · just now · {source}"
+        now_iso = dt_util.utcnow().isoformat()
+        safe_name = user_name.replace("|", "/")
+        safe_source = resolved_source.replace("|", "_")
+        return f"Added by {user_name} · just now · {source}\nGLMETA|{now_iso}|{safe_name}|{safe_source}"
 
     async def _record_item_meta(
         list_entity: str,
@@ -1003,12 +1042,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         for category in categories + ["other"]:
             entity_id = _target_list_for_category(category)
             raw_items = await _list_items(entity_id, "needs_action")
-            duplicate_counts: dict[str, int] = {}
-            for raw in raw_items:
-                norm = _normalize_term(str(raw.get("summary", "")).strip())
-                if not norm:
-                    continue
-                duplicate_counts[norm] = duplicate_counts.get(norm, 0) + 1
             grouped.append(
                 {
                     "category": category,
@@ -1017,14 +1050,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         {
                             "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
                             "summary": str(item.get("summary", "")).strip(),
-                            "description": (
-                                str(item.get("description", "")).strip()
-                                if duplicate_counts.get(_normalize_term(str(item.get("summary", "")).strip()), 0) > 1
-                                else _display_description(
-                                    entity_id,
-                                    str(item.get("summary", "")).strip(),
-                                    str(item.get("description", "")).strip(),
-                                )
+                            "description": _display_description(
+                                entity_id,
+                                str(item.get("summary", "")).strip(),
+                                str(item.get("description", "")).strip(),
                             ),
                             "list_entity": entity_id,
                             "category": category,
@@ -1092,8 +1121,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 actor_name = str(payload.get("actor_name", "")).strip()
                 if request_user_id and not actor_name:
                     req_user = await hass.auth.async_get_user(request_user_id)
-                    if req_user and req_user.name:
-                        actor_name = req_user.name
+                    actor_name = _display_name_from_user(req_user)
                 request_context = Context(user_id=request_user_id) if request_user_id else None
                 await hass.services.async_call(
                     DOMAIN,

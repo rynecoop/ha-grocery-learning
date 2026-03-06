@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.13
+- Fixed app-side user attribution to prefer Home Assistant `display_name` everywhere (panel actor bootstrap, quick-add action fallback, and service-call metadata resolution), so typed entries show real names instead of `User`.
+- Hardened subtitle metadata parsing by matching `GLMETA` markers anywhere in the stored description payload, restoring relative-time rendering even when newline formatting differs.
+- Switched Grocery dashboard/action API views to authenticated mode so user context is consistently available for attribution and routing metadata.
+
 ## 0.5.12
 - Intake-list call-service routes are now explicitly marked as `voice_assistant` source so routed voice items no longer show `Typed` metadata.
 - Voice intake routing now keeps source-list entries (`remove_from_source=false`) so native voice duplicate confirmation behavior can still occur on repeated voice adds.
