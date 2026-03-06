@@ -58,6 +58,8 @@ Local Grocery Assistant is a Home Assistant custom integration that gives you a 
 - Voice guide: [docs/voice.md](docs/voice.md)
 - Troubleshooting: [docs/troubleshooting.md](docs/troubleshooting.md)
 - FAQ: [docs/faq.md](docs/faq.md)
+- Regression checklist: [docs/regression-checklist.md](docs/regression-checklist.md)
+- Multi-list roadmap: [docs/multilist-roadmap.md](docs/multilist-roadmap.md)
 
 ## Service APIs
 - `grocery_learning.route_item`

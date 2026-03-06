@@ -14,6 +14,7 @@ from .const import (
     CONF_AUTO_PROVISION,
     CONF_AUTO_ROUTE_INBOX,
     CONF_CATEGORIES,
+    CONF_EXPERIMENTAL_MULTILIST,
     CONF_INBOX_ENTITY,
     CONF_NOTIFY_SERVICE,
     DEFAULT_CATEGORIES,
@@ -28,6 +29,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_INBOX_ENTITY, default="todo.grocery_inbox"): cv.string,
         vol.Required(CONF_CATEGORIES, default=",".join(DEFAULT_CATEGORIES)): cv.string,
         vol.Optional(CONF_NOTIFY_SERVICE, default=""): cv.string,
+        vol.Required(CONF_EXPERIMENTAL_MULTILIST, default=False): bool,
     }
 )
 
@@ -89,6 +91,10 @@ class GroceryLearningOptionsFlow(config_entries.OptionsFlow):
                     default=",".join(current_data.get(CONF_CATEGORIES, list(DEFAULT_CATEGORIES))),
                 ): cv.string,
                 vol.Optional(CONF_NOTIFY_SERVICE, default=current_data.get(CONF_NOTIFY_SERVICE, "")): cv.string,
+                vol.Required(
+                    CONF_EXPERIMENTAL_MULTILIST,
+                    default=bool(current_data.get(CONF_EXPERIMENTAL_MULTILIST, False)),
+                ): bool,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)

@@ -25,6 +25,7 @@ from .const import (
     CONF_AUTO_PROVISION,
     CONF_AUTO_ROUTE_INBOX,
     CONF_CATEGORIES,
+    CONF_EXPERIMENTAL_MULTILIST,
     CONF_INBOX_ENTITY,
     CONF_NOTIFY_SERVICE,
     COMPLETED_LIST_ENTITY,
@@ -433,6 +434,7 @@ class GroceryLearningDashboardView(HomeAssistantView):
                 "inbox_entity": "todo.grocery_inbox",
                 "auto_route_inbox": True,
                 "auto_provision": True,
+                "experimental_multilist": False,
             },
             "system": {"missing_lists": [], "runtime_ready": False},
             "setup": {"completed": False},
@@ -465,7 +467,13 @@ class GroceryLearningDashboardView(HomeAssistantView):
             payload.setdefault("pending_duplicate", {"pending": False, "item": "", "target": ""})
             payload.setdefault(
                 "settings",
-                {"categories": [], "inbox_entity": "todo.grocery_inbox", "auto_route_inbox": True, "auto_provision": True},
+                {
+                    "categories": [],
+                    "inbox_entity": "todo.grocery_inbox",
+                    "auto_route_inbox": True,
+                    "auto_provision": True,
+                    "experimental_multilist": False,
+                },
             )
             payload.setdefault("system", {"missing_lists": [], "runtime_ready": False})
             payload.setdefault("setup", {"completed": False})
@@ -1102,6 +1110,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "inbox_entity": inbox_entity,
                 "auto_route_inbox": bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True)),
                 "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
+                "experimental_multilist": bool(_entry_value(active_entry, CONF_EXPERIMENTAL_MULTILIST, False)),
             },
             "system": {
                 "missing_lists": missing_lists,
