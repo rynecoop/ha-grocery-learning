@@ -460,7 +460,7 @@ class GroceryLearningActionView(HomeAssistantView):
 
     url = "/api/grocery_learning/action"
     name = "api:grocery_learning:action"
-    requires_auth = False
+    requires_auth = True
 
     async def post(self, request):
         hass = request.app["hass"]
@@ -805,8 +805,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not user_id:
             actor_id = str(call.data.get("actor_user_id", "")).strip()
             actor_name = str(call.data.get("actor_name", "")).strip()
-            if actor_id and actor_name:
-                return actor_id, actor_name
+            if actor_id:
+                actor_user = await hass.auth.async_get_user(actor_id)
+                if actor_user and actor_user.name:
+                    return actor_id, actor_user.name
+                if actor_name:
+                    return actor_id, actor_name
             if actor_name:
                 return "", actor_name
             return "", ""
@@ -1061,6 +1065,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if item:
                 request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
                 actor_name = str(payload.get("actor_name", "")).strip()
+                if request_user_id and not actor_name:
+                    req_user = await hass.auth.async_get_user(request_user_id)
+                    if req_user and req_user.name:
+                        actor_name = req_user.name
                 request_context = Context(user_id=request_user_id) if request_user_id else None
                 await hass.services.async_call(
                     DOMAIN,
@@ -1665,7 +1673,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         review_on_other = bool(call.data["review_on_other"])
         allow_duplicate = bool(call.data["allow_duplicate"])
         source = _source_from_call(call)
-        if source == "voice_assistant":
+        if source == "voice_assistant" or bool(source_list) or remove_from_source:
             allow_duplicate = True
         if allow_duplicate:
             await _clear_pending_duplicate()

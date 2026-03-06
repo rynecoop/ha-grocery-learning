@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.7
+- Enforced authenticated action endpoint requests so Quick Add has stable Home Assistant user identity context.
+- Added server-side user display-name resolution from user ID for both quick-add action handling and route metadata fallback, ensuring subtitles use actual display names (e.g., `Ryne`, `Maang`) instead of generic `User`.
+- Broadened duplicate-bypass gating for external intake paths (`source_list`/`remove_from_source`) so duplicate confirmation popups remain limited to in-app text Quick Add behavior.
+
 ## 0.5.6
 - Improved Quick Add user attribution by resolving current HA user from local `hassTokens` access token against `/api/auth/current_user` when standard unauthenticated panel context does not include `hass_user`.
 - Added stale duplicate-state cleanup on non-prompt duplicate-allowed routes so previously pending duplicate prompts do not persist into later voice/external add flows.
