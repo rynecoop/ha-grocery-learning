@@ -14,6 +14,7 @@ from .const import (
     CONF_AUTO_PROVISION,
     CONF_AUTO_ROUTE_INBOX,
     CONF_CATEGORIES,
+    CONF_DEFAULT_GROCERY_CATEGORIES,
     CONF_EXPERIMENTAL_MULTILIST,
     CONF_INBOX_ENTITY,
     CONF_NOTIFY_SERVICE,
@@ -30,6 +31,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_CATEGORIES, default=",".join(DEFAULT_CATEGORIES)): cv.string,
         vol.Optional(CONF_NOTIFY_SERVICE, default=""): cv.string,
         vol.Required(CONF_EXPERIMENTAL_MULTILIST, default=False): bool,
+        vol.Required(CONF_DEFAULT_GROCERY_CATEGORIES, default=True): bool,
     }
 )
 
@@ -94,6 +96,10 @@ class GroceryLearningOptionsFlow(config_entries.OptionsFlow):
                 vol.Required(
                     CONF_EXPERIMENTAL_MULTILIST,
                     default=bool(current_data.get(CONF_EXPERIMENTAL_MULTILIST, False)),
+                ): bool,
+                vol.Required(
+                    CONF_DEFAULT_GROCERY_CATEGORIES,
+                    default=bool(current_data.get(CONF_DEFAULT_GROCERY_CATEGORIES, True)),
                 ): bool,
             }
         )

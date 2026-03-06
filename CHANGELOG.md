@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.18
+- Cleaned Configure UI in internal multi-list mode by hiding legacy inbox/auto-route/auto-provision controls.
+- Added a single toggle: `Use default shopping/grocery categories for new grocery lists`.
+- Kept default list as Grocery with grocery categories; non-grocery lists can stay flat with no review popup noise.
+- Moved all list management controls behind `Configure` and kept the active list selector in the header for a cleaner primary workflow.
+
 ## 0.5.17
 - Renamed app/sidebar branding to **Local List Assist** for multi-list fit.
 - Moved list management controls (create/rename/archive/per-list categories) behind `Configure` to keep the main view clean.

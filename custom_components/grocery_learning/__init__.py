@@ -26,6 +26,7 @@ from .const import (
     CONF_AUTO_PROVISION,
     CONF_AUTO_ROUTE_INBOX,
     CONF_CATEGORIES,
+    CONF_DEFAULT_GROCERY_CATEGORIES,
     CONF_EXPERIMENTAL_MULTILIST,
     CONF_INBOX_ENTITY,
     CONF_NOTIFY_SERVICE,
@@ -305,18 +306,19 @@ class GroceryLearningAppView(HomeAssistantView):
             <div class="small">Manage categories/order and repair required entities.</div>
             <div class="row" style="margin-top:10px;">
               <div class="field">
-                <div class="label">Categories (order controls aisle flow)</div>
+                <div class="label">${multilistEnabled ? 'Default Grocery Categories (Grocery list only)' : 'Categories (order controls aisle flow)'}</div>
                 <input id="settingsCategories" class="input" value="${esc((state.settings?.categories || []).join(', '))}" />
               </div>
-              <div class="field">
+              ${multilistEnabled ? '' : `<div class="field">
                 <div class="label">Inbox Entity</div>
                 <input id="settingsInbox" class="input" value="${esc(state.settings?.inbox_entity || 'todo.grocery_inbox')}" />
-              </div>
+              </div>`}
             </div>
             <div class="row" style="margin-top:10px;">
-              <label class="checkbox"><input id="settingsAutoRoute" type="checkbox" ${state.settings?.auto_route_inbox ? 'checked' : ''} /> Auto route inbox/voice intake</label>
-              <label class="checkbox"><input id="settingsAutoProvision" type="checkbox" ${state.settings?.auto_provision ? 'checked' : ''} /> Auto provision missing lists</label>
               <label class="checkbox"><input id="settingsExperimentalMultilist" type="checkbox" ${state.settings?.experimental_multilist ? 'checked' : ''} /> Enable experimental internal multi-list mode</label>
+              <label class="checkbox"><input id="settingsDefaultGroceryCategories" type="checkbox" ${state.settings?.default_grocery_categories ? 'checked' : ''} /> Use default shopping/grocery categories for new grocery lists</label>
+              ${multilistEnabled ? '' : `<label class="checkbox"><input id="settingsAutoRoute" type="checkbox" ${state.settings?.auto_route_inbox ? 'checked' : ''} /> Auto route inbox/voice intake</label>
+              <label class="checkbox"><input id="settingsAutoProvision" type="checkbox" ${state.settings?.auto_provision ? 'checked' : ''} /> Auto provision missing lists</label>`}
             </div>
             <div class="row" style="margin-top:10px;">
               <button class="btn primary" onclick="window.__g.saveSettings(false)">Save</button>
@@ -454,17 +456,22 @@ class GroceryLearningAppView(HomeAssistantView):
       async saveSettings(completeSetup){
         const categories = (byId('settingsCategories')?.value || '').trim();
         const inboxEntity = (byId('settingsInbox')?.value || '').trim();
-        const autoRoute = !!byId('settingsAutoRoute')?.checked;
-        const autoProvision = !!byId('settingsAutoProvision')?.checked;
+        const autoRoute = byId('settingsAutoRoute') ? !!byId('settingsAutoRoute')?.checked : undefined;
+        const autoProvision = byId('settingsAutoProvision') ? !!byId('settingsAutoProvision')?.checked : undefined;
         const experimentalMultilist = !!byId('settingsExperimentalMultilist')?.checked;
-        await act({
+        const defaultGroceryCategories = !!byId('settingsDefaultGroceryCategories')?.checked;
+        const payload = {
           action:'save_settings',
           categories,
-          inbox_entity: inboxEntity,
-          auto_route_inbox: autoRoute,
-          auto_provision: autoProvision,
           experimental_multilist: experimentalMultilist,
+          default_grocery_categories: defaultGroceryCategories,
           complete_setup: !!completeSetup
+        };
+        if(byId('settingsInbox')) payload.inbox_entity = inboxEntity;
+        if(byId('settingsAutoRoute')) payload.auto_route_inbox = autoRoute;
+        if(byId('settingsAutoProvision')) payload.auto_provision = autoProvision;
+        await act({
+          ...payload
         });
         if(completeSetup){ configOpen = false; }
       }
@@ -524,6 +531,7 @@ class GroceryLearningDashboardView(HomeAssistantView):
                 "auto_route_inbox": True,
                 "auto_provision": True,
                 "experimental_multilist": False,
+                "default_grocery_categories": True,
             },
             "system": {"missing_lists": [], "runtime_ready": False},
             "setup": {"completed": False},
@@ -563,6 +571,7 @@ class GroceryLearningDashboardView(HomeAssistantView):
                     "auto_route_inbox": True,
                     "auto_provision": True,
                     "experimental_multilist": False,
+                    "default_grocery_categories": True,
                 },
             )
             payload.setdefault("system", {"missing_lists": [], "runtime_ready": False})
@@ -1328,6 +1337,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "auto_route_inbox": bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True)),
                 "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
                 "experimental_multilist": True,
+                "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
             },
             "system": {
                 "missing_lists": [],
@@ -1418,6 +1428,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "auto_route_inbox": bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True)),
                 "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
                 "experimental_multilist": bool(_entry_value(active_entry, CONF_EXPERIMENTAL_MULTILIST, False)),
+                "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
             },
             "system": {
                 "missing_lists": missing_lists,
@@ -1618,9 +1629,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if list_id in lists:
                 return {"ok": False, "error": "list_exists"}
             custom_categories = _categories_from_list_input(payload.get("categories", ""))
+            use_default_grocery_categories = bool(
+                _entry_value(hass.data.get(DOMAIN, {}).get("entry"), CONF_DEFAULT_GROCERY_CATEGORIES, True)
+            )
             if custom_categories:
                 base_categories = custom_categories
-            elif _looks_like_grocery_list(name):
+            elif use_default_grocery_categories and _looks_like_grocery_list(name):
                 base_categories = _active_categories()
             else:
                 base_categories = []
@@ -1836,13 +1850,17 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 return {"ok": False, "error": "entry_not_loaded"}
 
             categories = _categories_from_raw(payload.get("categories", _active_categories()))
-            inbox_entity = str(payload.get("inbox_entity", "todo.grocery_inbox")).strip() or "todo.grocery_inbox"
+            current_inbox = str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip() or "todo.grocery_inbox"
+            inbox_entity = str(payload.get("inbox_entity", current_inbox)).strip() or current_inbox
             if "." not in inbox_entity:
                 inbox_entity = f"todo.{_normalize_category(inbox_entity)}"
 
-            auto_route = bool(payload.get("auto_route_inbox", True))
-            auto_provision = bool(payload.get("auto_provision", True))
+            auto_route = bool(payload.get("auto_route_inbox", bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True))))
+            auto_provision = bool(payload.get("auto_provision", bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True))))
             experimental_multilist = bool(payload.get("experimental_multilist", bool(_entry_value(active_entry, CONF_EXPERIMENTAL_MULTILIST, False))))
+            default_grocery_categories = bool(
+                payload.get("default_grocery_categories", bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)))
+            )
             complete_setup = bool(payload.get("complete_setup", False))
 
             new_options = dict(active_entry.options)
@@ -1851,6 +1869,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             new_options[CONF_AUTO_ROUTE_INBOX] = auto_route
             new_options[CONF_AUTO_PROVISION] = auto_provision
             new_options[CONF_EXPERIMENTAL_MULTILIST] = experimental_multilist
+            new_options[CONF_DEFAULT_GROCERY_CATEGORIES] = default_grocery_categories
             if complete_setup:
                 new_options[CONF_WIZARD_COMPLETED] = True
 
