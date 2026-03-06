@@ -1,6 +1,6 @@
 {
   "domain": "grocery_learning",
-  "name": "Local Grocery Assistant",
+  "name": "Local List Assist",
   "codeowners": [
     "@rynecoop"
   ],
@@ -13,5 +13,5 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/rynecoop/ha-grocery-learning/issues",
   "requirements": [],
-  "version": "0.5.16"
+  "version": "0.5.17"
 }

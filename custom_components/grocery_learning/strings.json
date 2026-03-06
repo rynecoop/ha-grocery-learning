@@ -11,7 +11,7 @@
           "notify_service": "Optional notify service (example: notify.mobile_app_phone)",
           "experimental_multilist": "Enable experimental multi-list mode (beta)"
         },
-        "title": "Local Grocery Assistant",
+        "title": "Local List Assist",
         "description": "Configure your grocery routing defaults."
       }
     },
@@ -32,7 +32,7 @@
           "notify_service": "Optional notify service (example: notify.mobile_app_phone)",
           "experimental_multilist": "Enable experimental multi-list mode (beta)"
         },
-        "title": "Local Grocery Assistant Options",
+        "title": "Local List Assist Options",
         "description": "Update grocery routing behavior."
       }
     }

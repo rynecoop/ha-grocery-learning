@@ -1,4 +1,4 @@
-"""Local Grocery Assistant custom integration."""
+"""Local List Assist custom integration."""
 
 from __future__ import annotations
 
@@ -128,7 +128,7 @@ class GroceryLearningAppView(HomeAssistantView):
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Grocery App</title>
+  <title>Local List Assist</title>
   <style>
     :root { --bg:#11161c; --panel:#1a212a; --muted:#8ea0b5; --text:#f4f7fb; --accent:#3ea6ff; --ok:#39c27f; --warn:#ffbf47; --danger:#ff6b6b; }
     * { box-sizing:border-box; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
@@ -165,14 +165,14 @@ class GroceryLearningAppView(HomeAssistantView):
 <body>
   <div class="wrap">
     <div class="header">
-      <div class="title">Local Grocery Assistant</div>
-      <div class="sub">Single-list app shell with categories, review queue, duplicates, and completed history.</div>
+      <div class="title">Local List Assist</div>
+      <div class="sub">Local-first list app with smart grocery routing and flexible custom lists.</div>
+      <div id="listSwitcher" style="margin-top:10px;"></div>
       <div class="row" style="margin-top:10px;">
         <input id="quickAdd" class="input" placeholder="Add item" />
         <button id="addBtn" class="btn primary">Add</button>
         <button id="configureBtn" class="btn">Configure</button>
       </div>
-      <div id="listManager" style="margin-top:10px;"></div>
       <div id="configPanel" class="config-panel"></div>
     </div>
     <div id="attention"></div>
@@ -283,34 +283,25 @@ class GroceryLearningAppView(HomeAssistantView):
           <div class="row" style="margin-top:8px;">${buttons}<button class="btn" onclick="window.__g.review('other', false)">Keep Other</button></div></div>`);
       }
       byId('attention').innerHTML = attention.join('');
-      const listManager = byId('listManager');
+      const listSwitcher = byId('listSwitcher');
       if(multilistEnabled){
         const listOptions = (state.lists || []).map((l) => `<option value="${esc(l.id)}" ${l.active ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
         const active = (state.lists || []).find((l) => !!l.active);
-        const activeCategories = (state.settings?.categories || []).join(', ');
-        listManager.innerHTML = `
+        listSwitcher.innerHTML = `
           <div class="row">
-            <select id="activeListSelect" class="input" style="max-width:280px; min-width:220px;">${listOptions}</select>
-            <input id="newListName" class="input" placeholder="New list name" style="max-width:260px;" />
-            <input id="newListCategories" class="input" placeholder="Optional categories (comma separated)" style="max-width:360px;" />
-            <button class="btn" onclick="window.__g.createList()">Create List</button>
-            <button class="btn" onclick="window.__g.renameList()">Rename Active</button>
-            <button class="btn danger" onclick="window.__g.archiveList()">Archive Active</button>
+            <select id="activeListSelect" class="input" style="max-width:360px; min-width:220px;">${listOptions}</select>
           </div>
-          <div class="row" style="margin-top:6px;">
-            <input id="activeListCategories" class="input" value="${esc(activeCategories)}" placeholder="Active list categories (comma separated)" style="max-width:420px;" />
-            <button class="btn" onclick="window.__g.saveListCategories()">Save Categories</button>
-            <button class="btn" onclick="window.__g.clearListCategories()">No Categories</button>
-          </div>
-          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong>. Leave categories blank to keep one flat list.</div>`;
+          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong></div>`;
       } else {
-        listManager.innerHTML = '';
+        listSwitcher.innerHTML = '';
       }
       const configPanel = byId('configPanel');
       if(configOpen || !state.setup?.completed){
+        const active = (state.lists || []).find((l) => !!l.active);
+        const activeCategories = (state.system?.active_list_categories || []).join(', ');
         configPanel.innerHTML = `
           <div class="section">
-            <div class="title">${state.setup?.completed ? 'Configure Grocery List' : 'Setup Wizard'}</div>
+            <div class="title">${state.setup?.completed ? 'Configure Local List Assist' : 'Setup Wizard'}</div>
             <div class="small">Manage categories/order and repair required entities.</div>
             <div class="row" style="margin-top:10px;">
               <div class="field">
@@ -332,6 +323,25 @@ class GroceryLearningAppView(HomeAssistantView):
               <button class="btn" onclick="window.__g.repair()">Repair/Provision</button>
               ${state.setup?.completed ? '<button class="btn" onclick="window.__g.closeConfig()">Done</button>' : '<button class="btn warn" onclick="window.__g.saveSettings(true)">Complete Setup</button>'}
             </div>
+            ${multilistEnabled ? `
+            <div class="section" style="margin-top:12px;">
+              <div class="title">Manage Lists</div>
+              <div class="row" style="margin-top:8px;">
+                <input id="newListName" class="input" placeholder="New list name" style="max-width:260px;" />
+                <input id="newListCategories" class="input" placeholder="Optional categories (comma separated)" style="max-width:360px;" />
+                <button class="btn" onclick="window.__g.createList()">Create List</button>
+              </div>
+              <div class="row" style="margin-top:8px;">
+                <input id="activeListCategories" class="input" value="${esc(activeCategories)}" placeholder="Active list categories (comma separated)" style="max-width:420px;" />
+                <button class="btn" onclick="window.__g.saveListCategories()">Save Categories</button>
+                <button class="btn" onclick="window.__g.clearListCategories()">No Categories</button>
+              </div>
+              <div class="row" style="margin-top:8px;">
+                <button class="btn" onclick="window.__g.renameList()">Rename Active</button>
+                <button class="btn danger" onclick="window.__g.archiveList()">Archive Active</button>
+              </div>
+              <div class="small" style="margin-top:8px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong>. For non-grocery lists, leave categories blank for a flat list.</div>
+            </div>` : ''}
             <div class="small" style="margin-top:8px;">
               Health: ${state.system?.missing_lists?.length ? ('Missing lists: ' + esc(state.system.missing_lists.join(', '))) : 'All required lists detected'}
             </div>
@@ -487,7 +497,7 @@ class GroceryLearningAppView(HomeAssistantView):
 
 
 class GroceryLearningDashboardView(HomeAssistantView):
-    """Return dashboard payload for custom Grocery app."""
+    """Return dashboard payload for Local List Assist app."""
 
     url = "/api/grocery_learning/dashboard"
     name = "api:grocery_learning:dashboard"
@@ -1244,6 +1254,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         list_id, list_obj = _active_internal_list()
         categories = [c for c in list_obj.get("categories", []) if c != "other"]
         has_custom_categories = len(categories) > 0
+        default_list = hass.data[DOMAIN].get("multilist", {}).get("lists", {}).get("default", {})
+        default_categories = [c for c in default_list.get("categories", []) if c != "other"] if isinstance(default_list, dict) else _active_categories()
         items = list_obj.get("items", [])
         grouped: list[dict[str, Any]] = []
         for category in categories + ["other"]:
@@ -1311,7 +1323,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "target": str(pending_duplicate.get("target_list", "")),
             },
             "settings": {
-                "categories": categories,
+                "categories": default_categories,
                 "inbox_entity": str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip(),
                 "auto_route_inbox": bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True)),
                 "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
@@ -1322,6 +1334,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "runtime_ready": bool(hass.data.get(DOMAIN, {}).get("runtime_ready")),
                 "active_list_id": list_id,
                 "active_list_name": str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
+                "active_list_categories": categories,
             },
             "setup": {
                 "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
@@ -1433,12 +1446,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not normalized:
             return
 
-        _, list_obj = _active_internal_list()
+        active_list_id, list_obj = _active_internal_list()
         items: list[dict[str, Any]] = list_obj.setdefault("items", [])
         categories = [c for c in list_obj.get("categories", []) if c != "other"]
+        list_name = str(list_obj.get("name", "")).strip()
+        smart_grocery_mode = active_list_id == "default" or _looks_like_grocery_list(list_name)
 
         terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
-        category = _get_category_for_term(terms_obj, normalized) if categories else "other"
+        category = _get_category_for_term(terms_obj, normalized) if (categories and smart_grocery_mode) else "other"
         if categories and category not in categories:
             category = "other"
 
@@ -1493,7 +1508,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if remove_from_source:
             await _remove_from_list(source_list, raw_item)
 
-        if category == "other" and review_on_other:
+        if category == "other" and review_on_other and smart_grocery_mode and categories:
             await _set_pending_review(raw_item, target_entity)
 
     async def _apply_review_internal(call: ServiceCall) -> None:
@@ -2270,7 +2285,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "cards": [
                             {
                                 "type": "button",
-                                "name": "Open Grocery App",
+                                "name": "Open Local List Assist",
                                 "icon": "mdi:cart-variant",
                                 "tap_action": {"action": "navigate", "navigation_path": "/grocery-app"},
                             }
@@ -2293,7 +2308,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "cards": [
                             {
                                 "type": "button",
-                                "name": "Open Grocery App",
+                                "name": "Open Local List Assist",
                                 "icon": "mdi:cart-variant",
                                 "tap_action": {"action": "navigate", "navigation_path": "/grocery-app"},
                             }
@@ -2307,7 +2322,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not bool(_entry_value(entry, CONF_AUTO_DASHBOARD, True)):
             return
 
-        await _upsert_storage_dashboard_meta("grocery", "Grocery", "mdi:cart-variant", False, "grocery", show_in_sidebar=False)
+        await _upsert_storage_dashboard_meta("grocery", "Local List Assist", "mdi:cart-variant", False, "grocery", show_in_sidebar=False)
         await _upsert_storage_dashboard_meta(
             "grocery_admin",
             "Grocery Admin",
@@ -2441,7 +2456,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "create",
                 {
                     "title": "Grocery needs category review",
-                    "message": f"'{raw_item}' was added to Other. Open Grocery dashboard Review & Learn.",
+                    "message": f"'{raw_item}' was added to Other. Open Local List Assist and review.",
                     "notification_id": "grocery_uncategorized",
                 },
                 blocking=True,
@@ -2592,7 +2607,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass,
             "iframe",
             frontend_url_path="grocery-app",
-            sidebar_title="Grocery List",
+            sidebar_title="Local List Assist",
             sidebar_icon="mdi:cart-variant",
             config={"url": "/api/grocery_learning/app"},
             require_admin=False,
@@ -2609,7 +2624,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Local Grocery Assistant from config entry."""
+    """Set up Local List Assist from config entry."""
     await _async_setup_runtime(hass)
     data = hass.data[DOMAIN]
     data["entry"] = entry

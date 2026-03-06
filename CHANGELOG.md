@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.17
+- Renamed app/sidebar branding to **Local List Assist** for multi-list fit.
+- Moved list management controls (create/rename/archive/per-list categories) behind `Configure` to keep the main view clean.
+- Added top-level active-list selector in the app header.
+- Limited smart auto-sorting + review prompts to grocery-style lists; non-grocery/flat lists now keep items in-place without review popups.
+- Kept default list as Grocery with grocery-category behavior.
+
 ## 0.5.16
 - Added per-list category control for experimental multi-list mode, including support for empty category sets (flat list behavior).
 - New lists no longer inherit grocery categories by default; they start uncategorized unless custom categories are provided.

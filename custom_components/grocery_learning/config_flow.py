@@ -48,7 +48,7 @@ def _normalize_categories(raw: str) -> list[str]:
 
 
 class GroceryLearningConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle Local Grocery Assistant config flow."""
+    """Handle Local List Assist config flow."""
 
     VERSION = 1
 
@@ -58,7 +58,7 @@ class GroceryLearningConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="single_instance_allowed")
         if user_input is not None:
             user_input[CONF_CATEGORIES] = _normalize_categories(user_input.get(CONF_CATEGORIES, ""))
-            return self.async_create_entry(title="Local Grocery Assistant", data=user_input)
+            return self.async_create_entry(title="Local List Assist", data=user_input)
         return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA)
 
     @staticmethod
@@ -67,7 +67,7 @@ class GroceryLearningConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class GroceryLearningOptionsFlow(config_entries.OptionsFlow):
-    """Handle Local Grocery Assistant options."""
+    """Handle Local List Assist options."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._config_entry = config_entry
