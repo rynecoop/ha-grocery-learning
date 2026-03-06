@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.9
+- Fixed duplicate-entry attribution overwrite by rendering duplicate rows from each todo item's own description instead of shared normalized-item metadata.
+- Added actor metadata propagation to duplicate-confirm actions so manually confirmed duplicates retain the confirming user's display name.
+- Extended duplicate confirmation service schema to accept actor identity fields used for attribution.
+
 ## 0.5.8
 - Fixed regression where app actions (add, recategorize, complete, clear completed) could fail in panel context after auth hardening changes.
 - Restored action endpoint compatibility while adding token-aware frontend API requests (`Authorization: Bearer <hassTokens.access_token>` + same-origin credentials) for reliable authenticated API behavior in the iframe app shell.

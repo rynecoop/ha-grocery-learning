@@ -94,6 +94,8 @@ APPLY_REVIEW_SCHEMA = vol.Schema(
 CONFIRM_DUPLICATE_SCHEMA = vol.Schema(
     {
         vol.Required("decision"): vol.In(["add", "skip"]),
+        vol.Optional("actor_name", default=""): cv.string,
+        vol.Optional("actor_user_id", default=""): cv.string,
     }
 )
 
@@ -353,7 +355,7 @@ class GroceryLearningAppView(HomeAssistantView):
       async undo(itemRef,checked){ if(!checked) await act({action:'set_status', list_entity:'todo.grocery_completed', item:itemRef, status:'needs_action'}); },
       async move(fromList,itemRef,targetCategory){ if(!targetCategory) return; await act({action:'recategorize', from_list:fromList, item:itemRef, target_category:targetCategory, learn:true}); },
       async review(category, learn=true){ await act({action:'apply_review', category, learn}); },
-      async confirmDup(decision){ await act({action:'confirm_duplicate', decision}); },
+      async confirmDup(decision){ await act({action:'confirm_duplicate', decision, actor_user_id:actor.id, actor_name:actor.name}); },
       async clearCompleted(){ await act({action:'clear_completed'}); },
       async repair(){ await act({action:'repair_system'}); },
       openConfig(){ configOpen = true; render(); },
@@ -1000,6 +1002,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         for category in categories + ["other"]:
             entity_id = _target_list_for_category(category)
             raw_items = await _list_items(entity_id, "needs_action")
+            duplicate_counts: dict[str, int] = {}
+            for raw in raw_items:
+                norm = _normalize_term(str(raw.get("summary", "")).strip())
+                if not norm:
+                    continue
+                duplicate_counts[norm] = duplicate_counts.get(norm, 0) + 1
             grouped.append(
                 {
                     "category": category,
@@ -1008,10 +1016,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         {
                             "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
                             "summary": str(item.get("summary", "")).strip(),
-                            "description": _display_description(
-                                entity_id,
-                                str(item.get("summary", "")).strip(),
-                                str(item.get("description", "")).strip(),
+                            "description": (
+                                str(item.get("description", "")).strip()
+                                if duplicate_counts.get(_normalize_term(str(item.get("summary", "")).strip()), 0) > 1
+                                else _display_description(
+                                    entity_id,
+                                    str(item.get("summary", "")).strip(),
+                                    str(item.get("description", "")).strip(),
+                                )
                             ),
                             "list_entity": entity_id,
                             "category": category,
@@ -1234,10 +1246,20 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         if action == "confirm_duplicate":
             decision = str(payload.get("decision", "skip")).strip().lower()
+            actor_user_id = str(payload.get("actor_user_id", "")).strip() or str(payload.get("_request_user_id", "")).strip()
+            actor_name = str(payload.get("actor_name", "")).strip()
+            if actor_user_id and not actor_name:
+                dup_user = await hass.auth.async_get_user(actor_user_id)
+                if dup_user and dup_user.name:
+                    actor_name = dup_user.name
             await hass.services.async_call(
                 DOMAIN,
                 SERVICE_CONFIRM_DUPLICATE,
-                {"decision": decision if decision in {"add", "skip"} else "skip"},
+                {
+                    "decision": decision if decision in {"add", "skip"} else "skip",
+                    "actor_user_id": actor_user_id,
+                    "actor_name": actor_name,
+                },
                 blocking=True,
             )
             return {"ok": True}
