@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.12
+- Intake-list call-service routes are now explicitly marked as `voice_assistant` source so routed voice items no longer show `Typed` metadata.
+- Voice intake routing now keeps source-list entries (`remove_from_source=false`) so native voice duplicate confirmation behavior can still occur on repeated voice adds.
+- Keeps interactive duplicate popup disabled for non-QuickAdd routes, preserving app-side no-popup behavior for voice/external flows.
+
 ## 0.5.11
 - Implemented permanent interactive duplicate qualifier: pending duplicate UI can only be created by typed in-app Quick Add (`interactive_duplicate=true`).
 - Added schema/action wiring for `interactive_duplicate` so voice/external routes explicitly opt out.
