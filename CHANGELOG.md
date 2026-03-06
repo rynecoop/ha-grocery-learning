@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.15
+- Added experimental multi-list management actions: create list, switch active list, rename list, and archive non-default lists.
+- Added app UI controls (experimental mode only) for managing internal lists directly from the Grocery app shell.
+- Extended dashboard payload with list catalog metadata so the app can render active-list context and switching controls.
+
 ## 0.5.14
 - Added experimental internal multi-list storage model (`multilist`) persisted by the integration store to begin decoupling app data from Home Assistant `todo.*` entities.
 - Added runtime/internal routing path for `route_item`, `apply_review`, and `confirm_duplicate` when `experimental_multilist` is enabled.

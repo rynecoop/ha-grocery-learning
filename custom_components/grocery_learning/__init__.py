@@ -172,6 +172,7 @@ class GroceryLearningAppView(HomeAssistantView):
         <button id="addBtn" class="btn primary">Add</button>
         <button id="configureBtn" class="btn">Configure</button>
       </div>
+      <div id="listManager" style="margin-top:10px;"></div>
       <div id="configPanel" class="config-panel"></div>
     </div>
     <div id="attention"></div>
@@ -259,6 +260,7 @@ class GroceryLearningAppView(HomeAssistantView):
 
     function render(){
       if(!state) return;
+      const multilistEnabled = !!state.settings?.experimental_multilist;
       const attention = [];
       if(state.error){
         attention.push(`<div class="section"><div class="title">App Error</div><div class="small">${esc(state.error)}</div></div>`);
@@ -281,6 +283,22 @@ class GroceryLearningAppView(HomeAssistantView):
           <div class="row" style="margin-top:8px;">${buttons}<button class="btn" onclick="window.__g.review('other', false)">Keep Other</button></div></div>`);
       }
       byId('attention').innerHTML = attention.join('');
+      const listManager = byId('listManager');
+      if(multilistEnabled){
+        const listOptions = (state.lists || []).map((l) => `<option value="${esc(l.id)}" ${l.active ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
+        const active = (state.lists || []).find((l) => !!l.active);
+        listManager.innerHTML = `
+          <div class="row">
+            <select id="activeListSelect" class="input" style="max-width:280px; min-width:220px;">${listOptions}</select>
+            <input id="newListName" class="input" placeholder="New list name" style="max-width:260px;" />
+            <button class="btn" onclick="window.__g.createList()">Create List</button>
+            <button class="btn" onclick="window.__g.renameList()">Rename Active</button>
+            <button class="btn danger" onclick="window.__g.archiveList()">Archive Active</button>
+          </div>
+          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong></div>`;
+      } else {
+        listManager.innerHTML = '';
+      }
       const configPanel = byId('configPanel');
       if(configOpen || !state.setup?.completed){
         configPanel.innerHTML = `
@@ -300,6 +318,7 @@ class GroceryLearningAppView(HomeAssistantView):
             <div class="row" style="margin-top:10px;">
               <label class="checkbox"><input id="settingsAutoRoute" type="checkbox" ${state.settings?.auto_route_inbox ? 'checked' : ''} /> Auto route inbox/voice intake</label>
               <label class="checkbox"><input id="settingsAutoProvision" type="checkbox" ${state.settings?.auto_provision ? 'checked' : ''} /> Auto provision missing lists</label>
+              <label class="checkbox"><input id="settingsExperimentalMultilist" type="checkbox" ${state.settings?.experimental_multilist ? 'checked' : ''} /> Enable experimental internal multi-list mode</label>
             </div>
             <div class="row" style="margin-top:10px;">
               <button class="btn primary" onclick="window.__g.saveSettings(false)">Save</button>
@@ -362,6 +381,34 @@ class GroceryLearningAppView(HomeAssistantView):
 
     window.__g = {
       async add(){ const val = byId('quickAdd').value.trim(); if(!val) return; byId('quickAdd').value=''; await act({action:'add_item', item:val, actor_user_id:actor.id, actor_name:actor.name}); },
+      async createList(){
+        const name = byId('newListName')?.value?.trim() || '';
+        if(!name) return;
+        await act({action:'create_list', name});
+        const el = byId('newListName');
+        if(el) el.value = '';
+      },
+      async renameList(){
+        const sel = byId('activeListSelect');
+        const listId = sel?.value || '';
+        if(!listId) return;
+        const next = window.prompt('New list name');
+        if(!next || !next.trim()) return;
+        await act({action:'rename_list', list_id:listId, name:next.trim()});
+      },
+      async archiveList(){
+        const sel = byId('activeListSelect');
+        const listId = sel?.value || '';
+        if(!listId) return;
+        if(!window.confirm('Archive this list?')) return;
+        await act({action:'archive_list', list_id:listId});
+      },
+      async switchList(){
+        const sel = byId('activeListSelect');
+        const listId = sel?.value || '';
+        if(!listId) return;
+        await act({action:'switch_list', list_id:listId});
+      },
       async complete(listEntity,itemRef,checked){ if(checked) await act({action:'set_status', list_entity:listEntity, item:itemRef, status:'completed'}); },
       async undo(itemRef,checked){ if(!checked) await act({action:'set_status', list_entity:'todo.grocery_completed', item:itemRef, status:'needs_action'}); },
       async move(fromList,itemRef,targetCategory){ if(!targetCategory) return; await act({action:'recategorize', from_list:fromList, item:itemRef, target_category:targetCategory, learn:true}); },
@@ -376,12 +423,14 @@ class GroceryLearningAppView(HomeAssistantView):
         const inboxEntity = (byId('settingsInbox')?.value || '').trim();
         const autoRoute = !!byId('settingsAutoRoute')?.checked;
         const autoProvision = !!byId('settingsAutoProvision')?.checked;
+        const experimentalMultilist = !!byId('settingsExperimentalMultilist')?.checked;
         await act({
           action:'save_settings',
           categories,
           inbox_entity: inboxEntity,
           auto_route_inbox: autoRoute,
           auto_provision: autoProvision,
+          experimental_multilist: experimentalMultilist,
           complete_setup: !!completeSetup
         });
         if(completeSetup){ configOpen = false; }
@@ -391,6 +440,11 @@ class GroceryLearningAppView(HomeAssistantView):
     byId('addBtn').addEventListener('click', () => window.__g.add());
     byId('configureBtn').addEventListener('click', () => window.__g.openConfig());
     byId('clearCompletedBtn').addEventListener('click', () => window.__g.clearCompleted());
+    document.addEventListener('change', (e) => {
+      if(e.target && e.target.id === 'activeListSelect'){
+        window.__g.switchList();
+      }
+    });
     byId('quickAdd').addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); window.__g.add(); }});
     loadActor().finally(() => load().catch((err) => { byId('lists').innerHTML = `<div class="section"><div class="title">Error</div><div class="small">${esc(err.message)}</div></div>`; }));
   </script>
@@ -428,6 +482,7 @@ class GroceryLearningDashboardView(HomeAssistantView):
                 }
             ],
             "completed": [],
+            "lists": [],
             "pending_review": {"pending": False, "item": "", "source_list": ""},
             "pending_duplicate": {"pending": False, "item": "", "target": ""},
             "settings": {
@@ -464,6 +519,7 @@ class GroceryLearningDashboardView(HomeAssistantView):
             payload.setdefault("categories", ["other"])
             payload.setdefault("groups", [])
             payload.setdefault("completed", [])
+            payload.setdefault("lists", [])
             payload.setdefault("pending_review", {"pending": False, "item": "", "source_list": ""})
             payload.setdefault("pending_duplicate", {"pending": False, "item": "", "target": ""})
             payload.setdefault(
@@ -719,6 +775,30 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
     def _internal_list_entity(category: str) -> str:
         return f"internal:{_normalize_category(category)}"
+
+    def _normalize_list_id(value: str) -> str:
+        cleaned = _normalize_category(value)
+        return cleaned or "list"
+
+    def _internal_list_catalog() -> list[dict[str, Any]]:
+        _ensure_multilist_model()
+        model = hass.data[DOMAIN]["multilist"]
+        active_id = str(model.get("active_list_id", "default")).strip() or "default"
+        lists = model.get("lists", {})
+        catalog: list[dict[str, Any]] = []
+        for list_id, list_obj in lists.items():
+            if not isinstance(list_obj, dict):
+                continue
+            name = str(list_obj.get("name", list_id.title())).strip() or list_id.title()
+            catalog.append(
+                {
+                    "id": str(list_id),
+                    "name": name,
+                    "active": str(list_id) == active_id,
+                }
+            )
+        catalog.sort(key=lambda entry: (0 if entry["active"] else 1, entry["name"].lower()))
+        return catalog
 
     async def _learn_term(call: ServiceCall) -> None:
         category = _normalize_category(call.data["category"])
@@ -1176,6 +1256,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "categories": categories + ["other"],
             "groups": grouped,
             "completed": completed,
+            "lists": _internal_list_catalog(),
             "pending_review": {
                 "pending": bool(pending_review.get("item")),
                 "item": str(pending_review.get("item", "")),
@@ -1251,6 +1332,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         return {
             "categories": categories + ["other"],
             "groups": grouped,
+            "lists": [{"id": "default", "name": "Grocery List", "active": True}],
             "completed": [
                 {
                     "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
@@ -1462,6 +1544,77 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     blocking=True,
                     context=request_context,
                 )
+            return {"ok": True}
+
+        if action == "create_list":
+            if not multilist_mode:
+                return {"ok": False, "error": "multilist_disabled"}
+            name = str(payload.get("name", "")).strip()
+            if not name:
+                return {"ok": False, "error": "missing_name"}
+            list_id_raw = str(payload.get("list_id", "")).strip() or name
+            list_id = _normalize_list_id(list_id_raw)
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            lists = model.get("lists", {})
+            if list_id in lists:
+                return {"ok": False, "error": "list_exists"}
+            _, active_list = _active_internal_list()
+            base_categories = [c for c in active_list.get("categories", []) if c != "other"] or _active_categories()
+            lists[list_id] = {
+                "name": name,
+                "categories": base_categories + ["other"],
+                "items": [],
+            }
+            model["active_list_id"] = list_id
+            await _save()
+            return {"ok": True}
+
+        if action == "switch_list":
+            if not multilist_mode:
+                return {"ok": False, "error": "multilist_disabled"}
+            list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            lists = model.get("lists", {})
+            if list_id not in lists:
+                return {"ok": False, "error": "list_not_found"}
+            model["active_list_id"] = list_id
+            await _save()
+            return {"ok": True}
+
+        if action == "rename_list":
+            if not multilist_mode:
+                return {"ok": False, "error": "multilist_disabled"}
+            list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            new_name = str(payload.get("name", "")).strip()
+            if not new_name:
+                return {"ok": False, "error": "missing_name"}
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            lists = model.get("lists", {})
+            list_obj = lists.get(list_id)
+            if not isinstance(list_obj, dict):
+                return {"ok": False, "error": "list_not_found"}
+            list_obj["name"] = new_name
+            await _save()
+            return {"ok": True}
+
+        if action == "archive_list":
+            if not multilist_mode:
+                return {"ok": False, "error": "multilist_disabled"}
+            list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            if list_id == "default":
+                return {"ok": False, "error": "cannot_archive_default"}
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            lists = model.get("lists", {})
+            if list_id not in lists:
+                return {"ok": False, "error": "list_not_found"}
+            lists.pop(list_id, None)
+            if str(model.get("active_list_id", "")) == list_id:
+                model["active_list_id"] = "default"
+            await _save()
             return {"ok": True}
 
         if action == "set_status":
