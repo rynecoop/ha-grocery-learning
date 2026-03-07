@@ -100,6 +100,9 @@ class GroceryLearningStore:
         lists_raw = raw.get("lists", {})
         if not isinstance(lists_raw, dict):
             lists_raw = {}
+        list_order_raw = raw.get("list_order", [])
+        if not isinstance(list_order_raw, list):
+            list_order_raw = []
 
         def _clean_list_map(raw_lists: dict, *, use_default_categories_for_default: bool) -> dict[str, dict]:
             cleaned_lists: dict[str, dict] = {}
@@ -180,8 +183,22 @@ class GroceryLearningStore:
         if active_list_id not in cleaned_lists:
             active_list_id = "default"
 
+        list_order: list[str] = []
+        for candidate in list_order_raw:
+            if isinstance(candidate, str):
+                normalized = candidate.strip()
+                if normalized and normalized in cleaned_lists and normalized not in list_order:
+                    list_order.append(normalized)
+        for list_id in cleaned_lists:
+            if list_id not in list_order:
+                list_order.append(list_id)
+        if "default" in list_order:
+            list_order.remove("default")
+        list_order.insert(0, "default")
+
         return {
             "active_list_id": active_list_id,
+            "list_order": list_order,
             "lists": cleaned_lists,
             "archived_lists": cleaned_archived_lists,
         }

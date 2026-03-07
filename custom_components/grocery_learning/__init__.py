@@ -62,7 +62,7 @@ from .const import (
     TARGET_LIST_BY_CATEGORY,
 )
 from .matching import normalize_voice_list_name, resolve_list_id_from_voice_name
-from .list_templates import categories_for_template
+from .list_templates import categories_for_template, template_presets
 from .multilist_ops import archive_list as apply_archive_list, delete_archived_list as apply_delete_archived_list, restore_archived_list as apply_restore_archived_list
 from .storage import GroceryLearningStore, LearnedTerms
 
@@ -923,6 +923,27 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         catalog.sort(key=lambda entry: entry["name"].lower())
         return catalog
 
+    def _ordered_list_ids() -> list[str]:
+        _ensure_multilist_model()
+        model = hass.data[DOMAIN]["multilist"]
+        lists = model.get("lists", {})
+        raw_order = model.get("list_order", [])
+        ordered: list[str] = []
+        if isinstance(raw_order, list):
+            for candidate in raw_order:
+                if isinstance(candidate, str):
+                    normalized = candidate.strip()
+                    if normalized and normalized in lists and normalized not in ordered:
+                        ordered.append(normalized)
+        for list_id in lists:
+            if list_id not in ordered:
+                ordered.append(list_id)
+        if "default" in ordered:
+            ordered.remove("default")
+        ordered.insert(0, "default")
+        model["list_order"] = ordered
+        return ordered
+
     def _active_categories() -> list[str]:
         return list(hass.data[DOMAIN].get("categories", list(DEFAULT_CATEGORIES)))
 
@@ -944,6 +965,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not isinstance(archived_lists, dict):
             archived_lists = {}
             model["archived_lists"] = archived_lists
+        list_order = model.get("list_order")
+        if not isinstance(list_order, list):
+            list_order = []
+            model["list_order"] = list_order
         if "default" not in lists or not isinstance(lists.get("default"), dict):
             lists["default"] = {
                 "name": "Grocery List",
@@ -983,6 +1008,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 continue
             list_obj["voice_aliases"] = _voice_aliases_from_input(list_obj.get("voice_aliases", []))
         model["active_list_id"] = active_list_id if active_list_id in lists else "default"
+        _ordered_list_ids()
 
     def _active_internal_list() -> tuple[str, dict[str, Any]]:
         _ensure_multilist_model()
@@ -1117,7 +1143,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         active_id = str(model.get("active_list_id", "default")).strip() or "default"
         lists = model.get("lists", {})
         catalog: list[dict[str, Any]] = []
-        for list_id, list_obj in lists.items():
+        for position, list_id in enumerate(_ordered_list_ids()):
+            list_obj = lists.get(list_id)
             if not isinstance(list_obj, dict):
                 continue
             name = str(list_obj.get("name", list_id.title())).strip() or list_id.title()
@@ -1132,9 +1159,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         if isinstance(alias, str) and str(alias).strip()
                     ],
                     "active": str(list_id) == active_id,
+                    "position": position,
                 }
             )
-        catalog.sort(key=lambda entry: (0 if entry["active"] else 1, entry["name"].lower()))
         return catalog
 
     async def _learn_term(call: ServiceCall) -> None:
@@ -1632,6 +1659,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     for alias in list_obj.get("voice_aliases", [])
                     if isinstance(alias, str) and str(alias).strip()
                 ],
+                "template_presets": template_presets(default_categories),
             },
             "activity": _activity_payload(),
             "setup": {
@@ -1979,6 +2007,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 resolved_alias = await _ensure_local_todo_list(_internal_voice_alias_entity(list_id), alias_title)
                 if resolved_alias and resolved_alias != lists[list_id]["voice_entity"]:
                     lists[list_id]["voice_alias_entities"] = [resolved_alias]
+            list_order = model.setdefault("list_order", [])
+            if list_id not in list_order:
+                list_order.append(list_id)
             await _save()
             await _record_activity("List created", name, name, "service_call")
             return {"ok": True, "dashboard": _internal_dashboard_payload()}
@@ -2076,6 +2107,30 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _record_activity("Switched list", str(lists[list_id].get("name", list_id)).strip(), str(lists[list_id].get("name", list_id)).strip(), "typed")
             return {"ok": True, "dashboard": _internal_dashboard_payload()}
 
+        if action == "reorder_list":
+            if not multilist_mode:
+                return {"ok": False, "error": "multilist_disabled"}
+            list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            direction = str(payload.get("direction", "")).strip().lower()
+            if list_id == "default":
+                return {"ok": False, "error": "cannot_move_default"}
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            ordered = _ordered_list_ids()
+            if list_id not in ordered:
+                return {"ok": False, "error": "list_not_found"}
+            index = ordered.index(list_id)
+            if direction == "pin":
+                ordered.pop(index)
+                ordered.insert(1, list_id)
+            elif direction == "left" and index > 1:
+                ordered[index], ordered[index - 1] = ordered[index - 1], ordered[index]
+            elif direction == "right" and index < len(ordered) - 1:
+                ordered[index], ordered[index + 1] = ordered[index + 1], ordered[index]
+            model["list_order"] = ordered
+            await _save()
+            return {"ok": True, "dashboard": _internal_dashboard_payload()}
+
         if action == "rename_list":
             if not multilist_mode:
                 return {"ok": False, "error": "multilist_disabled"}
@@ -2127,6 +2182,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             result = apply_archive_list(model, list_id)
             if not result.get("ok"):
                 return result
+            model["list_order"] = [candidate for candidate in _ordered_list_ids() if candidate != list_id]
             await _save()
             archived_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Archived list", archived_name, archived_name, "typed")
@@ -2141,6 +2197,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             result = apply_restore_archived_list(model, list_id)
             if not result.get("ok"):
                 return result
+            ordered = _ordered_list_ids()
+            if list_id not in ordered:
+                ordered.append(list_id)
+            model["list_order"] = ordered
             await _save()
             restored_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Restored archived list", restored_name, restored_name, "typed")

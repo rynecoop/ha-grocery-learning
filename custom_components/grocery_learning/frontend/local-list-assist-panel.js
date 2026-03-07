@@ -1,5 +1,13 @@
 import { categoryDisplay as displayCategory, createListLocal as applyCreateListLocal, deleteArchivedListLocal as applyDeleteArchivedListLocal, groupTitle as deriveGroupTitle, moveItemToCompleted as applyMoveItemToCompleted, recategorizeItemLocal as applyRecategorizeItemLocal, renameListLocal as applyRenameListLocal, switchListLocal as applySwitchListLocal } from "./state-helpers.js";
 
+const TEMPLATE_LABELS = {
+  flat: "Flat List",
+  grocery: "Grocery",
+  todo: "To-do",
+  camping: "Camping",
+  travel: "Travel",
+};
+
 class LocalListAssistPanel extends HTMLElement {
   constructor() {
     super();
@@ -362,6 +370,17 @@ class LocalListAssistPanel extends HTMLElement {
       this._drafts.newListCategories = "";
       this._drafts.newListVoiceAliases = "";
     });
+    root.querySelector("#newListTemplate")?.addEventListener("change", (ev) => {
+      const templateId = ev.target.value || "flat";
+      this.updateDraft("newListTemplate", templateId);
+      const presets = this._state?.settings?.template_presets || {};
+      const categories = (presets[templateId] || []).join(", ");
+      this.updateDraft("newListCategories", categories);
+      const input = root.querySelector("#newListCategories");
+      if (input) {
+        input.value = categories;
+      }
+    });
     root.querySelector("#archiveListBtn")?.addEventListener("click", async () => {
       const listId = this._state?.system?.active_list_id || "";
       if (!listId) return;
@@ -371,6 +390,21 @@ class LocalListAssistPanel extends HTMLElement {
       btn.addEventListener("click", async () => {
         await this.act({ action: "restore_archived_list", list_id: btn.dataset.listId || "" });
       });
+    });
+    root.querySelector("#pinListBtn")?.addEventListener("click", async () => {
+      const listId = this._state?.system?.active_list_id || "";
+      if (!listId || listId === "default") return;
+      await this.act({ action: "reorder_list", list_id: listId, direction: "pin" });
+    });
+    root.querySelector("#moveListLeftBtn")?.addEventListener("click", async () => {
+      const listId = this._state?.system?.active_list_id || "";
+      if (!listId || listId === "default") return;
+      await this.act({ action: "reorder_list", list_id: listId, direction: "left" });
+    });
+    root.querySelector("#moveListRightBtn")?.addEventListener("click", async () => {
+      const listId = this._state?.system?.active_list_id || "";
+      if (!listId || listId === "default") return;
+      await this.act({ action: "reorder_list", list_id: listId, direction: "right" });
     });
     root.querySelectorAll(".delete-archive-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -529,6 +563,7 @@ class LocalListAssistPanel extends HTMLElement {
           .join("")
       : `<div class="empty">No archived lists.</div>`;
     const currentListLabel = this.esc(activeListName || "Grocery List");
+    const templatePresets = state?.settings?.template_presets || {};
     const configPanel = this._configOpen
       ? `
         <section class="section">
@@ -565,11 +600,7 @@ class LocalListAssistPanel extends HTMLElement {
               <div class="grid compact-grid">
                 <input id="newListName" data-draft="newListName" class="input" placeholder="New list name" value="${this.esc(this._drafts.newListName || "")}" />
                 <select id="newListTemplate" data-draft="newListTemplate" class="select">
-                  <option value="flat" ${this._drafts.newListTemplate === "flat" ? "selected" : ""}>Flat List</option>
-                  <option value="grocery" ${this._drafts.newListTemplate === "grocery" ? "selected" : ""}>Grocery</option>
-                  <option value="todo" ${this._drafts.newListTemplate === "todo" ? "selected" : ""}>To-do</option>
-                  <option value="camping" ${this._drafts.newListTemplate === "camping" ? "selected" : ""}>Camping</option>
-                  <option value="travel" ${this._drafts.newListTemplate === "travel" ? "selected" : ""}>Travel</option>
+                  ${Object.keys(templatePresets).map((templateId) => `<option value="${this.esc(templateId)}" ${this._drafts.newListTemplate === templateId ? "selected" : ""}>${this.esc(TEMPLATE_LABELS[templateId] || templateId)}</option>`).join("")}
                 </select>
                 <input id="newListCategories" data-draft="newListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.newListCategories || "")}" />
                 <input id="newListVoiceAliases" data-draft="newListVoiceAliases" class="input" placeholder="Optional voice aliases (comma separated)" value="${this.esc(this._drafts.newListVoiceAliases || "")}" />
@@ -609,6 +640,9 @@ class LocalListAssistPanel extends HTMLElement {
                   </div>
                 </div>
                 <div class="row advanced-row">
+                  <button id="pinListBtn" class="btn">Pin Near Front</button>
+                  <button id="moveListLeftBtn" class="btn">Move Left</button>
+                  <button id="moveListRightBtn" class="btn">Move Right</button>
                   <button id="archiveListBtn" class="btn danger">Archive List</button>
                 </div>
               </details>

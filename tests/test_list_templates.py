@@ -21,6 +21,7 @@ _load_module("custom_components.grocery_learning.const", "custom_components/groc
 templates_module = _load_module("custom_components.grocery_learning.list_templates", "custom_components/grocery_learning/list_templates.py")
 
 categories_for_template = templates_module.categories_for_template
+template_presets = templates_module.template_presets
 
 
 class ListTemplateTests(unittest.TestCase):
@@ -38,6 +39,11 @@ class ListTemplateTests(unittest.TestCase):
             categories_for_template("travel"),
             ["packing", "documents", "booking", "errands", "other"],
         )
+
+    def test_template_presets_includes_flat_and_grocery(self):
+        presets = template_presets(["produce", "bakery"])
+        self.assertEqual(presets["flat"], [])
+        self.assertEqual(presets["grocery"], ["produce", "bakery"])
 
 
 if __name__ == "__main__":

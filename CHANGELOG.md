@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.0
+- Added template-driven category autofill in the create-list form and exposed built-in list templates from the backend.
+- Added persistent list ordering with pin, move-left, and move-right controls for list chips.
+
 ## 0.12.9
 - Added a single `save_active_list` backend action so active-list name, categories, aliases, and color save in one request.
 - Added list templates for new lists: Flat, Grocery, To-do, Camping, and Travel.

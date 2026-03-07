@@ -78,6 +78,7 @@ class StorageTests(unittest.TestCase):
             {
                 "multilist": {
                     "active_list_id": "weekend",
+                    "list_order": ["weekend", "default", "missing"],
                     "lists": {
                         "weekend": {
                             "name": "Weekend",
@@ -108,6 +109,7 @@ class StorageTests(unittest.TestCase):
         result = asyncio.run(store.load_multilist(["produce", "bakery"]))
 
         self.assertEqual(result["active_list_id"], "weekend")
+        self.assertEqual(result["list_order"], ["default", "weekend"])
         self.assertIn("default", result["lists"])
         weekend = result["lists"]["weekend"]
         self.assertEqual(weekend["voice_alias_entities"], ["todo.lla_alias_weekend"])
