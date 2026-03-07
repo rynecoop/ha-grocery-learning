@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.10.1
+- Fixed direct Assist matching for possessive custom list names like `Ryne's list` by comparing multiple normalized voice-name variants instead of a single exact form.
+
 ## 0.10.0
 - Broadened direct Assist phrase coverage for custom lists and hardened internal list-name normalization so spoken custom list targets resolve more reliably.
 - Moved Recent Activity into its own in-app tab so the main shopping view stays focused on the current list.

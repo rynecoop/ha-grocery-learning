@@ -1017,8 +1017,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             by_entity = _internal_list_id_from_voice_entity(str(list_name).strip())
             if by_entity:
                 return by_entity
-        normalized_name = _normalize_voice_list_name(list_name)
-        if not normalized_name:
+        requested_variants = _voice_list_name_variants(list_name)
+        if not requested_variants:
             return ""
 
         _ensure_multilist_model()
@@ -1027,21 +1027,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         for list_id, list_obj in lists.items():
             if not isinstance(list_obj, dict):
                 continue
-            current_name = _normalize_voice_list_name(str(list_obj.get("name", "")).strip())
-            normalized_id = _normalize_voice_list_name(str(list_id))
-            if current_name and current_name == normalized_name:
+            current_name_variants = _voice_list_name_variants(str(list_obj.get("name", "")).strip())
+            id_variants = _voice_list_name_variants(str(list_id))
+            if requested_variants.intersection(current_name_variants):
                 return str(list_id)
-            if normalized_id and normalized_id == normalized_name:
-                return str(list_id)
-            if current_name and (
-                normalized_name.startswith(f"{current_name} ")
-                or current_name.startswith(f"{normalized_name} ")
-            ):
-                return str(list_id)
-            if normalized_id and (
-                normalized_name.startswith(f"{normalized_id} ")
-                or normalized_id.startswith(f"{normalized_name} ")
-            ):
+            if requested_variants.intersection(id_variants):
                 return str(list_id)
         return ""
 
@@ -1092,6 +1082,44 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         normalized = re.sub(r"\blist\b", " ", normalized).strip()
         normalized = re.sub(r"\s+", " ", normalized).strip()
         return normalized
+
+    def _voice_list_name_variants(value: str) -> set[str]:
+        normalized = _normalize_voice_list_name(value)
+        if not normalized:
+            return set()
+
+        variants: set[str] = {normalized}
+        tokens = [token for token in normalized.split(" ") if token]
+        if not tokens:
+            return variants
+
+        def _add_candidate(parts: list[str]) -> None:
+            candidate = " ".join(part for part in parts if part).strip()
+            if candidate:
+                variants.add(candidate)
+
+        _add_candidate(tokens)
+
+        shortened_all: list[str] = []
+        for token in tokens:
+            if len(token) > 3 and token.endswith("s"):
+                shortened_all.append(token[:-1])
+            else:
+                shortened_all.append(token)
+        _add_candidate(shortened_all)
+
+        last_trimmed = list(tokens)
+        if len(last_trimmed[-1]) > 3 and last_trimmed[-1].endswith("s"):
+            last_trimmed[-1] = last_trimmed[-1][:-1]
+            _add_candidate(last_trimmed)
+
+        compact = normalized.replace(" ", "")
+        if compact:
+            variants.add(compact)
+            if len(compact) > 3 and compact.endswith("s"):
+                variants.add(compact[:-1])
+
+        return {candidate for candidate in variants if candidate}
 
     def _internal_list_catalog() -> list[dict[str, Any]]:
         _ensure_multilist_model()
