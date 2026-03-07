@@ -28,6 +28,9 @@ class LocalListAssistPanel extends HTMLElement {
     if (first) {
       this.load();
     } else {
+      if (this._focusTarget) {
+        return;
+      }
       this.render();
     }
   }
@@ -244,9 +247,6 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#clearCompletedBtn")?.addEventListener("click", async () => {
       await this.act({ action: "clear_completed" });
     });
-    root.querySelector("#undoBtn")?.addEventListener("click", async () => {
-      await this.act({ action: "undo_last" });
-    });
     root.querySelector("#activeListSelect")?.addEventListener("change", async (ev) => {
       await this.act({ action: "switch_list", list_id: ev.target.value });
     });
@@ -311,6 +311,16 @@ class LocalListAssistPanel extends HTMLElement {
       const activeSelect = root.querySelector("#activeListSelect");
       if (!activeSelect?.value) return;
       await this.act({ action: "archive_list", list_id: activeSelect.value });
+    });
+    root.querySelectorAll(".restore-archive-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await this.act({ action: "restore_archived_list", list_id: btn.dataset.listId || "" });
+      });
+    });
+    root.querySelectorAll(".delete-archive-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await this.act({ action: "delete_archived_list", list_id: btn.dataset.listId || "" });
+      });
     });
     root.querySelector("#saveActiveListBtn")?.addEventListener("click", async () => {
       const activeSelect = root.querySelector("#activeListSelect");
@@ -437,15 +447,6 @@ class LocalListAssistPanel extends HTMLElement {
         </section>
       `);
     }
-    if (state?.undo?.pending) {
-      attention.push(`
-        <section class="section">
-          <div class="title">Undo Available</div>
-          <div class="small">${this.esc(state.undo.label || "Undo last action")}</div>
-          <div class="row"><button id="undoBtn" class="btn">Undo</button></div>
-        </section>
-      `);
-    }
     const activity = (state?.activity || []).length
       ? state.activity
           .map((entry) => `<div class="item"><strong>${this.esc(entry.title)}</strong><div class="small">${this.esc(entry.detail)}${entry.list_name ? ` · ${this.esc(entry.list_name)}` : ""}${entry.source ? ` · ${this.esc(entry.source)}` : ""}${entry.when ? ` · ${this.esc(entry.when)}` : ""}</div></div>`)
@@ -462,6 +463,19 @@ class LocalListAssistPanel extends HTMLElement {
     const listChips = (state?.lists || [])
       .map((list) => `<button class="list-chip ${list.active ? "active" : ""}" data-list-id="${this.esc(list.id)}" style="--chip-color:${this.esc(list.color || "#2c78ba")}">${this.esc(list.name)}</button>`)
       .join("");
+    const archivedLists = (state?.archived_lists || []).length
+      ? state.archived_lists
+          .map((list) => `
+            <div class="item">
+              <strong>${this.esc(list.name)}</strong>
+              <div class="row">
+                <button class="btn restore-archive-btn" data-list-id="${this.esc(list.id)}">Restore</button>
+                <button class="btn danger delete-archive-btn" data-list-id="${this.esc(list.id)}">Delete</button>
+              </div>
+            </div>
+          `)
+          .join("")
+      : `<div class="empty">No archived lists.</div>`;
     const configPanel = this._configOpen
       ? `
         <section class="section">
@@ -506,6 +520,9 @@ class LocalListAssistPanel extends HTMLElement {
               <button id="saveActiveListBtn" class="btn primary">Save Active List</button>
               <button id="clearListCatsBtn" class="btn">No Categories</button>
             </div>
+            <div class="divider"></div>
+            <div class="title">Archived Lists</div>
+            ${archivedLists}
           ` : ""}
         </section>
       `

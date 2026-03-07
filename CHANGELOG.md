@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.1
+- Removed the generic undo banner from the panel and made list archive a real archive with restore/delete controls in Configure.
+- Reduced rerender interruptions while a field is focused, which stabilizes controls like the list color picker.
+
 ## 0.11.0
 - Added an in-app undo banner for recent destructive actions.
 - Users can now undo the latest complete/restore, category change, clear completed, and archive list action directly from the panel.
