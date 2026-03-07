@@ -244,6 +244,9 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#clearCompletedBtn")?.addEventListener("click", async () => {
       await this.act({ action: "clear_completed" });
     });
+    root.querySelector("#undoBtn")?.addEventListener("click", async () => {
+      await this.act({ action: "undo_last" });
+    });
     root.querySelector("#activeListSelect")?.addEventListener("change", async (ev) => {
       await this.act({ action: "switch_list", list_id: ev.target.value });
     });
@@ -431,6 +434,15 @@ class LocalListAssistPanel extends HTMLElement {
           <div class="title">Review Needed</div>
           <div class="small">Item: <strong>${this.esc(state.pending_review.item)}</strong> (${this.esc(state.pending_review.source_list)})</div>
           <div class="row">${reviewButtons}<button id="keepOtherBtn" class="btn">Keep Other</button></div>
+        </section>
+      `);
+    }
+    if (state?.undo?.pending) {
+      attention.push(`
+        <section class="section">
+          <div class="title">Undo Available</div>
+          <div class="small">${this.esc(state.undo.label || "Undo last action")}</div>
+          <div class="row"><button id="undoBtn" class="btn">Undo</button></div>
         </section>
       `);
     }

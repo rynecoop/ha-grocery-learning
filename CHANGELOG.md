@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.0
+- Added an in-app undo banner for recent destructive actions.
+- Users can now undo the latest complete/restore, category change, clear completed, and archive list action directly from the panel.
+
 ## 0.10.6
 - Fixed item category editors so they keep their open state and focus cleanly while you pick a new category, including after background rerenders.
 
