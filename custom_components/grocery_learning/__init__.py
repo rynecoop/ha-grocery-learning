@@ -62,6 +62,7 @@ from .const import (
     TARGET_LIST_BY_CATEGORY,
 )
 from .matching import normalize_voice_list_name, resolve_list_id_from_voice_name
+from .multilist_ops import archive_list as apply_archive_list, delete_archived_list as apply_delete_archived_list, restore_archived_list as apply_restore_archived_list
 from .storage import GroceryLearningStore, LearnedTerms
 
 _LOGGER = logging.getLogger(__name__)
@@ -2079,20 +2080,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if not multilist_mode:
                 return {"ok": False, "error": "multilist_disabled"}
             list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
-            if list_id == "default":
-                return {"ok": False, "error": "cannot_archive_default"}
             _ensure_multilist_model()
             model = hass.data[DOMAIN]["multilist"]
-            lists = model.get("lists", {})
-            archived_lists = model.get("archived_lists", {})
-            if list_id not in lists:
-                return {"ok": False, "error": "list_not_found"}
-            archived_name = str(lists[list_id].get("name", list_id)).strip()
-            archived_lists[list_id] = deepcopy(lists[list_id])
-            lists.pop(list_id, None)
-            if str(model.get("active_list_id", "")) == list_id:
-                model["active_list_id"] = "default"
+            result = apply_archive_list(model, list_id)
+            if not result.get("ok"):
+                return result
             await _save()
+            archived_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Archived list", archived_name, archived_name, "typed")
             return {"ok": True}
 
@@ -2102,18 +2096,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
             _ensure_multilist_model()
             model = hass.data[DOMAIN]["multilist"]
-            lists = model.get("lists", {})
-            archived_lists = model.get("archived_lists", {})
-            if list_id in lists:
-                return {"ok": False, "error": "list_exists"}
-            archived_obj = archived_lists.get(list_id)
-            if not isinstance(archived_obj, dict):
-                return {"ok": False, "error": "archive_not_found"}
-            lists[list_id] = archived_obj
-            archived_lists.pop(list_id, None)
-            model["active_list_id"] = list_id
+            result = apply_restore_archived_list(model, list_id)
+            if not result.get("ok"):
+                return result
             await _save()
-            await _record_activity("Restored archived list", str(archived_obj.get("name", list_id)).strip() or list_id, str(archived_obj.get("name", list_id)).strip() or list_id, "typed")
+            restored_name = str(result.get("list_name", list_id)).strip() or list_id
+            await _record_activity("Restored archived list", restored_name, restored_name, "typed")
             return {"ok": True}
 
         if action == "delete_archived_list":
@@ -2121,13 +2109,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 return {"ok": False, "error": "multilist_disabled"}
             list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
             _ensure_multilist_model()
-            archived_lists = hass.data[DOMAIN]["multilist"].get("archived_lists", {})
-            archived_obj = archived_lists.get(list_id)
-            if not isinstance(archived_obj, dict):
-                return {"ok": False, "error": "archive_not_found"}
-            archived_name = str(archived_obj.get("name", list_id)).strip() or list_id
-            archived_lists.pop(list_id, None)
+            result = apply_delete_archived_list(hass.data[DOMAIN]["multilist"], list_id)
+            if not result.get("ok"):
+                return result
             await _save()
+            archived_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Deleted archived list", archived_name, archived_name, "typed")
             return {"ok": True}
 

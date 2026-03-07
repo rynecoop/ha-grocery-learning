@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.2
+- Extracted archive, restore, and delete-archived-list mutations into a pure helper module and added regression tests around those flows.
+- Tightened backend validation for archive lifecycle behavior so list-management changes are safer to refactor.
+
 ## 0.12.1
 - Extracted voice list-name matching into a pure helper module and added regression tests for display-name, alias, and list-id matching.
 - Tightened release validation around voice alias behavior so custom-list voice routing changes are easier to verify safely.
