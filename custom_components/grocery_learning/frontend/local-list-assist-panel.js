@@ -119,6 +119,17 @@ class LocalListAssistPanel extends HTMLElement {
     await this.load();
   }
 
+  async actFast(payload, updater = null) {
+    await this.api("action", "POST", payload);
+    if (typeof updater === "function" && this._state) {
+      updater(this._state);
+      this.syncDrafts();
+      this.render();
+      return;
+    }
+    await this.load();
+  }
+
   updateDraft(key, value) {
     this._drafts[key] = value;
   }
@@ -173,6 +184,79 @@ class LocalListAssistPanel extends HTMLElement {
 
   editorKey(item) {
     return `${item.list_entity || ""}::${item.item_ref || ""}`;
+  }
+
+  categoryDisplay(category) {
+    const normalized = String(category || "").trim();
+    if (!normalized) return "Items";
+    if (normalized === "other") {
+      return (this._state?.categories || []).length > 1 ? "Other" : "Items";
+    }
+    return normalized
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  groupTitle(category) {
+    const existing = (this._state?.groups || []).find((group) => group.category === category);
+    return existing?.title || this.categoryDisplay(category);
+  }
+
+  moveItemToCompleted(itemRef) {
+    if (!this._state) return;
+    for (const group of this._state.groups || []) {
+      const index = (group.items || []).findIndex((item) => item.item_ref === itemRef);
+      if (index >= 0) {
+        const [item] = group.items.splice(index, 1);
+        this._state.completed = this._state.completed || [];
+        this._state.completed.unshift({
+          item_ref: item.item_ref,
+          summary: item.summary,
+          description: item.description,
+          list_entity: "internal:completed",
+        });
+        break;
+      }
+    }
+  }
+
+  recategorizeItemLocal(itemRef, targetCategory) {
+    if (!this._state) return;
+    let movedItem = null;
+    for (const group of this._state.groups || []) {
+      const index = (group.items || []).findIndex((item) => item.item_ref === itemRef);
+      if (index >= 0) {
+        [movedItem] = group.items.splice(index, 1);
+        break;
+      }
+    }
+    if (!movedItem) return;
+    movedItem.category = targetCategory;
+    movedItem.category_display = this.categoryDisplay(targetCategory);
+    movedItem.list_entity = `internal:${targetCategory}`;
+    let targetGroup = (this._state.groups || []).find((group) => group.category === targetCategory);
+    if (!targetGroup) {
+      targetGroup = { category: targetCategory, title: this.groupTitle(targetCategory), items: [] };
+      this._state.groups = this._state.groups || [];
+      this._state.groups.push(targetGroup);
+    }
+    targetGroup.items = targetGroup.items || [];
+    targetGroup.items.unshift(movedItem);
+  }
+
+  switchListLocal(listId) {
+    if (!this._state) return false;
+    const nextList = (this._state.lists || []).find((list) => list.id === listId);
+    if (!nextList) return false;
+    for (const list of this._state.lists || []) {
+      list.active = list.id === listId;
+    }
+    this._state.system = this._state.system || {};
+    this._state.system.active_list_id = nextList.id;
+    this._state.system.active_list_name = nextList.name;
+    this._state.system.active_list_color = nextList.color || "#2c78ba";
+    return true;
   }
 
   itemMarkup(item, categories) {
@@ -249,10 +333,17 @@ class LocalListAssistPanel extends HTMLElement {
       });
     });
     root.querySelector("#clearCompletedBtn")?.addEventListener("click", async () => {
-      await this.act({ action: "clear_completed" });
+      await this.actFast({ action: "clear_completed" }, (state) => {
+        state.completed = [];
+      });
     });
     root.querySelector("#activeListSelect")?.addEventListener("change", async (ev) => {
-      await this.act({ action: "switch_list", list_id: ev.target.value });
+      await this.actFast({ action: "switch_list", list_id: ev.target.value }, (state) => {
+        if (!this.switchListLocal(ev.target.value)) {
+          return;
+        }
+      });
+      await this.load();
     });
     root.querySelector("#saveSettingsBtn")?.addEventListener("click", async () => {
       await this.act({
@@ -387,7 +478,9 @@ class LocalListAssistPanel extends HTMLElement {
         if (ev.target.checked) {
           this._openEditorKey = "";
           this._focusTarget = "";
-          await this.act({ action: "set_status", list_entity: listEntity, item: itemRef, status: "completed" });
+          await this.actFast({ action: "set_status", list_entity: listEntity, item: itemRef, status: "completed" }, () => {
+            this.moveItemToCompleted(itemRef);
+          });
         }
       });
       row.querySelector(".move-btn")?.addEventListener("click", async () => {
@@ -395,7 +488,9 @@ class LocalListAssistPanel extends HTMLElement {
         if (!target) return;
         this._openEditorKey = "";
         this._focusTarget = "";
-        await this.act({ action: "recategorize", from_list: listEntity, item: itemRef, target_category: target, learn: true });
+        await this.actFast({ action: "recategorize", from_list: listEntity, item: itemRef, target_category: target, learn: true }, () => {
+          this.recategorizeItemLocal(itemRef, target);
+        });
       });
       row.querySelector(".cat-select")?.addEventListener("click", (ev) => ev.stopPropagation());
       row.querySelector(".cat-select")?.addEventListener("change", (ev) => ev.stopPropagation());
@@ -631,7 +726,11 @@ class LocalListAssistPanel extends HTMLElement {
     `;
     this.shadowRoot.querySelectorAll(".list-chip").forEach((chip) => {
       chip.addEventListener("click", async () => {
-        await this.act({ action: "switch_list", list_id: chip.dataset.listId || "" });
+        const listId = chip.dataset.listId || "";
+        await this.actFast({ action: "switch_list", list_id: listId }, () => {
+          this.switchListLocal(listId);
+        });
+        await this.load();
       });
     });
     this.bindEvents();

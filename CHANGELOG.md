@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.11.3
+- Added local panel-state updates for simple item actions so complete, recategorize, and clear completed feel faster and less jumpy.
+
 ## 0.11.2
 - Simplified the Configure UI into clearer sections for app settings, create list, active list, and archived lists.
 - Moved noisy maintenance controls into an advanced area and reduced rerender interruptions while a field is active.
