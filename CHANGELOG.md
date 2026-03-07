@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.19
+- Added per-list voice bridge provisioning (`todo.lla_<list_id>`) for internal multi-list mode so voice adds can target app-created lists reliably.
+- Routed voice bridge adds into the matching internal list and auto-removed bridge list items after ingestion.
+- Further cleaned settings by separating default grocery behavior from per-list category controls.
+
 ## 0.5.18
 - Cleaned Configure UI in internal multi-list mode by hiding legacy inbox/auto-route/auto-provision controls.
 - Added a single toggle: `Use default shopping/grocery categories for new grocery lists`.

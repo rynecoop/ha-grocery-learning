@@ -92,6 +92,7 @@ class GroceryLearningStore:
             if not normalized_id:
                 continue
             name = str(list_obj.get("name", normalized_id.title())).strip() or normalized_id.title()
+            voice_entity = str(list_obj.get("voice_entity", f"todo.lla_{normalized_id}")).strip() or f"todo.lla_{normalized_id}"
             categories_raw = list_obj.get("categories", [])
             categories_clean = [str(c).strip().lower() for c in categories_raw if str(c).strip()] if isinstance(categories_raw, list) else []
             category_order = [c for c in categories_clean if c != "completed"]
@@ -126,6 +127,7 @@ class GroceryLearningStore:
                     )
             cleaned_lists[normalized_id] = {
                 "name": name,
+                "voice_entity": voice_entity,
                 "categories": category_order,
                 "items": items_clean,
             }
@@ -133,6 +135,7 @@ class GroceryLearningStore:
         if "default" not in cleaned_lists:
             cleaned_lists["default"] = {
                 "name": "Grocery List",
+                "voice_entity": "todo.lla_default",
                 "categories": list(categories) + ["other"],
                 "items": [],
             }

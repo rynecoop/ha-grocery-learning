@@ -786,10 +786,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if "default" not in lists or not isinstance(lists.get("default"), dict):
             lists["default"] = {
                 "name": "Grocery List",
+                "voice_entity": "todo.lla_default",
                 "categories": _active_categories() + ["other"],
                 "items": [],
             }
         default_list = lists["default"]
+        default_voice_entity = str(default_list.get("voice_entity", "todo.lla_default")).strip() or "todo.lla_default"
+        default_list["voice_entity"] = default_voice_entity
         categories = default_list.get("categories")
         if not isinstance(categories, list):
             categories = _active_categories() + ["other"]
@@ -802,6 +805,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         items = default_list.get("items")
         if not isinstance(items, list):
             default_list["items"] = []
+        for list_id, list_obj in lists.items():
+            if not isinstance(list_obj, dict):
+                continue
+            voice_entity = str(list_obj.get("voice_entity", _internal_voice_bridge_entity(str(list_id)))).strip()
+            list_obj["voice_entity"] = voice_entity or _internal_voice_bridge_entity(str(list_id))
         model["active_list_id"] = active_list_id if active_list_id in lists else "default"
 
     def _active_internal_list() -> tuple[str, dict[str, Any]]:
@@ -817,6 +825,31 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
     def _internal_list_entity(category: str) -> str:
         return f"internal:{_normalize_category(category)}"
+
+    def _internal_voice_bridge_entity(list_id: str) -> str:
+        return f"todo.lla_{_normalize_list_id(list_id)}"
+
+    def _internal_list_by_id(list_id: str) -> tuple[str, dict[str, Any]]:
+        _ensure_multilist_model()
+        model = hass.data[DOMAIN]["multilist"]
+        lists = model.get("lists", {})
+        normalized = _normalize_list_id(list_id)
+        list_obj = lists.get(normalized)
+        if isinstance(list_obj, dict):
+            return normalized, list_obj
+        return _active_internal_list()
+
+    def _internal_list_id_from_voice_entity(entity_id: str) -> str:
+        _ensure_multilist_model()
+        model = hass.data[DOMAIN]["multilist"]
+        lists = model.get("lists", {})
+        for list_id, list_obj in lists.items():
+            if not isinstance(list_obj, dict):
+                continue
+            voice_entity = str(list_obj.get("voice_entity", _internal_voice_bridge_entity(str(list_id)))).strip()
+            if entity_id == voice_entity:
+                return str(list_id)
+        return ""
 
     def _normalize_list_id(value: str) -> str:
         cleaned = _normalize_category(value)
@@ -1457,7 +1490,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not normalized:
             return
 
-        active_list_id, list_obj = _active_internal_list()
+        source_target_list_id = _internal_list_id_from_voice_entity(source_list) if source_list else ""
+        active_list_id, list_obj = _internal_list_by_id(source_target_list_id) if source_target_list_id else _active_internal_list()
         items: list[dict[str, Any]] = list_obj.setdefault("items", [])
         categories = [c for c in list_obj.get("categories", []) if c != "other"]
         list_name = str(list_obj.get("name", "")).strip()
@@ -1640,10 +1674,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 base_categories = []
             lists[list_id] = {
                 "name": name,
+                "voice_entity": _internal_voice_bridge_entity(list_id),
                 "categories": base_categories + ["other"],
                 "items": [],
             }
             model["active_list_id"] = list_id
+            await _ensure_local_todo_list(_internal_voice_bridge_entity(list_id), f"{name} Voice Bridge")
             await _save()
             return {"ok": True}
 
@@ -1885,6 +1921,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if isinstance(default_list, dict):
                 default_list["categories"] = categories + ["other"]
             await _save()
+            if experimental_multilist:
+                await _ensure_internal_voice_bridges()
 
             if not experimental_multilist:
                 await _ensure_required_lists(active_entry)
@@ -2073,6 +2111,22 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             )
         await _ensure_local_todo_list(_target_list_for_category("other"), "Grocery Other")
         await _ensure_local_todo_list(COMPLETED_LIST_ENTITY, "Grocery Completed")
+
+    async def _ensure_internal_voice_bridges() -> None:
+        if not _multilist_enabled():
+            return
+        _ensure_multilist_model()
+        model = hass.data[DOMAIN]["multilist"]
+        lists = model.get("lists", {})
+        for list_id, list_obj in lists.items():
+            if not isinstance(list_obj, dict):
+                continue
+            name = str(list_obj.get("name", list_id)).strip() or str(list_id)
+            voice_entity = str(list_obj.get("voice_entity", _internal_voice_bridge_entity(str(list_id)))).strip()
+            if not voice_entity:
+                voice_entity = _internal_voice_bridge_entity(str(list_id))
+                list_obj["voice_entity"] = voice_entity
+            await _ensure_local_todo_list(voice_entity, f"{name} Voice Bridge")
 
     async def _ensure_helper_entity(
         helper_domain: str,
@@ -2637,6 +2691,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     data["build_dashboard_payload"] = _build_dashboard_payload
     data["handle_dashboard_action"] = _handle_dashboard_action
     data["ensure_required_lists"] = _ensure_required_lists
+    data["ensure_internal_voice_bridges"] = _ensure_internal_voice_bridges
     data["ensure_required_helpers"] = _ensure_required_helpers
     data["ensure_dashboards"] = _ensure_dashboards
     data["runtime_ready"] = True
@@ -2656,6 +2711,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ensure_required_lists = data.get("ensure_required_lists")
     if ensure_required_lists:
         await ensure_required_lists(entry)
+
+    ensure_internal_voice_bridges = data.get("ensure_internal_voice_bridges")
+    if ensure_internal_voice_bridges:
+        await ensure_internal_voice_bridges()
 
     ensure_required_helpers = hass.data[DOMAIN].get("ensure_required_helpers")
     if ensure_required_helpers:
@@ -2871,6 +2930,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         inbox_entity = _entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")
         category_lists = [_target_list_for_category(category) for category in data.get("categories", list(DEFAULT_CATEGORIES))]
         tracked_lists = category_lists + [_target_list_for_category("other")]
+        multilist_enabled = bool(_entry_value(entry, CONF_EXPERIMENTAL_MULTILIST, False))
+        internal_voice_lists: list[str] = []
+        if multilist_enabled:
+            model = data.get("multilist", {})
+            lists = model.get("lists", {}) if isinstance(model, dict) else {}
+            for list_id, list_obj in lists.items():
+                if not isinstance(list_obj, dict):
+                    continue
+                voice_entity = str(list_obj.get("voice_entity", f"todo.lla_{_normalize_category(str(list_id))}")).strip()
+                if voice_entity:
+                    internal_voice_lists.append(voice_entity)
 
         if service_name == "add_item":
             if not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
@@ -2878,7 +2948,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             item_text = str(data_event.get("item", "")).strip()
             if not item_text:
                 return
-            is_intake_list = _is_voice_intake_list(list_id, inbox_entity, tracked_lists)
+            is_internal_voice_target = list_id in internal_voice_lists
+            is_intake_list = is_internal_voice_target or _is_voice_intake_list(list_id, inbox_entity, tracked_lists)
             if not is_intake_list:
                 return
             source_label = "voice_assistant"
@@ -2888,7 +2959,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 {
                     "item": item_text,
                     "source_list": list_id,
-                    "remove_from_source": False,
+                    "remove_from_source": bool(is_internal_voice_target),
                     "review_on_other": True,
                     "allow_duplicate": True,
                     "interactive_duplicate": False,
