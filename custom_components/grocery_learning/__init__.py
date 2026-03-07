@@ -875,6 +875,28 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 return str(list_id)
         return ""
 
+    def _internal_list_id_from_voice_name(list_name: str) -> str:
+        if not list_name:
+            return ""
+        normalized_name = _normalize_term(list_name)
+        if normalized_name.endswith(" list"):
+            normalized_name = normalized_name[: -len(" list")].strip()
+        if not normalized_name:
+            return ""
+
+        _ensure_multilist_model()
+        model = hass.data[DOMAIN]["multilist"]
+        lists = model.get("lists", {})
+        for list_id, list_obj in lists.items():
+            if not isinstance(list_obj, dict):
+                continue
+            current_name = _normalize_term(str(list_obj.get("name", "")).strip())
+            if current_name.endswith(" list"):
+                current_name = current_name[: -len(" list")].strip()
+            if current_name and current_name == normalized_name:
+                return str(list_id)
+        return ""
+
     def _normalize_list_id(value: str) -> str:
         cleaned = _normalize_category(value)
         return cleaned or "list"
@@ -1501,6 +1523,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not raw_item:
             return
         source_list = str(call.data.get("source_list", "")).strip()
+        source_list_name = str(call.data.get("source_list_name", "")).strip()
         remove_from_source = bool(call.data.get("remove_from_source", False))
         review_on_other = bool(call.data.get("review_on_other", True))
         allow_duplicate = bool(call.data.get("allow_duplicate", False))
@@ -1515,7 +1538,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return
 
         source_target_list_id = _internal_list_id_from_voice_entity(source_list) if source_list else ""
-        active_list_id, list_obj = _internal_list_by_id(source_target_list_id) if source_target_list_id else _active_internal_list()
+        if not source_target_list_id and source_list_name:
+            source_target_list_id = _internal_list_id_from_voice_name(source_list_name)
+        if source_target_list_id:
+            active_list_id, list_obj = _internal_list_by_id(source_target_list_id)
+        elif source == "voice_assistant" and source_list:
+            active_list_id, list_obj = _internal_list_by_id("default")
+        else:
+            active_list_id, list_obj = _active_internal_list()
         items: list[dict[str, Any]] = list_obj.setdefault("items", [])
         categories = [c for c in list_obj.get("categories", []) if c != "other"]
         list_name = str(list_obj.get("name", "")).strip()
@@ -3019,6 +3049,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             item_text = str(data_event.get("item", "")).strip()
             if not item_text:
                 return
+            list_state = hass.states.get(list_id)
+            list_name = str(list_state.attributes.get("friendly_name", "")).strip() if list_state is not None else ""
             is_internal_voice_target = list_id in internal_voice_lists
             if not is_internal_voice_target and not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
                 return
@@ -3032,6 +3064,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 {
                     "item": item_text,
                     "source_list": list_id,
+                    "source_list_name": list_name,
                     "remove_from_source": bool(is_internal_voice_target),
                     "review_on_other": True,
                     "allow_duplicate": True,

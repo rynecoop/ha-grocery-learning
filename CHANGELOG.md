@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.23
+- Fixed voice-target routing to resolve internal list by both source bridge entity and source list friendly name.
+- Added safe voice fallback: unresolved voice targets now route to default Grocery list instead of the currently active list.
+- Included `source_list_name` in voice intake events to make spoken list names (for custom lists) map reliably.
+
 ## 0.5.22
 - Fixed long-term voice bridge reliability by storing and using the actual created bridge entity IDs per list instead of assuming static IDs.
 - Added persisted `voice_alias_entities` tracking so all resolved alias bridge entities route back to the correct internal list.
