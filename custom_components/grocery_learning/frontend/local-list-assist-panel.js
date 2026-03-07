@@ -288,14 +288,6 @@ class LocalListAssistPanel extends HTMLElement {
         state.completed = [];
       });
     });
-    root.querySelector("#activeListSelect")?.addEventListener("change", async (ev) => {
-      await this.actFast({ action: "switch_list", list_id: ev.target.value }, (state) => {
-        if (!this.switchListLocal(ev.target.value)) {
-          return;
-        }
-      });
-      await this.load();
-    });
     root.querySelector("#saveSettingsBtn")?.addEventListener("click", async () => {
       await this.act({
         action: "save_settings",
@@ -354,9 +346,9 @@ class LocalListAssistPanel extends HTMLElement {
       this._drafts.newListVoiceAliases = "";
     });
     root.querySelector("#archiveListBtn")?.addEventListener("click", async () => {
-      const activeSelect = root.querySelector("#activeListSelect");
-      if (!activeSelect?.value) return;
-      await this.act({ action: "archive_list", list_id: activeSelect.value });
+      const listId = this._state?.system?.active_list_id || "";
+      if (!listId) return;
+      await this.act({ action: "archive_list", list_id: listId });
     });
     root.querySelectorAll(".restore-archive-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -372,9 +364,8 @@ class LocalListAssistPanel extends HTMLElement {
       });
     });
     root.querySelector("#saveActiveListBtn")?.addEventListener("click", async () => {
-      const activeSelect = root.querySelector("#activeListSelect");
-      if (!activeSelect?.value) return;
-      const listId = activeSelect.value;
+      const listId = this._state?.system?.active_list_id || "";
+      if (!listId) return;
       const activeList = (this._state?.lists || []).find((list) => list.id === listId) || null;
       const nextName = (this._drafts.activeListName || "").trim();
       if (nextName && nextName !== (activeList?.name || "")) {
@@ -521,9 +512,6 @@ class LocalListAssistPanel extends HTMLElement {
           .map((item) => `<div class="item"><label><input class="completed-toggle" data-item-ref="${this.esc(item.item_ref)}" type="checkbox" checked /> <strong>${this.esc(item.summary)}</strong></label><div class="small">${this.esc(item.description || "")}</div></div>`)
           .join("")
       : `<div class="empty">No completed items.</div>`;
-    const listOptions = (state?.lists || [])
-      .map((list) => `<option value="${this.esc(list.id)}" ${list.active ? "selected" : ""}>${this.esc(list.name)}</option>`)
-      .join("");
     const listChips = (state?.lists || [])
       .map((list) => `<button class="list-chip ${list.active ? "active" : ""}" data-list-id="${this.esc(list.id)}" style="--chip-color:${this.esc(list.color || "#2c78ba")}">${this.esc(list.name)}</button>`)
       .join("");
@@ -658,8 +646,9 @@ class LocalListAssistPanel extends HTMLElement {
         .tab-btn { background:#122132; border:1px solid #284766; color:#b9cde1; border-radius:999px; padding:10px 14px; cursor:pointer; }
         .tab-btn.active { background:color-mix(in srgb, var(--accent) 32%, #122132); border-color:color-mix(in srgb, var(--accent) 65%, #284766); color:#fff; }
         .list-chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
-        .list-chip { border:1px solid color-mix(in srgb, var(--chip-color) 60%, #284766); background:color-mix(in srgb, var(--chip-color) 20%, #122132); color:#fff; border-radius:999px; padding:8px 12px; cursor:pointer; }
+        .list-chip { border:1px solid color-mix(in srgb, var(--chip-color) 60%, #284766); background:color-mix(in srgb, var(--chip-color) 20%, #122132); color:#fff; border-radius:999px; padding:8px 12px; cursor:pointer; transition:transform 140ms ease, border-color 140ms ease, background 140ms ease; }
         .list-chip.active { box-shadow:0 0 0 1px rgba(255,255,255,0.12) inset; }
+        .list-chip:hover { transform:translateY(-1px); }
         .item { background:#0d1826; border:1px solid #1f3348; border-radius:16px; padding: 12px; margin-bottom: 10px; }
         .item-main { display:flex; justify-content:space-between; gap:10px; align-items:center; cursor:pointer; }
         .item-summary { display:flex; align-items:center; gap:10px; min-width:0; }
@@ -680,8 +669,7 @@ class LocalListAssistPanel extends HTMLElement {
         ${this._narrow ? `<div class="mobile-bar"><button id="menuBtn" class="btn icon-btn" aria-label="Open navigation">☰</button><div class="mobile-title">Local List Assist</div></div>` : ""}
         <section class="hero">
           <div class="hero-title">${this.esc(activeListName)}</div>
-          <div class="sub">Local List Assist</div>
-          ${multilist ? `<div class="row"><select id="activeListSelect" class="select" style="max-width:360px;">${listOptions}</select><div class="small">Current list: <strong>${this.esc(activeListName)}</strong></div></div>` : ""}
+          <div class="sub">${multilist ? "Switch lists from the chips below." : "Local List Assist"}</div>
           ${multilist ? `<div class="list-chip-row">${listChips}</div>` : ""}
           <div class="tabs">
             <button class="tab-btn ${this._view === "list" ? "active" : ""}" data-view="list">List</button>

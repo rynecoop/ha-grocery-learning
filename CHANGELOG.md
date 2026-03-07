@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.6
+- Removed the redundant list dropdown from the header and made the color-coded chips the single list switcher.
+- Cleaned up the hero/header copy so the active list is clearer and the top of the app reads less cluttered.
+
 ## 0.12.5
 - Cleaned up Configure by replacing the rename prompt with an inline active-list name field and moving low-frequency list controls into an advanced section.
 - Kept active-list edits on a single save path so Configure feels less crowded and more stable on mobile.
