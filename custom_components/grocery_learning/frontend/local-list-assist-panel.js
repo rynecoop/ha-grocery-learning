@@ -103,7 +103,10 @@ class LocalListAssistPanel extends HTMLElement {
     return `
       <div class="item" data-list-entity="${this.esc(item.list_entity)}" data-item-ref="${this.esc(item.item_ref)}">
         <div class="item-main">
-          <label><input class="complete-toggle" type="checkbox" /> <strong>${this.esc(item.summary)}</strong></label>
+          <div class="item-summary">
+            <input class="complete-toggle" type="checkbox" />
+            <strong>${this.esc(item.summary)}</strong>
+          </div>
           <span class="pill">${this.esc(item.category_display)}</span>
         </div>
         <div class="small">${this.esc(item.description || "")}</div>
@@ -233,6 +236,9 @@ class LocalListAssistPanel extends HTMLElement {
         if (!target) return;
         await this.act({ action: "recategorize", from_list: listEntity, item: itemRef, target_category: target, learn: true });
       });
+      row.querySelector(".cat-select")?.addEventListener("click", (ev) => ev.stopPropagation());
+      row.querySelector(".cat-select")?.addEventListener("change", (ev) => ev.stopPropagation());
+      row.querySelector(".move-btn")?.addEventListener("click", (ev) => ev.stopPropagation());
     });
 
     root.querySelectorAll(".completed-toggle").forEach((el) => {
@@ -353,6 +359,7 @@ class LocalListAssistPanel extends HTMLElement {
         .btn.danger { background:#6a2d2d; border-color:#d96b6b; }
         .item { background:#0d1826; border:1px solid #1f3348; border-radius:16px; padding: 12px; margin-bottom: 10px; }
         .item-main { display:flex; justify-content:space-between; gap:10px; align-items:center; cursor:pointer; }
+        .item-summary { display:flex; align-items:center; gap:10px; min-width:0; }
         .editor { display:none; gap:10px; margin-top:10px; }
         .editor.open { display:flex; }
         .pill { font-size:11px; padding:4px 10px; border-radius:999px; background:#1f3a57; color:#c4e0ff; }
@@ -374,8 +381,8 @@ class LocalListAssistPanel extends HTMLElement {
         ${this._error ? `<section class="section"><div class="title">Error</div><div class="error">${this.esc(this._error)}</div></section>` : ""}
         ${attention.join("")}
         ${groups || ""}
-        <section class="section"><div class="title">Recent Activity</div>${activity}</section>
         <section class="section"><div class="title">Completed</div><div class="row" style="justify-content:space-between;"><div class="small">Completed history stays visible until cleared.</div><button id="clearCompletedBtn" class="btn danger">Clear Completed</button></div><div style="margin-top:10px;">${completed}</div></section>
+        <section class="section"><div class="title">Recent Activity</div>${activity}</section>
       </div>
     `;
     this.bindEvents();

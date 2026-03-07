@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1
+- Moved Recent Activity below Completed so it stays available without sitting in the primary shopping flow.
+- Fixed category-editor interaction in the native panel by separating checkbox clicks from row clicks, which stopped item taps from collapsing the editor by toggling completion.
+- Stopped category controls from bubbling row-click events so recategorizing feels stable on mobile and desktop.
+
 ## 0.7.0
 - Replaced the sidebar iframe registration with a real Home Assistant custom panel backed by a module-loaded web component.
 - Added an internal `add_to_list` service for future Assist/automation ingestion that does not depend on Home Assistant `todo` entities.
