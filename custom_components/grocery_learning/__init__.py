@@ -878,7 +878,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     def _internal_list_id_from_voice_name(list_name: str) -> str:
         if not list_name:
             return ""
+        if "." in list_name:
+            by_entity = _internal_list_id_from_voice_entity(str(list_name).strip())
+            if by_entity:
+                return by_entity
         normalized_name = _normalize_term(list_name)
+        normalized_name = re.sub(r"\s+'?s\b", "", normalized_name).strip()
+        normalized_name = re.sub(r"\s+s\b", "", normalized_name).strip()
         if normalized_name.endswith(" list"):
             normalized_name = normalized_name[: -len(" list")].strip()
         if not normalized_name:
@@ -891,6 +897,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if not isinstance(list_obj, dict):
                 continue
             current_name = _normalize_term(str(list_obj.get("name", "")).strip())
+            current_name = re.sub(r"\s+'?s\b", "", current_name).strip()
+            current_name = re.sub(r"\s+s\b", "", current_name).strip()
             if current_name.endswith(" list"):
                 current_name = current_name[: -len(" list")].strip()
             if current_name and current_name == normalized_name:
@@ -1545,7 +1553,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             source_target_list_id = _internal_list_id_from_voice_name(source_list_name)
         if source_target_list_id:
             active_list_id, list_obj = _internal_list_by_id(source_target_list_id)
-        elif source == "voice_assistant" and source_list:
+        elif source == "voice_assistant":
             active_list_id, list_obj = _internal_list_by_id("default")
         else:
             active_list_id, list_obj = _active_internal_list()
@@ -3031,6 +3039,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         source_list_name = str(data_event.get("name", "")).strip()
         if not source_list_name:
             source_list_name = str(data_event.get("list_name", "")).strip()
+        if not source_list_name:
+            source_list_name = str(data_event.get("todo_list_name", "")).strip()
         if not source_list_name and list_id:
             list_state = hass.states.get(list_id)
             source_list_name = str(list_state.attributes.get("friendly_name", "")).strip() if list_state is not None else ""
@@ -3069,9 +3079,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 is_intake_list = True
             elif multilist_enabled and source_ctx == "voice_assistant":
                 is_intake_list = True
+            # In internal multi-list mode, voice requests can arrive as parent-context calls
+            # with inconsistent list targeting fields. Treat these as voice intake as well.
+            if multilist_enabled and source_ctx in {"voice_assistant", "automation"}:
+                is_intake_list = True
             if not is_intake_list:
                 return
-            source_label = "voice_assistant" if source_ctx == "voice_assistant" else source_ctx
+            source_label = "voice_assistant" if source_ctx in {"voice_assistant", "automation"} else source_ctx
             try:
                 await hass.services.async_call(
                     DOMAIN,

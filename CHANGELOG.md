@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.25
+- Forced unresolved voice adds in internal multi-list mode to default Grocery list (never active-list fallback).
+- Improved spoken list-name matching for possessive variants like "`Ryne's list`".
+- Expanded voice intake capture for parent-context voice calls and additional list-name field variants (`todo_list_name`).
+
 ## 0.5.24
 - Fixed voice intake handling for `todo.add_item` calls that include list name fields but no explicit entity target.
 - Added name-based voice routing inputs (`name` / `list_name`) so spoken target list names are preserved for internal routing.
