@@ -1549,9 +1549,20 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not normalized:
             return
 
-        source_target_list_id = _internal_list_id_from_voice_entity(source_list) if source_list else ""
-        if not source_target_list_id and source_list_name:
-            source_target_list_id = _internal_list_id_from_voice_name(source_list_name)
+        source_target_list_id = ""
+        if source == "voice_assistant":
+            # Prefer explicit spoken/list-name context over raw entity targets.
+            if source_list_name:
+                source_target_list_id = _internal_list_id_from_voice_name(source_list_name)
+                if not source_target_list_id:
+                    normalized_list_name = _normalize_term(source_list_name)
+                    if "grocery" in normalized_list_name or "shopping" in normalized_list_name:
+                        source_target_list_id = "default"
+            # Do not trust source_list alone for voice; when name is unavailable, route to default.
+        else:
+            source_target_list_id = _internal_list_id_from_voice_entity(source_list) if source_list else ""
+            if not source_target_list_id and source_list_name:
+                source_target_list_id = _internal_list_id_from_voice_name(source_list_name)
         if source_target_list_id:
             active_list_id, list_obj = _internal_list_by_id(source_target_list_id)
         elif source == "voice_assistant":
@@ -3031,7 +3042,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
 
         data_event = event.data.get("service_data", {})
-        if event.data.get("domain") != "todo":
+        service_domain = str(event.data.get("domain", "")).strip().lower()
+        if service_domain not in {"todo", "shopping_list"}:
             return
 
         service_name = str(event.data.get("service", "")).strip()
@@ -3042,6 +3054,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             source_list_name = str(data_event.get("list_name", "")).strip()
         if not source_list_name:
             source_list_name = str(data_event.get("todo_list_name", "")).strip()
+        if not source_list_name:
+            source_list_name = str(data_event.get("list", "")).strip()
         if not source_list_name and list_id:
             list_state = hass.states.get(list_id)
             source_list_name = str(list_state.attributes.get("friendly_name", "")).strip() if list_state is not None else ""
@@ -3066,6 +3080,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         if service_name == "add_item":
             item_text = str(data_event.get("item", "")).strip()
+            if not item_text:
+                item_text = str(data_event.get("name", "")).strip()
             if not item_text:
                 return
             is_internal_voice_target = bool(list_id and list_id in internal_voice_lists)

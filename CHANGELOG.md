@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.27
+- Voice routing now prioritizes explicit list-name context and no longer trusts raw bridge entity target alone when list name is missing.
+- Unresolved voice list targets route to Grocery by design to prevent accidental placement into active/custom lists.
+- Expanded intake compatibility for additional payload variants and domains (`shopping_list.add_item`, `list`, and `name` item fields).
+
 ## 0.5.26
 - Fixed a critical `route_item` schema mismatch by allowing `source_list_name`; this restores routing for voice events that include list-name fields.
 - Standardized intercepted todo intake events to use `voice_assistant` source so they do not fall back through typed/active-list behavior.
