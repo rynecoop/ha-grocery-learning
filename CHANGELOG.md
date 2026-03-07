@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.4
+- Added optimistic local panel updates for create list, rename list, and delete archived list so those actions no longer require a full panel reload.
+- Expanded frontend helper tests to cover list creation, rename, and archived-list removal behavior.
+
 ## 0.12.3
 - Extracted panel-side local state mutations into a dedicated frontend helper module and added regression tests for complete, recategorize, list switch, and label behavior.
 - Added Node-based frontend helper validation to CI so the mobile/input stability fixes are covered alongside backend tests.

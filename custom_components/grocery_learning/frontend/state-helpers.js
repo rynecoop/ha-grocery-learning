@@ -72,3 +72,54 @@ export function switchListLocal(state, listId) {
   state.system.active_list_color = nextList.color || "#2c78ba";
   return true;
 }
+
+export function createListLocal(state, list) {
+  if (!state || !list?.id || !list?.name) return false;
+  state.lists = state.lists || [];
+  if (state.lists.some((entry) => entry.id === list.id)) return false;
+  for (const entry of state.lists) {
+    entry.active = false;
+  }
+  const nextList = {
+    id: list.id,
+    name: list.name,
+    color: list.color || "#2c78ba",
+    active: true,
+  };
+  state.lists.push(nextList);
+  state.lists.sort((a, b) => {
+    if (a.id === "default") return -1;
+    if (b.id === "default") return 1;
+    return String(a.name || "").localeCompare(String(b.name || ""));
+  });
+  state.system = state.system || {};
+  state.system.active_list_id = nextList.id;
+  state.system.active_list_name = nextList.name;
+  state.system.active_list_color = nextList.color;
+  state.groups = [];
+  state.completed = [];
+  state.pending_review = { pending: false, item: "", source_list: "" };
+  state.pending_duplicate = { pending: false, item: "", target: "" };
+  return true;
+}
+
+export function renameListLocal(state, listId, newName) {
+  if (!state || !listId || !newName) return false;
+  const list = (state.lists || []).find((entry) => entry.id === listId);
+  if (!list) return false;
+  list.name = newName;
+  if (list.active) {
+    state.system = state.system || {};
+    state.system.active_list_name = newName;
+  }
+  return true;
+}
+
+export function deleteArchivedListLocal(state, listId) {
+  if (!state || !listId) return false;
+  const archivedLists = state.archived_lists || [];
+  const index = archivedLists.findIndex((entry) => entry.id === listId);
+  if (index < 0) return false;
+  archivedLists.splice(index, 1);
+  return true;
+}

@@ -1,4 +1,4 @@
-import { categoryDisplay as displayCategory, groupTitle as deriveGroupTitle, moveItemToCompleted as applyMoveItemToCompleted, recategorizeItemLocal as applyRecategorizeItemLocal, switchListLocal as applySwitchListLocal } from "./state-helpers.js";
+import { categoryDisplay as displayCategory, createListLocal as applyCreateListLocal, deleteArchivedListLocal as applyDeleteArchivedListLocal, groupTitle as deriveGroupTitle, moveItemToCompleted as applyMoveItemToCompleted, recategorizeItemLocal as applyRecategorizeItemLocal, renameListLocal as applyRenameListLocal, switchListLocal as applySwitchListLocal } from "./state-helpers.js";
 
 class LocalListAssistPanel extends HTMLElement {
   constructor() {
@@ -339,7 +339,14 @@ class LocalListAssistPanel extends HTMLElement {
       if (!name) return;
       const categories = this._drafts.newListCategories || "";
       const voiceAliases = this._drafts.newListVoiceAliases || "";
-      await this.act({ action: "create_list", name, categories, voice_aliases: voiceAliases });
+      const listId = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "") || "list";
+      const nextColor = "#" + ((Array.from(listId).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 0xffffff).toString(16).padStart(6, "0"));
+      await this.actFast({ action: "create_list", name, categories, voice_aliases: voiceAliases }, (state) => {
+        applyCreateListLocal(state, { id: listId, name, color: nextColor });
+      });
       this._drafts.newListName = "";
       this._drafts.newListCategories = "";
       this._drafts.newListVoiceAliases = "";
@@ -349,7 +356,10 @@ class LocalListAssistPanel extends HTMLElement {
       if (!activeSelect?.value) return;
       const next = window.prompt("New list name");
       if (!next?.trim()) return;
-      await this.act({ action: "rename_list", list_id: activeSelect.value, name: next.trim() });
+      const name = next.trim();
+      await this.actFast({ action: "rename_list", list_id: activeSelect.value, name }, (state) => {
+        applyRenameListLocal(state, activeSelect.value, name);
+      });
     });
     root.querySelector("#archiveListBtn")?.addEventListener("click", async () => {
       const activeSelect = root.querySelector("#activeListSelect");
@@ -363,7 +373,10 @@ class LocalListAssistPanel extends HTMLElement {
     });
     root.querySelectorAll(".delete-archive-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        await this.act({ action: "delete_archived_list", list_id: btn.dataset.listId || "" });
+        const listId = btn.dataset.listId || "";
+        await this.actFast({ action: "delete_archived_list", list_id: listId }, (state) => {
+          applyDeleteArchivedListLocal(state, listId);
+        });
       });
     });
     root.querySelector("#saveActiveListBtn")?.addEventListener("click", async () => {
