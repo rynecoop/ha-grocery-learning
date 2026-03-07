@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.10.6
+- Fixed item category editors so they keep their open state and focus cleanly while you pick a new category, including after background rerenders.
+
 ## 0.10.5
 - Fixed inline category editors so they stay open across rerenders and keep the selected category while you are changing an item.
 - Opening an item now focuses the category selector directly instead of collapsing the editor during background UI updates.

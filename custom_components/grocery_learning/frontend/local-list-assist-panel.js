@@ -369,6 +369,7 @@ class LocalListAssistPanel extends HTMLElement {
       row.querySelector(".complete-toggle")?.addEventListener("change", async (ev) => {
         if (ev.target.checked) {
           this._openEditorKey = "";
+          this._focusTarget = "";
           await this.act({ action: "set_status", list_entity: listEntity, item: itemRef, status: "completed" });
         }
       });
