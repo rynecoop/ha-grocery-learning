@@ -122,7 +122,7 @@ class GroceryLearningAppView(HomeAssistantView):
 
     url = "/api/grocery_learning/app"
     name = "api:grocery_learning:app"
-    requires_auth = True
+    requires_auth = False
 
     async def get(self, request):
         html = """<!doctype html>

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.30
+- Fixed mobile sidebar `401 Unauthorized` for the embedded panel by making only the app shell endpoint public again.
+- Dashboard and action endpoints remain authenticated, so data access still requires valid Home Assistant auth.
+- Preserved the frontend token-resolution improvements for authenticated API calls after the shell loads.
+
 ## 0.5.29
 - Fixed mobile `401 Unauthorized` issues caused by the embedded app shell relying on iframe-local auth state.
 - The app view now requires Home Assistant auth, and the frontend resolves tokens from the parent/top HA app context as well as local storage.
