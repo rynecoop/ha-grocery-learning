@@ -12,6 +12,7 @@ Local List Assist is a Home Assistant custom integration that gives you a clean,
 - Dedicated sidebar app: `Local List Assist`
 - Quick Add with per-user attribution
 - Direct internal add path: `grocery_learning.add_to_list`
+- One-click voice phrase installer from `Configure`
 - Voice/list alias intake routing (for example: shopping list, grocery list)
 - Auto-route by learned terms + defaults
 - Duplicate decision flow (Add Anyway or Skip)
@@ -49,9 +50,10 @@ Local List Assist is a Home Assistant custom integration that gives you a clean,
 ## Quick Start
 1. Open sidebar item `Local List Assist`.
 2. Add 2-3 items with Quick Add.
-3. Add one item by voice to your shopping/grocery list.
-4. If an item lands in `Other`, use review actions to teach the category once.
-5. Re-test the same item and verify it routes correctly.
+3. Open `Configure` and click `Install Voice Phrases`.
+4. Add one item by voice to your shopping/grocery list.
+5. If an item lands in `Other`, use review actions to teach the category once.
+6. Re-test the same item and verify it routes correctly.
 
 ## Documentation
 - Setup guide: [docs/setup.md](docs/setup.md)
@@ -65,6 +67,7 @@ Local List Assist is a Home Assistant custom integration that gives you a clean,
 ## Service APIs
 - `grocery_learning.route_item`
 - `grocery_learning.add_to_list`
+- `grocery_learning.install_voice_sentences`
 - `grocery_learning.apply_review`
 - `grocery_learning.confirm_duplicate`
 - `grocery_learning.learn_term`

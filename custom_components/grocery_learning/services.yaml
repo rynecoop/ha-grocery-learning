@@ -97,6 +97,17 @@ add_to_list:
       selector:
         boolean:
 
+install_voice_sentences:
+  name: Install Voice Sentences
+  description: Install the bundled custom sentence pack into Home Assistant so Assist can target Local List Assist directly.
+  fields:
+    language:
+      required: false
+      default: en
+      example: en
+      selector:
+        text:
+
 apply_review:
   name: Apply Grocery Review
   description: Move pending review item to a category and optionally learn the mapping.

@@ -51,6 +51,7 @@ from .const import (
     REVIEW_PENDING_HELPER,
     REVIEW_SOURCE_HELPER,
     SERVICE_ADD_TO_LIST,
+    SERVICE_INSTALL_VOICE_SENTENCES,
     SERVICE_APPLY_REVIEW,
     SERVICE_CONFIRM_DUPLICATE,
     SERVICE_FORGET_TERM,
@@ -120,6 +121,12 @@ CONFIRM_DUPLICATE_SCHEMA = vol.Schema(
         vol.Required("decision"): vol.In(["add", "skip"]),
         vol.Optional("actor_name", default=""): cv.string,
         vol.Optional("actor_user_id", default=""): cv.string,
+    }
+)
+
+INSTALL_VOICE_SENTENCES_SCHEMA = vol.Schema(
+    {
+        vol.Optional("language", default="en"): cv.string,
     }
 )
 
@@ -2133,6 +2140,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 await _ensure_dashboards(active_entry)
             return {"ok": True}
 
+        if action == "install_voice_sentences":
+            language = str(payload.get("language", "en")).strip() or "en"
+            path_written = await _install_voice_sentences(language)
+            return {"ok": True, "path": path_written}
+
         if action == "save_settings":
             active_entry: ConfigEntry | None = hass.data.get(DOMAIN, {}).get("entry")
             if active_entry is None:
@@ -2994,6 +3006,51 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             blocking=True,
         )
 
+    def _voice_sentence_pack(language: str) -> str:
+        if language != "en":
+            raise vol.Invalid("Only English voice sentences are bundled right now")
+        return """language: "en"
+intents:
+  LocalListAssistAddItem:
+    data:
+      - sentences:
+          - "(add|put) {item} to [my] (grocery|shopping) list"
+          - "(add|put) {item} on [my] (grocery|shopping) list"
+        slots:
+          list_name: "Grocery List"
+      - sentences:
+          - "(add|put) {item} to [my] {list_name} list"
+          - "(add|put) {item} on [my] {list_name} list"
+lists:
+  item:
+    wildcard: true
+  list_name:
+    wildcard: true
+"""
+
+    async def _install_voice_sentences(language: str) -> str:
+        normalized_language = language.strip().lower() or "en"
+        content = _voice_sentence_pack(normalized_language)
+        sentences_dir = Path(hass.config.path("custom_sentences", normalized_language))
+        sentences_dir.mkdir(parents=True, exist_ok=True)
+        sentences_path = sentences_dir / "local_list_assist.yaml"
+        sentences_path.write_text(content, encoding="utf-8")
+        try:
+            await hass.services.async_call("conversation", "reload", blocking=True)
+        except Exception as err:  # pragma: no cover
+            _LOGGER.debug("Conversation reload after sentence install failed: %s", err)
+        await _record_activity(
+            "Voice phrases installed",
+            f"Installed {normalized_language} sentence pack",
+            "Local List Assist",
+            "system",
+        )
+        return str(sentences_path)
+
+    async def _install_voice_sentences_service(call: ServiceCall) -> None:
+        language = str(call.data.get("language", "en")).strip() or "en"
+        await _install_voice_sentences(language)
+
     class LocalListAssistAddItemIntent(intent_helper.IntentHandler):
         """Direct Assist intent handler for internal list adds."""
 
@@ -3103,6 +3160,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_SYNC_HELPERS, _sync_helpers)
     hass.services.async_register(DOMAIN, SERVICE_ROUTE_ITEM, _route_item, schema=ROUTE_ITEM_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_ADD_TO_LIST, _add_to_list, schema=ADD_TO_LIST_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_INSTALL_VOICE_SENTENCES,
+        _install_voice_sentences_service,
+        schema=INSTALL_VOICE_SENTENCES_SCHEMA,
+    )
     hass.services.async_register(DOMAIN, SERVICE_APPLY_REVIEW, _apply_review, schema=APPLY_REVIEW_SCHEMA)
     hass.services.async_register(
         DOMAIN,

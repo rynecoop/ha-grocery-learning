@@ -11,6 +11,7 @@ SERVICE_FORGET_TERM = "forget_term"
 SERVICE_SYNC_HELPERS = "sync_helpers"
 SERVICE_ROUTE_ITEM = "route_item"
 SERVICE_ADD_TO_LIST = "add_to_list"
+SERVICE_INSTALL_VOICE_SENTENCES = "install_voice_sentences"
 SERVICE_APPLY_REVIEW = "apply_review"
 SERVICE_CONFIRM_DUPLICATE = "confirm_duplicate"
 

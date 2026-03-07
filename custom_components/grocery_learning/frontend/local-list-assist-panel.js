@@ -184,6 +184,9 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#repairBtn")?.addEventListener("click", async () => {
       await this.act({ action: "repair_system" });
     });
+    root.querySelector("#installVoiceBtn")?.addEventListener("click", async () => {
+      await this.act({ action: "install_voice_sentences", language: "en" });
+    });
     root.querySelector("#dupAddBtn")?.addEventListener("click", async () => {
       await this.act({
         action: "confirm_duplicate",
@@ -342,6 +345,7 @@ class LocalListAssistPanel extends HTMLElement {
           <div class="row">
             <button id="saveSettingsBtn" class="btn primary">Save</button>
             <button id="repairBtn" class="btn">Repair</button>
+            <button id="installVoiceBtn" class="btn">Install Voice Phrases</button>
           </div>
           ${multilist ? `
             <div class="divider"></div>

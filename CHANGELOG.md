@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.0
+- Added a one-click `Install Voice Phrases` flow in Configure that writes the bundled sentence pack into Home Assistant's `custom_sentences` folder and attempts a conversation reload.
+- Exposed the same capability as `grocery_learning.install_voice_sentences` for scripted setup and future automation.
+- Kept the new direct Assist intent path and the legacy bridge path together so users can migrate voice safely.
+
 ## 0.8.0
 - Added a first-class `LocalListAssistAddItem` Assist intent handler so Local List Assist can accept direct internal voice adds without depending only on `todo` bridge events.
 - Kept the legacy `todo`/shopping-list bridge path as a fallback so existing voice setups do not break during migration.
