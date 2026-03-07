@@ -67,6 +67,36 @@ route_item:
       selector:
         text:
 
+add_to_list:
+  name: Add Item To Internal List
+  description: Add an item directly to Local List Assist storage without depending on Home Assistant todo entities.
+  fields:
+    item:
+      required: true
+      example: paper towels
+      selector:
+        text:
+    list_name:
+      required: false
+      example: Costco List
+      selector:
+        text:
+    list_id:
+      required: false
+      example: costco_list
+      selector:
+        text:
+    source:
+      required: false
+      example: voice_assistant
+      selector:
+        text:
+    allow_duplicate:
+      required: false
+      default: false
+      selector:
+        boolean:
+
 apply_review:
   name: Apply Grocery Review
   description: Move pending review item to a category and optionally learn the mapping.

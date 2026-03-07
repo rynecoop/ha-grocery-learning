@@ -26,6 +26,7 @@ from .const import (
     CONF_AUTO_PROVISION,
     CONF_AUTO_ROUTE_INBOX,
     CONF_CATEGORIES,
+    CONF_DEBUG_MODE,
     CONF_DEFAULT_GROCERY_CATEGORIES,
     CONF_EXPERIMENTAL_MULTILIST,
     CONF_INBOX_ENTITY,
@@ -46,6 +47,7 @@ from .const import (
     REVIEW_ITEM_HELPER,
     REVIEW_PENDING_HELPER,
     REVIEW_SOURCE_HELPER,
+    SERVICE_ADD_TO_LIST,
     SERVICE_APPLY_REVIEW,
     SERVICE_CONFIRM_DUPLICATE,
     SERVICE_FORGET_TERM,
@@ -57,6 +59,7 @@ from .const import (
 from .storage import GroceryLearningStore, LearnedTerms
 
 _LOGGER = logging.getLogger(__name__)
+MAX_ACTIVITY_ITEMS = 40
 
 PLATFORMS: list[Platform] = []
 
@@ -86,6 +89,18 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
         vol.Optional("source", default=""): cv.string,
         vol.Optional("actor_name", default=""): cv.string,
         vol.Optional("actor_user_id", default=""): cv.string,
+    }
+)
+
+ADD_TO_LIST_SCHEMA = vol.Schema(
+    {
+        vol.Required("item"): cv.string,
+        vol.Optional("list_name", default=""): cv.string,
+        vol.Optional("list_id", default=""): cv.string,
+        vol.Optional("source", default="service_call"): cv.string,
+        vol.Optional("actor_name", default=""): cv.string,
+        vol.Optional("actor_user_id", default=""): cv.string,
+        vol.Optional("allow_duplicate", default=False): cv.boolean,
     }
 )
 
@@ -179,6 +194,12 @@ class GroceryLearningAppView(HomeAssistantView):
     </div>
     <div id="attention"></div>
     <div id="lists"></div>
+    <div class="section">
+      <div class="section-head">
+        <div class="title">Recent Activity</div>
+      </div>
+      <div id="activity"></div>
+    </div>
     <div class="section">
       <div class="section-head">
         <div class="title">Completed</div>
@@ -327,7 +348,7 @@ class GroceryLearningAppView(HomeAssistantView):
           <div class="row">
             <select id="activeListSelect" class="input" style="max-width:360px; min-width:220px;">${listOptions}</select>
           </div>
-          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong></div>`;
+          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong> · ${esc((state.system?.active_list_categories || []).length ? 'Categorized view' : 'Flat list')}</div>`;
       } else {
         listSwitcher.innerHTML = '';
       }
@@ -352,6 +373,7 @@ class GroceryLearningAppView(HomeAssistantView):
             <div class="row" style="margin-top:10px;">
               <label class="checkbox"><input id="settingsExperimentalMultilist" type="checkbox" ${state.settings?.experimental_multilist ? 'checked' : ''} /> Enable experimental internal multi-list mode</label>
               <label class="checkbox"><input id="settingsDefaultGroceryCategories" type="checkbox" ${state.settings?.default_grocery_categories ? 'checked' : ''} /> Use default shopping/grocery categories for new grocery lists</label>
+              <label class="checkbox"><input id="settingsDebugMode" type="checkbox" ${state.settings?.debug_mode ? 'checked' : ''} /> Debug mode for routing/activity logs</label>
               ${multilistEnabled ? '' : `<label class="checkbox"><input id="settingsAutoRoute" type="checkbox" ${state.settings?.auto_route_inbox ? 'checked' : ''} /> Auto route inbox/voice intake</label>
               <label class="checkbox"><input id="settingsAutoProvision" type="checkbox" ${state.settings?.auto_provision ? 'checked' : ''} /> Auto provision missing lists</label>`}
             </div>
@@ -392,6 +414,10 @@ class GroceryLearningAppView(HomeAssistantView):
         return `<div class="section"><div class="title">${esc(g.title)}</div>${items}</div>`;
       }).join('');
       byId('lists').innerHTML = groups;
+
+      byId('activity').innerHTML = (state.activity || []).length
+        ? state.activity.map((entry) => `<div class="item"><div><strong>${esc(entry.title || '')}</strong></div><div class="small">${esc(entry.detail || '')}${entry.list_name ? ` · ${esc(entry.list_name)}` : ''}${entry.source ? ` · ${esc(entry.source)}` : ''}${entry.when ? ` · ${esc(entry.when)}` : ''}</div></div>`).join('')
+        : '<div class="empty">No recent activity.</div>';
 
       byId('completed').innerHTML = state.completed.length
         ? state.completed.map(i => `<div class="item"><label><input class="completed-toggle" data-item-ref="${esc(i.item_ref)}" type="checkbox" checked /> <strong>${esc(i.summary)}</strong></label><div class="small">${esc(i.description || '')}</div></div>`).join('')
@@ -501,11 +527,13 @@ class GroceryLearningAppView(HomeAssistantView):
         const autoProvision = byId('settingsAutoProvision') ? !!byId('settingsAutoProvision')?.checked : undefined;
         const experimentalMultilist = !!byId('settingsExperimentalMultilist')?.checked;
         const defaultGroceryCategories = !!byId('settingsDefaultGroceryCategories')?.checked;
+        const debugMode = !!byId('settingsDebugMode')?.checked;
         const payload = {
           action:'save_settings',
           categories,
           experimental_multilist: experimentalMultilist,
           default_grocery_categories: defaultGroceryCategories,
+          debug_mode: debugMode,
           complete_setup: !!completeSetup
         };
         if(byId('settingsInbox')) payload.inbox_entity = inboxEntity;
@@ -573,8 +601,10 @@ class GroceryLearningDashboardView(HomeAssistantView):
                 "auto_provision": True,
                 "experimental_multilist": False,
                 "default_grocery_categories": True,
+                "debug_mode": False,
             },
             "system": {"missing_lists": [], "runtime_ready": False},
+            "activity": [],
             "setup": {"completed": False},
             "error": error,
         }
@@ -613,9 +643,11 @@ class GroceryLearningDashboardView(HomeAssistantView):
                     "auto_provision": True,
                     "experimental_multilist": False,
                     "default_grocery_categories": True,
+                    "debug_mode": False,
                 },
             )
             payload.setdefault("system", {"missing_lists": [], "runtime_ready": False})
+            payload.setdefault("activity", [])
             payload.setdefault("setup", {"completed": False})
             payload.setdefault("error", "")
             return web.json_response(payload)
@@ -737,6 +769,11 @@ def _relative_time(iso_value: str) -> str:
     return f"{days} day{'s' if days != 1 else ''} ago"
 
 
+def _debug_enabled(hass: HomeAssistant) -> bool:
+    entry = hass.data.get(DOMAIN, {}).get("entry")
+    return bool(_entry_value(entry, CONF_DEBUG_MODE, False))
+
+
 def _categories_from_entry(entry: ConfigEntry | None) -> list[str]:
     raw = _entry_value(entry, CONF_CATEGORIES, list(DEFAULT_CATEGORIES))
     return _categories_from_raw(raw)
@@ -791,11 +828,17 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 }
             },
         }
+    try:
+        activity = await store.load_activity()
+    except Exception as err:  # pragma: no cover
+        _LOGGER.warning("Failed loading grocery activity storage, using empty list: %s", err)
+        activity = []
 
     data["store"] = store
     data["terms"] = terms
     data["item_meta"] = item_meta
     data["multilist"] = multilist
+    data["activity"] = activity
     data["pending_duplicate"] = {}
     data["pending_review"] = {}
     data["categories"] = list(DEFAULT_CATEGORIES)
@@ -805,7 +848,47 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN]["terms"],
             hass.data[DOMAIN].get("item_meta", {}),
             hass.data[DOMAIN].get("multilist"),
+            hass.data[DOMAIN].get("activity", []),
         )
+
+    async def _record_activity(title: str, detail: str, list_name: str = "", source: str = "") -> None:
+        activity = hass.data[DOMAIN].setdefault("activity", [])
+        if not isinstance(activity, list):
+            activity = []
+            hass.data[DOMAIN]["activity"] = activity
+        activity.insert(
+            0,
+            {
+                "timestamp": dt_util.utcnow().isoformat(),
+                "title": title.strip(),
+                "detail": detail.strip(),
+                "list_name": list_name.strip(),
+                "source": source.strip(),
+            },
+        )
+        del activity[MAX_ACTIVITY_ITEMS:]
+        if _debug_enabled(hass):
+            _LOGGER.info("Local List Assist activity: %s | %s | %s | %s", title, detail, list_name, source)
+        await _save()
+
+    def _activity_payload() -> list[dict[str, str]]:
+        activity = hass.data[DOMAIN].get("activity", [])
+        if not isinstance(activity, list):
+            return []
+        out: list[dict[str, str]] = []
+        for entry in activity[:10]:
+            if not isinstance(entry, dict):
+                continue
+            out.append(
+                {
+                    "title": str(entry.get("title", "")).strip(),
+                    "detail": str(entry.get("detail", "")).strip(),
+                    "list_name": str(entry.get("list_name", "")).strip(),
+                    "source": _friendly_source(str(entry.get("source", "")).strip() or "unknown"),
+                    "when": _relative_time(str(entry.get("timestamp", "")).strip()),
+                }
+            )
+        return out
 
     def _active_categories() -> list[str]:
         return list(hass.data[DOMAIN].get("categories", list(DEFAULT_CATEGORIES)))
@@ -1469,6 +1552,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
                 "experimental_multilist": True,
                 "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
+                "debug_mode": bool(_entry_value(active_entry, CONF_DEBUG_MODE, False)),
             },
             "system": {
                 "missing_lists": [],
@@ -1477,6 +1561,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "active_list_name": str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
                 "active_list_categories": categories,
             },
+            "activity": _activity_payload(),
             "setup": {
                 "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
             },
@@ -1560,11 +1645,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
                 "experimental_multilist": bool(_entry_value(active_entry, CONF_EXPERIMENTAL_MULTILIST, False)),
                 "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
+                "debug_mode": bool(_entry_value(active_entry, CONF_DEBUG_MODE, False)),
             },
             "system": {
                 "missing_lists": missing_lists,
                 "runtime_ready": bool(hass.data.get(DOMAIN, {}).get("runtime_ready")),
             },
+            "activity": _activity_payload(),
             "setup": {
                 "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
             },
@@ -1669,6 +1756,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         )
         await _record_item_meta(target_entity, raw_item, call)
         await _save()
+        await _record_activity(
+            "Item added",
+            raw_item,
+            str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
+            source,
+        )
 
         if remove_from_source:
             await _remove_from_list(source_list, raw_item)
@@ -1809,6 +1902,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 if resolved_alias and resolved_alias != lists[list_id]["voice_entity"]:
                     lists[list_id]["voice_alias_entities"] = [resolved_alias]
             await _save()
+            await _record_activity("List created", name, name, "service_call")
             return {"ok": True}
 
         if action == "save_list_categories":
@@ -1842,6 +1936,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 return {"ok": False, "error": "list_not_found"}
             model["active_list_id"] = list_id
             await _save()
+            await _record_activity("Switched list", str(lists[list_id].get("name", list_id)).strip(), str(lists[list_id].get("name", list_id)).strip(), "typed")
             return {"ok": True}
 
         if action == "rename_list":
@@ -1857,8 +1952,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             list_obj = lists.get(list_id)
             if not isinstance(list_obj, dict):
                 return {"ok": False, "error": "list_not_found"}
+            previous_name = str(list_obj.get("name", list_id)).strip()
             list_obj["name"] = new_name
             await _save()
+            await _record_activity("Renamed list", f"{previous_name} -> {new_name}", new_name, "typed")
             return {"ok": True}
 
         if action == "archive_list":
@@ -1872,10 +1969,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             lists = model.get("lists", {})
             if list_id not in lists:
                 return {"ok": False, "error": "list_not_found"}
+            archived_name = str(lists[list_id].get("name", list_id)).strip()
             lists.pop(list_id, None)
             if str(model.get("active_list_id", "")) == list_id:
                 model["active_list_id"] = "default"
             await _save()
+            await _record_activity("Archived list", archived_name, archived_name, "typed")
             return {"ok": True}
 
         if action == "set_status":
@@ -1890,6 +1989,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     if item is not None:
                         item["status"] = status
                         await _save()
+                        await _record_activity(
+                            "Item completed" if status == "completed" else "Item restored",
+                            str(item.get("summary", "")).strip(),
+                            str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
+                            "typed",
+                        )
                     return {"ok": True}
                 await hass.services.async_call(
                     "todo",
@@ -1930,6 +2035,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         terms_obj.data.setdefault(target_category, []).append(norm)
                 await _clear_pending_review()
                 await _save()
+                await _record_activity(
+                    "Category changed",
+                    f"{summary} -> {_display_name_for_category(target_category)}",
+                    str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
+                    "review_move" if learn else "typed",
+                )
                 return {"ok": True}
             if target_category not in categories and target_category != "other":
                 target_category = "other"
@@ -1972,10 +2083,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if multilist_mode:
                 _, list_obj = _active_internal_list()
                 items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+                removed_count = len([i for i in items if str(i.get("status", "")).strip() == "completed"])
                 list_obj["items"] = [i for i in items if str(i.get("status", "")).strip() != "completed"]
                 await _save()
+                await _record_activity(
+                    "Cleared completed",
+                    f"Removed {removed_count} completed item{'s' if removed_count != 1 else ''}",
+                    str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
+                    "typed",
+                )
                 return {"ok": True}
             completed_items = await _list_items(COMPLETED_LIST_ENTITY, "completed")
+            removed_count = 0
             for item in completed_items:
                 remove_id = str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip()
                 if not remove_id:
@@ -1987,6 +2106,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     target={"entity_id": COMPLETED_LIST_ENTITY},
                     blocking=True,
                 )
+                removed_count += 1
+            await _record_activity("Cleared completed", f"Removed {removed_count} completed item{'s' if removed_count != 1 else ''}", "Grocery Completed", "typed")
             return {"ok": True}
 
         if action == "repair_system":
@@ -2025,6 +2146,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             default_grocery_categories = bool(
                 payload.get("default_grocery_categories", bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)))
             )
+            debug_mode = bool(payload.get("debug_mode", bool(_entry_value(active_entry, CONF_DEBUG_MODE, False))))
             complete_setup = bool(payload.get("complete_setup", False))
 
             new_options = dict(active_entry.options)
@@ -2034,6 +2156,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             new_options[CONF_AUTO_PROVISION] = auto_provision
             new_options[CONF_EXPERIMENTAL_MULTILIST] = experimental_multilist
             new_options[CONF_DEFAULT_GROCERY_CATEGORIES] = default_grocery_categories
+            new_options[CONF_DEBUG_MODE] = debug_mode
             if complete_setup:
                 new_options[CONF_WIZARD_COMPLETED] = True
 
@@ -2683,6 +2806,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             blocking=True,
         )
         await _record_item_meta(target_list, raw_item, call)
+        target_state = hass.states.get(target_list)
+        target_name = str(target_state.attributes.get("friendly_name", "")).strip() if target_state is not None else target_list
+        await _record_activity("Item added", raw_item, target_name, source)
 
         if remove_from_source:
             await _remove_from_list(source_list, raw_item)
@@ -2711,6 +2837,51 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     },
                     blocking=True,
                 )
+
+    async def _add_to_list(call: ServiceCall) -> None:
+        item = str(call.data.get("item", "")).strip()
+        if not item:
+            return
+        source = str(call.data.get("source", "service_call")).strip() or "service_call"
+        actor_user_id = str(call.data.get("actor_user_id", "")).strip()
+        actor_name = str(call.data.get("actor_name", "")).strip()
+        if _multilist_enabled():
+            list_name = str(call.data.get("list_name", "")).strip()
+            list_id = str(call.data.get("list_id", "")).strip()
+            resolved_list_name = list_name
+            if list_id and not resolved_list_name:
+                resolved_id, resolved_obj = _internal_list_by_id(list_id)
+                resolved_list_name = str(resolved_obj.get("name", resolved_id)).strip()
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_ROUTE_ITEM,
+                {
+                    "item": item,
+                    "source": source,
+                    "source_list_name": resolved_list_name,
+                    "allow_duplicate": bool(call.data.get("allow_duplicate", False)),
+                    "actor_user_id": actor_user_id,
+                    "actor_name": actor_name,
+                    "review_on_other": True,
+                },
+                blocking=True,
+                context=call.context,
+            )
+            return
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_ROUTE_ITEM,
+            {
+                "item": item,
+                "source": source,
+                "allow_duplicate": bool(call.data.get("allow_duplicate", False)),
+                "actor_user_id": actor_user_id,
+                "actor_name": actor_name,
+                "review_on_other": True,
+            },
+            blocking=True,
+            context=call.context,
+        )
 
     async def _apply_review(call: ServiceCall) -> None:
         if _multilist_enabled():
@@ -2823,6 +2994,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_FORGET_TERM, _forget_term, schema=FORGET_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SYNC_HELPERS, _sync_helpers)
     hass.services.async_register(DOMAIN, SERVICE_ROUTE_ITEM, _route_item, schema=ROUTE_ITEM_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_ADD_TO_LIST, _add_to_list, schema=ADD_TO_LIST_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_APPLY_REVIEW, _apply_review, schema=APPLY_REVIEW_SCHEMA)
     hass.services.async_register(
         DOMAIN,
@@ -3041,6 +3213,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             blocking=True,
             context=remove_ctx,
         )
+        source_state = hass.states.get(source_list)
+        source_name = str(source_state.attributes.get("friendly_name", "")).strip() if source_state is not None else source_list
+        await _record_activity("Item completed", summary, source_name, "typed")
 
     async def _restore_unchecked_item_from_completed(item_ref: str) -> None:
         found = await _find_item(COMPLETED_LIST_ENTITY, item_ref, ["needs_action", "completed"])
@@ -3078,6 +3253,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             blocking=True,
             context=remove_ctx,
         )
+        restored_state = hass.states.get(original_list)
+        restored_name = str(restored_state.attributes.get("friendly_name", "")).strip() if restored_state is not None else original_list
+        await _record_activity("Item restored", summary, restored_name, "typed")
 
     async def _handle_call_service(event) -> None:
         if event.context and event.context.id in internal_context_ids:

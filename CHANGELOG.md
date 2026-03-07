@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+- Added a first-class internal `add_to_list` service so future Assist/automation paths can add directly into Local List Assist storage without depending on Home Assistant `todo` entities.
+- Added a persistent Recent Activity feed in the app showing item adds, completions, restores, category changes, list operations, and completed-list clearing.
+- Added a persistent Debug Mode setting in Configure to surface richer routing/activity logging without changing end-user workflows.
+- Improved active-list context in the UI and expanded the settings payload so the app can reflect categorized vs flat-list state more clearly.
+
 ## 0.5.30
 - Fixed mobile sidebar `401 Unauthorized` for the embedded panel by making only the app shell endpoint public again.
 - Dashboard and action endpoints remain authenticated, so data access still requires valid Home Assistant auth.

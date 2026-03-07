@@ -148,11 +148,36 @@ class GroceryLearningStore:
             "lists": cleaned_lists,
         }
 
+    async def load_activity(self) -> list[dict[str, str]]:
+        """Load recent activity feed."""
+        data = await self._store.async_load()
+        if not isinstance(data, dict):
+            return []
+        raw = data.get("activity", [])
+        if not isinstance(raw, list):
+            return []
+
+        cleaned: list[dict[str, str]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            cleaned.append(
+                {
+                    "timestamp": str(entry.get("timestamp", "")).strip(),
+                    "title": str(entry.get("title", "")).strip(),
+                    "detail": str(entry.get("detail", "")).strip(),
+                    "list_name": str(entry.get("list_name", "")).strip(),
+                    "source": str(entry.get("source", "")).strip(),
+                }
+            )
+        return cleaned
+
     async def save(
         self,
         terms: LearnedTerms,
         item_meta: dict[str, dict[str, str]] | None = None,
         multilist: dict | None = None,
+        activity: list[dict[str, str]] | None = None,
     ) -> None:
         """Persist data to storage."""
         payload = {
@@ -161,6 +186,8 @@ class GroceryLearningStore:
         }
         if multilist is not None:
             payload["multilist"] = multilist
+        if activity is not None:
+            payload["activity"] = activity
         await self._store.async_save(
             payload
         )
