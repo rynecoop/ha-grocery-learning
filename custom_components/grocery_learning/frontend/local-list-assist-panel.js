@@ -87,6 +87,26 @@ class LocalListAssistPanel extends HTMLElement {
     await this.load();
   }
 
+  openNavigation() {
+    const toggleEvent = new CustomEvent("hass-toggle-menu", {
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(toggleEvent);
+    window.dispatchEvent(toggleEvent);
+
+    const homeAssistant = document.querySelector("home-assistant");
+    const root = homeAssistant?.shadowRoot;
+    const main = root?.querySelector("home-assistant-main");
+    if (main && typeof main._toggleSidebar === "function") {
+      main._toggleSidebar();
+      return;
+    }
+    if (window.history.length > 1) {
+      window.history.back();
+    }
+  }
+
   esc(value) {
     return String(value ?? "").replace(/[&<>"]/g, (char) => ({
       "&": "&amp;",
@@ -120,6 +140,9 @@ class LocalListAssistPanel extends HTMLElement {
 
   bindEvents() {
     const root = this.shadowRoot;
+    root.querySelector("#menuBtn")?.addEventListener("click", () => {
+      this.openNavigation();
+    });
     root.querySelector("#addBtn")?.addEventListener("click", async () => {
       const input = root.querySelector("#quickAdd");
       const item = input?.value?.trim();
@@ -254,6 +277,7 @@ class LocalListAssistPanel extends HTMLElement {
     const state = this._state;
     const multilist = !!state?.settings?.experimental_multilist;
     const active = state?.lists?.find((list) => list.active) || null;
+    const activeListName = active?.name || "Grocery List";
     const groups = (state?.groups || [])
       .map((group) => {
         const items = group.items?.length
@@ -357,6 +381,9 @@ class LocalListAssistPanel extends HTMLElement {
         .btn { border:1px solid #416588; background:#27425f; color:#fff; border-radius:14px; padding: 12px 16px; cursor:pointer; }
         .btn.primary { background:#2c78ba; border-color:#57a3eb; }
         .btn.danger { background:#6a2d2d; border-color:#d96b6b; }
+        .mobile-bar { display:flex; align-items:center; gap:10px; margin-bottom: 12px; }
+        .mobile-title { font-size:14px; font-weight:700; color:#9fb4ca; letter-spacing:0.04em; text-transform:uppercase; }
+        .icon-btn { width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; font-size:20px; padding:0; }
         .item { background:#0d1826; border:1px solid #1f3348; border-radius:16px; padding: 12px; margin-bottom: 10px; }
         .item-main { display:flex; justify-content:space-between; gap:10px; align-items:center; cursor:pointer; }
         .item-summary { display:flex; align-items:center; gap:10px; min-width:0; }
@@ -365,12 +392,20 @@ class LocalListAssistPanel extends HTMLElement {
         .pill { font-size:11px; padding:4px 10px; border-radius:999px; background:#1f3a57; color:#c4e0ff; }
         .divider { height:1px; background:#243c56; margin: 16px 0; }
         .error { color:#ffb0b0; font-weight:600; }
+        @media (max-width: 720px) {
+          .wrap { padding: 14px; }
+          .hero, .section { border-radius: 20px; padding: 16px; }
+          .hero-title { font-size: 24px; }
+          .item-main { align-items:flex-start; }
+          .pill { margin-top: 2px; }
+        }
       </style>
       <div class="wrap">
+        ${this._narrow ? `<div class="mobile-bar"><button id="menuBtn" class="btn icon-btn" aria-label="Open navigation">☰</button><div class="mobile-title">Local List Assist</div></div>` : ""}
         <section class="hero">
-          <div class="hero-title">Local List Assist</div>
-          <div class="sub">Local-first list app with smart grocery routing and flexible custom lists.</div>
-          ${multilist ? `<div class="row"><select id="activeListSelect" class="select" style="max-width:360px;">${listOptions}</select><div class="small">Active list: <strong>${this.esc(active?.name || "Grocery List")}</strong></div></div>` : ""}
+          <div class="hero-title">${this.esc(activeListName)}</div>
+          <div class="sub">Local List Assist</div>
+          ${multilist ? `<div class="row"><select id="activeListSelect" class="select" style="max-width:360px;">${listOptions}</select><div class="small">Current list: <strong>${this.esc(activeListName)}</strong></div></div>` : ""}
           <div class="row">
             <input id="quickAdd" class="input" placeholder="Add item" />
             <button id="addBtn" class="btn primary">Add</button>

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.2
+- Added a mobile fallback header with a menu button so the panel is still navigable when Home Assistant mobile does not expose its usual chrome.
+- Changed the main app header to show the active list name instead of repeating the app name, which keeps the top of the view focused on the current list.
+- Tightened the mobile layout so the panel reads more like a native list view on narrow screens.
+
 ## 0.7.1
 - Moved Recent Activity below Completed so it stays available without sitting in the primary shopping flow.
 - Fixed category-editor interaction in the native panel by separating checkbox clicks from row clicks, which stopped item taps from collapsing the editor by toggling completion.
