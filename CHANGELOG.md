@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.28
+- Internal routing now treats both `voice_assistant` and `automation` intake sources as voice-like for list targeting.
+- Any intake call with unresolved target (including source-list based automations) now routes to default Grocery list, preventing active-list bleed into custom lists.
+- Added fallback mapping from source-list entity for voice/automation intake before defaulting.
+
 ## 0.5.27
 - Voice routing now prioritizes explicit list-name context and no longer trusts raw bridge entity target alone when list name is missing.
 - Unresolved voice list targets route to Grocery by design to prevent accidental placement into active/custom lists.

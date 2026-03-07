@@ -1550,7 +1550,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return
 
         source_target_list_id = ""
-        if source == "voice_assistant":
+        intake_like_source = source in {"voice_assistant", "automation"}
+        if intake_like_source:
             # Prefer explicit spoken/list-name context over raw entity targets.
             if source_list_name:
                 source_target_list_id = _internal_list_id_from_voice_name(source_list_name)
@@ -1558,6 +1559,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     normalized_list_name = _normalize_term(source_list_name)
                     if "grocery" in normalized_list_name or "shopping" in normalized_list_name:
                         source_target_list_id = "default"
+            if not source_target_list_id and source_list:
+                source_target_list_id = _internal_list_id_from_voice_entity(source_list)
             # Do not trust source_list alone for voice; when name is unavailable, route to default.
         else:
             source_target_list_id = _internal_list_id_from_voice_entity(source_list) if source_list else ""
@@ -1565,7 +1568,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 source_target_list_id = _internal_list_id_from_voice_name(source_list_name)
         if source_target_list_id:
             active_list_id, list_obj = _internal_list_by_id(source_target_list_id)
-        elif source == "voice_assistant":
+        elif intake_like_source or source_list:
             active_list_id, list_obj = _internal_list_by_id("default")
         else:
             active_list_id, list_obj = _active_internal_list()
