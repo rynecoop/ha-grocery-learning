@@ -122,7 +122,7 @@ class GroceryLearningAppView(HomeAssistantView):
 
     url = "/api/grocery_learning/app"
     name = "api:grocery_learning:app"
-    requires_auth = False
+    requires_auth = True
 
     async def get(self, request):
         html = """<!doctype html>
@@ -194,16 +194,50 @@ class GroceryLearningAppView(HomeAssistantView):
     const byId = (id) => document.getElementById(id);
     const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+    function candidateWindows(){
+      const wins = [window];
+      try{ if(window.parent && window.parent !== window) wins.push(window.parent); } catch(_) {}
+      try{ if(window.top && !wins.includes(window.top)) wins.push(window.top); } catch(_) {}
+      return wins;
+    }
+
+    function readTokenFromStorage(win){
+      try{
+        const tokenRaw = win.localStorage.getItem('hassTokens');
+        if(!tokenRaw) return '';
+        const tokenObj = JSON.parse(tokenRaw);
+        return String(tokenObj?.access_token || '').trim();
+      } catch(_) {
+        return '';
+      }
+    }
+
+    function readTokenFromHass(win){
+      try{
+        const direct = String(win.hass?.auth?.data?.accessToken || '').trim();
+        if(direct) return direct;
+      } catch(_) {}
+      try{
+        const viaConn = String(win.hass?.connection?.options?.auth?.accessToken || '').trim();
+        if(viaConn) return viaConn;
+      } catch(_) {}
+      return '';
+    }
+
+    function accessToken(){
+      for(const win of candidateWindows()){
+        const stored = readTokenFromStorage(win);
+        if(stored) return stored;
+        const hassToken = readTokenFromHass(win);
+        if(hassToken) return hassToken;
+      }
+      return '';
+    }
+
     async function api(path, method='GET', body=null){
       const headers = {'Content-Type':'application/json'};
-      try{
-        const tokenRaw = window.localStorage.getItem('hassTokens');
-        if(tokenRaw){
-          const tokenObj = JSON.parse(tokenRaw);
-          const accessToken = String(tokenObj?.access_token || '').trim();
-          if(accessToken) headers.Authorization = `Bearer ${accessToken}`;
-        }
-      } catch(_) {}
+      const token = accessToken();
+      if(token) headers.Authorization = `Bearer ${token}`;
       const res = await fetch(path, {method, headers, credentials:'same-origin', body: body?JSON.stringify(body):null});
       const text = await res.text();
       let data = {};
@@ -368,28 +402,34 @@ class GroceryLearningAppView(HomeAssistantView):
     async function load(){ state = await api('/api/grocery_learning/dashboard'); render(); }
     async function loadActor(){
       if(actor.name) return;
+      for(const win of candidateWindows()){
+        try{
+          const hassUser = win.hass?.user;
+          if(hassUser){
+            actor.id = String(hassUser.id || '').trim();
+            actor.name = String(hassUser.display_name || hassUser.name || hassUser.username || '').trim();
+            if(actor.name) return;
+          }
+        } catch(_) {}
+      }
+      const token = accessToken();
+      if(token){
+        try{
+          const res = await fetch('/api/auth/current_user', { headers: { Authorization: `Bearer ${token}` }});
+          if(res.ok){
+            const me = await res.json();
+            actor.id = String(me?.id || '').trim();
+            actor.name = String(me?.display_name || me?.name || me?.username || '').trim();
+            if(actor.name) return;
+          }
+        } catch(_) {}
+      }
       try{
         const hassUser = window.hass?.user;
         if(hassUser){
           actor.id = String(hassUser.id || '').trim();
           actor.name = String(hassUser.display_name || hassUser.name || hassUser.username || '').trim();
           if(actor.name) return;
-        }
-      } catch(_) {}
-      try{
-        const tokenRaw = window.localStorage.getItem('hassTokens');
-        if(tokenRaw){
-          const tokenObj = JSON.parse(tokenRaw);
-          const accessToken = String(tokenObj?.access_token || '').trim();
-          if(accessToken){
-            const res = await fetch('/api/auth/current_user', { headers: { Authorization: `Bearer ${accessToken}` }});
-            if(res.ok){
-              const me = await res.json();
-              actor.id = String(me?.id || '').trim();
-              actor.name = String(me?.display_name || me?.name || me?.username || '').trim();
-              if(actor.name) return;
-            }
-          }
         }
       } catch(_) {}
       try{

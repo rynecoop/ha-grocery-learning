@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.29
+- Fixed mobile `401 Unauthorized` issues caused by the embedded app shell relying on iframe-local auth state.
+- The app view now requires Home Assistant auth, and the frontend resolves tokens from the parent/top HA app context as well as local storage.
+- This preserves existing dashboard/action auth while making sidebar access work consistently across desktop and mobile clients.
+
 ## 0.5.28
 - Internal routing now treats both `voice_assistant` and `automation` intake sources as voice-like for list targeting.
 - Any intake call with unresolved target (including source-list based automations) now routes to default Grocery list, preventing active-list bleed into custom lists.
