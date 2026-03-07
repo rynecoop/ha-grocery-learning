@@ -78,6 +78,7 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
     {
         vol.Required("item"): cv.string,
         vol.Optional("source_list", default=""): cv.string,
+        vol.Optional("source_list_name", default=""): cv.string,
         vol.Optional("remove_from_source", default=False): cv.boolean,
         vol.Optional("review_on_other", default=True): cv.boolean,
         vol.Optional("allow_duplicate", default=False): cv.boolean,
@@ -3085,7 +3086,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 is_intake_list = True
             if not is_intake_list:
                 return
-            source_label = "voice_assistant" if source_ctx in {"voice_assistant", "automation"} else source_ctx
+            source_label = "voice_assistant"
             try:
                 await hass.services.async_call(
                     DOMAIN,

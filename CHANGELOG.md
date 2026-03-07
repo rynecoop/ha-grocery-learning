@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.26
+- Fixed a critical `route_item` schema mismatch by allowing `source_list_name`; this restores routing for voice events that include list-name fields.
+- Standardized intercepted todo intake events to use `voice_assistant` source so they do not fall back through typed/active-list behavior.
+
 ## 0.5.25
 - Forced unresolved voice adds in internal multi-list mode to default Grocery list (never active-list fallback).
 - Improved spoken list-name matching for possessive variants like "`Ryne's list`".
