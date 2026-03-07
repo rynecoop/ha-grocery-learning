@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.20
+- Updated internal-list voice bridges to use the actual list name as the bridge todo title for better Assist matching.
+- Made bridge routing independent from `auto_route_inbox` so voice targeting of app-created lists continues to work even if inbox auto-route is disabled.
+- Kept bridge ingestion behavior: route into internal list and remove bridge item after ingestion.
+
 ## 0.5.19
 - Added per-list voice bridge provisioning (`todo.lla_<list_id>`) for internal multi-list mode so voice adds can target app-created lists reliably.
 - Routed voice bridge adds into the matching internal list and auto-removed bridge list items after ingestion.

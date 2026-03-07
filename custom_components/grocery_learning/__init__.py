@@ -1679,7 +1679,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "items": [],
             }
             model["active_list_id"] = list_id
-            await _ensure_local_todo_list(_internal_voice_bridge_entity(list_id), f"{name} Voice Bridge")
+            await _ensure_local_todo_list(_internal_voice_bridge_entity(list_id), name)
             await _save()
             return {"ok": True}
 
@@ -2126,7 +2126,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if not voice_entity:
                 voice_entity = _internal_voice_bridge_entity(str(list_id))
                 list_obj["voice_entity"] = voice_entity
-            await _ensure_local_todo_list(voice_entity, f"{name} Voice Bridge")
+            await _ensure_local_todo_list(voice_entity, name)
 
     async def _ensure_helper_entity(
         helper_domain: str,
@@ -2943,12 +2943,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     internal_voice_lists.append(voice_entity)
 
         if service_name == "add_item":
-            if not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
-                return
             item_text = str(data_event.get("item", "")).strip()
             if not item_text:
                 return
             is_internal_voice_target = list_id in internal_voice_lists
+            if not is_internal_voice_target and not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
+                return
             is_intake_list = is_internal_voice_target or _is_voice_intake_list(list_id, inbox_entity, tracked_lists)
             if not is_intake_list:
                 return
