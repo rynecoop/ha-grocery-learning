@@ -62,6 +62,7 @@ from .const import (
     TARGET_LIST_BY_CATEGORY,
 )
 from .matching import normalize_voice_list_name, resolve_list_id_from_voice_name
+from .list_templates import categories_for_template
 from .multilist_ops import archive_list as apply_archive_list, delete_archived_list as apply_delete_archived_list, restore_archived_list as apply_restore_archived_list
 from .storage import GroceryLearningStore, LearnedTerms
 
@@ -1948,11 +1949,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if list_id in lists:
                 return {"ok": False, "error": "list_exists"}
             custom_categories = _categories_from_list_input(payload.get("categories", ""))
+            template_id = str(payload.get("template", "")).strip().lower()
             use_default_grocery_categories = bool(
                 _entry_value(hass.data.get(DOMAIN, {}).get("entry"), CONF_DEFAULT_GROCERY_CATEGORIES, True)
             )
             if custom_categories:
                 base_categories = custom_categories
+            elif template_id:
+                base_categories = categories_for_template(template_id, _active_categories())
             elif use_default_grocery_categories and _looks_like_grocery_list(name):
                 base_categories = _active_categories()
             else:
@@ -2019,6 +2023,44 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "typed",
             )
             return {"ok": True}
+
+        if action == "save_active_list":
+            if not multilist_mode:
+                return {"ok": False, "error": "multilist_disabled"}
+            list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            lists = model.get("lists", {})
+            list_obj = lists.get(list_id)
+            if not isinstance(list_obj, dict):
+                return {"ok": False, "error": "list_not_found"}
+
+            next_name = str(payload.get("name", "")).strip()
+            next_categories = _categories_from_list_input(payload.get("categories", ""))
+            next_aliases = _voice_aliases_from_input(payload.get("voice_aliases", ""))
+            next_color = str(payload.get("color", "")).strip()
+
+            if next_name:
+                previous_name = str(list_obj.get("name", list_id)).strip()
+                list_obj["name"] = next_name
+                if previous_name != next_name:
+                    await _record_activity("Renamed list", f"{previous_name} -> {next_name}", next_name, "typed")
+
+            if next_color:
+                if not re.fullmatch(r"#[0-9a-fA-F]{6}", next_color):
+                    return {"ok": False, "error": "invalid_color"}
+                list_obj["color"] = next_color
+
+            list_obj["voice_aliases"] = next_aliases
+            list_obj["categories"] = next_categories + ["other"]
+            allowed_categories = set(next_categories) | {"other"}
+            items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+            for item in items:
+                if str(item.get("category", "other")).strip() not in allowed_categories:
+                    item["category"] = "other"
+
+            await _save()
+            return {"ok": True, "dashboard": _internal_dashboard_payload()}
 
         if action == "switch_list":
             if not multilist_mode:

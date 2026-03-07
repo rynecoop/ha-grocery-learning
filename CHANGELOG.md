@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.9
+- Added a single `save_active_list` backend action so active-list name, categories, aliases, and color save in one request.
+- Added list templates for new lists: Flat, Grocery, To-do, Camping, and Travel.
+
 ## 0.12.8
 - Added direct dashboard responses for switch list, create list, rename list, delete archived list, clear completed, and save settings so more actions update without an extra reload.
 - Tightened the mobile presentation of completed and recent activity cards so long histories are easier to scan.

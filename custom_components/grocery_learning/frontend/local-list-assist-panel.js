@@ -15,6 +15,7 @@ class LocalListAssistPanel extends HTMLElement {
       quickAdd: "",
       settingsCategories: "",
       newListName: "",
+      newListTemplate: "flat",
       newListCategories: "",
       newListVoiceAliases: "",
       activeListName: "",
@@ -345,6 +346,7 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#createListBtn")?.addEventListener("click", async () => {
       const name = (this._drafts.newListName || "").trim();
       if (!name) return;
+      const template = this._drafts.newListTemplate || "flat";
       const categories = this._drafts.newListCategories || "";
       const voiceAliases = this._drafts.newListVoiceAliases || "";
       const listId = name
@@ -352,10 +354,11 @@ class LocalListAssistPanel extends HTMLElement {
         .replace(/[^a-z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "") || "list";
       const nextColor = "#" + ((Array.from(listId).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 0xffffff).toString(16).padStart(6, "0"));
-      await this.actFast({ action: "create_list", name, categories, voice_aliases: voiceAliases }, (state) => {
+      await this.actFast({ action: "create_list", name, template, categories, voice_aliases: voiceAliases }, (state) => {
         applyCreateListLocal(state, { id: listId, name, color: nextColor });
       });
       this._drafts.newListName = "";
+      this._drafts.newListTemplate = "flat";
       this._drafts.newListCategories = "";
       this._drafts.newListVoiceAliases = "";
     });
@@ -380,32 +383,15 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#saveActiveListBtn")?.addEventListener("click", async () => {
       const listId = this._state?.system?.active_list_id || "";
       if (!listId) return;
-      const activeList = (this._state?.lists || []).find((list) => list.id === listId) || null;
       const nextName = (this._drafts.activeListName || "").trim();
-      if (nextName && nextName !== (activeList?.name || "")) {
-        await this.api("action", "POST", {
-          action: "rename_list",
-          list_id: listId,
-          name: nextName,
-        });
-        applyRenameListLocal(this._state, listId, nextName);
-      }
-      await this.api("action", "POST", {
-        action: "save_list_categories",
+      await this.act({
+        action: "save_active_list",
         list_id: listId,
+        name: nextName,
         categories: this._drafts.activeListCategories || "",
-      });
-      await this.api("action", "POST", {
-        action: "save_list_voice_aliases",
-        list_id: listId,
         voice_aliases: this._drafts.activeListVoiceAliases || "",
-      });
-      await this.api("action", "POST", {
-        action: "set_list_color",
-        list_id: listId,
         color: this._drafts.activeListColor || "#2c78ba",
       });
-      await this.load();
     });
     root.querySelector("#clearListCatsBtn")?.addEventListener("click", () => {
       this.updateDraft("activeListCategories", "");
@@ -578,6 +564,13 @@ class LocalListAssistPanel extends HTMLElement {
               <div class="section-label">Create List</div>
               <div class="grid compact-grid">
                 <input id="newListName" data-draft="newListName" class="input" placeholder="New list name" value="${this.esc(this._drafts.newListName || "")}" />
+                <select id="newListTemplate" data-draft="newListTemplate" class="select">
+                  <option value="flat" ${this._drafts.newListTemplate === "flat" ? "selected" : ""}>Flat List</option>
+                  <option value="grocery" ${this._drafts.newListTemplate === "grocery" ? "selected" : ""}>Grocery</option>
+                  <option value="todo" ${this._drafts.newListTemplate === "todo" ? "selected" : ""}>To-do</option>
+                  <option value="camping" ${this._drafts.newListTemplate === "camping" ? "selected" : ""}>Camping</option>
+                  <option value="travel" ${this._drafts.newListTemplate === "travel" ? "selected" : ""}>Travel</option>
+                </select>
                 <input id="newListCategories" data-draft="newListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.newListCategories || "")}" />
                 <input id="newListVoiceAliases" data-draft="newListVoiceAliases" class="input" placeholder="Optional voice aliases (comma separated)" value="${this.esc(this._drafts.newListVoiceAliases || "")}" />
               </div>
