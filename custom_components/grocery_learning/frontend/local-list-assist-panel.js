@@ -11,6 +11,7 @@ class LocalListAssistPanel extends HTMLElement {
     this._error = "";
     this._drafts = {
       quickAdd: "",
+      settingsCategories: "",
       newListName: "",
       newListCategories: "",
       newListVoiceAliases: "",
@@ -54,6 +55,9 @@ class LocalListAssistPanel extends HTMLElement {
       this._drafts.activeListCategories = (state?.system?.active_list_categories || []).join(", ");
       this._drafts.activeListVoiceAliases = (state?.system?.active_list_voice_aliases || []).join(", ");
       this._drafts.activeListColor = state?.system?.active_list_color || active?.color || "#2c78ba";
+    }
+    if (!this._drafts.settingsCategories) {
+      this._drafts.settingsCategories = (state?.settings?.categories || []).join(", ");
     }
   }
 
@@ -253,7 +257,7 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#saveSettingsBtn")?.addEventListener("click", async () => {
       await this.act({
         action: "save_settings",
-        categories: root.querySelector("#settingsCategories")?.value || "",
+        categories: this._drafts.settingsCategories || "",
         experimental_multilist: !!root.querySelector("#settingsExperimentalMultilist")?.checked,
         default_grocery_categories: !!root.querySelector("#settingsDefaultGroceryCategories")?.checked,
         debug_mode: !!root.querySelector("#settingsDebugMode")?.checked,
@@ -476,53 +480,78 @@ class LocalListAssistPanel extends HTMLElement {
           `)
           .join("")
       : `<div class="empty">No archived lists.</div>`;
+    const currentListLabel = this.esc(activeListName || "Grocery List");
     const configPanel = this._configOpen
       ? `
         <section class="section">
           <div class="title">Configure</div>
-          <div class="grid">
-            <div>
-              <div class="label">Default Grocery Categories</div>
-              <input id="settingsCategories" class="input" value="${this.esc((state?.settings?.categories || []).join(", "))}" />
+          <div class="subsection">
+            <div class="section-label">App Settings</div>
+            <div class="toggle-grid">
+              <label class="toggle-row"><input id="settingsExperimentalMultilist" type="checkbox" ${state?.settings?.experimental_multilist ? "checked" : ""}/> Multi-list mode</label>
+              <label class="toggle-row"><input id="settingsDefaultGroceryCategories" type="checkbox" ${state?.settings?.default_grocery_categories ? "checked" : ""}/> Use grocery defaults for grocery-style lists</label>
             </div>
-          </div>
-          <div class="row">
-            <label><input id="settingsExperimentalMultilist" type="checkbox" ${state?.settings?.experimental_multilist ? "checked" : ""}/> Multi-list mode</label>
-            <label><input id="settingsDefaultGroceryCategories" type="checkbox" ${state?.settings?.default_grocery_categories ? "checked" : ""}/> Default grocery categories</label>
-            <label><input id="settingsDebugMode" type="checkbox" ${state?.settings?.debug_mode ? "checked" : ""}/> Debug mode</label>
-          </div>
-          <div class="row">
-            <button id="saveSettingsBtn" class="btn primary">Save</button>
-            <button id="repairBtn" class="btn">Repair</button>
-            <button id="installVoiceBtn" class="btn">Install Voice Phrases</button>
-          </div>
-          ${multilist ? `
-            <div class="divider"></div>
-            <div class="grid">
-              <input id="newListName" data-draft="newListName" class="input" placeholder="New list name" value="${this.esc(this._drafts.newListName || "")}" />
-              <input id="newListCategories" data-draft="newListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.newListCategories || "")}" />
-              <input id="newListVoiceAliases" data-draft="newListVoiceAliases" class="input" placeholder="Optional voice aliases (comma separated)" value="${this.esc(this._drafts.newListVoiceAliases || "")}" />
-            </div>
-            <div class="row">
-              <button id="createListBtn" class="btn">Create List</button>
-              <button id="renameListBtn" class="btn">Rename Active</button>
-              <button id="archiveListBtn" class="btn danger">Archive Active</button>
-            </div>
-            <div class="grid">
-              <input id="activeListCategories" data-draft="activeListCategories" class="input" placeholder="Active list categories" value="${this.esc(this._drafts.activeListCategories || "")}" />
-              <input id="activeListVoiceAliases" data-draft="activeListVoiceAliases" class="input" placeholder="Active list voice aliases" value="${this.esc(this._drafts.activeListVoiceAliases || "")}" />
+            <div class="grid compact-grid">
               <div>
-                <div class="label">Active list color</div>
-                <input id="activeListColor" data-draft="activeListColor" class="color-input" type="color" value="${this.esc(this._drafts.activeListColor || activeListColor)}" />
+                <div class="label">Default grocery categories</div>
+                <input id="settingsCategories" data-draft="settingsCategories" class="input" value="${this.esc(this._drafts.settingsCategories || "")}" />
               </div>
             </div>
             <div class="row">
-              <button id="saveActiveListBtn" class="btn primary">Save Active List</button>
-              <button id="clearListCatsBtn" class="btn">No Categories</button>
+              <button id="saveSettingsBtn" class="btn primary">Save Settings</button>
+              <button id="installVoiceBtn" class="btn">Install Voice Phrases</button>
+            </div>
+            <details class="advanced-box">
+              <summary>Advanced</summary>
+              <div class="row advanced-row">
+                <label class="toggle-row"><input id="settingsDebugMode" type="checkbox" ${state?.settings?.debug_mode ? "checked" : ""}/> Debug mode</label>
+                <button id="repairBtn" class="btn">Repair</button>
+              </div>
+            </details>
+          </div>
+          ${multilist ? `
+            <div class="divider"></div>
+            <div class="subsection">
+              <div class="section-label">Create List</div>
+              <div class="grid compact-grid">
+                <input id="newListName" data-draft="newListName" class="input" placeholder="New list name" value="${this.esc(this._drafts.newListName || "")}" />
+                <input id="newListCategories" data-draft="newListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.newListCategories || "")}" />
+                <input id="newListVoiceAliases" data-draft="newListVoiceAliases" class="input" placeholder="Optional voice aliases (comma separated)" value="${this.esc(this._drafts.newListVoiceAliases || "")}" />
+              </div>
+              <div class="row">
+                <button id="createListBtn" class="btn">Create List</button>
+              </div>
             </div>
             <div class="divider"></div>
-            <div class="title">Archived Lists</div>
-            ${archivedLists}
+            <div class="subsection">
+              <div class="section-label">Active List</div>
+              <div class="small">Editing ${currentListLabel}</div>
+              <div class="grid compact-grid">
+                <div>
+                  <div class="label">Categories</div>
+                  <input id="activeListCategories" data-draft="activeListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.activeListCategories || "")}" />
+                </div>
+                <div>
+                  <div class="label">Voice aliases</div>
+                  <input id="activeListVoiceAliases" data-draft="activeListVoiceAliases" class="input" placeholder="Optional voice aliases" value="${this.esc(this._drafts.activeListVoiceAliases || "")}" />
+                </div>
+                <div>
+                  <div class="label">List color</div>
+                  <input id="activeListColor" data-draft="activeListColor" class="color-input" type="color" value="${this.esc(this._drafts.activeListColor || activeListColor)}" />
+                </div>
+              </div>
+              <div class="row">
+                <button id="saveActiveListBtn" class="btn primary">Save Active List</button>
+                <button id="clearListCatsBtn" class="btn">No Categories</button>
+                <button id="renameListBtn" class="btn">Rename</button>
+                <button id="archiveListBtn" class="btn danger">Archive</button>
+              </div>
+            </div>
+            <div class="divider"></div>
+            <div class="subsection">
+              <div class="section-label">Archived Lists</div>
+              ${archivedLists}
+            </div>
           ` : ""}
         </section>
       `
@@ -537,13 +566,21 @@ class LocalListAssistPanel extends HTMLElement {
         .title { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
         .hero-title { font-size: 28px; font-weight: 800; margin: 0 0 8px; }
         .sub, .small, .label, .empty { color:#9fb4ca; }
+        .section-label { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+        .subsection { display:flex; flex-direction:column; gap:12px; }
         .row { display:flex; gap:10px; flex-wrap:wrap; margin-top: 10px; align-items:center; }
         .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+        .compact-grid { align-items:end; }
+        .toggle-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+        .toggle-row { display:flex; gap:8px; align-items:center; color:#d5e6f8; }
         .input, .select { width:100%; background:#08111b; color:#f3f7fb; border:1px solid #2e5276; border-radius:14px; padding: 12px 14px; }
         .color-input { width:100%; min-height:48px; background:#08111b; border:1px solid #2e5276; border-radius:14px; padding: 6px; }
         .btn { border:1px solid #416588; background:#27425f; color:#fff; border-radius:14px; padding: 12px 16px; cursor:pointer; }
         .btn.primary { background:var(--accent); border-color:color-mix(in srgb, var(--accent) 60%, white); }
         .btn.danger { background:#6a2d2d; border-color:#d96b6b; }
+        .advanced-box { border:1px solid #29435f; border-radius:16px; padding:12px 14px; background:#0d1826; }
+        .advanced-box summary { cursor:pointer; color:#d5e6f8; font-weight:600; }
+        .advanced-row { margin-top:12px; }
         .mobile-bar { display:flex; align-items:center; gap:10px; margin-bottom: 12px; }
         .mobile-title { font-size:14px; font-weight:700; color:#9fb4ca; letter-spacing:0.04em; text-transform:uppercase; }
         .icon-btn { width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; font-size:20px; padding:0; }

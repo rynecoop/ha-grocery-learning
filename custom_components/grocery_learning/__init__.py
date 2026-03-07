@@ -853,7 +853,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     data["activity"] = activity
     data["pending_duplicate"] = {}
     data["pending_review"] = {}
-    data["undo_action"] = {}
     data["categories"] = list(DEFAULT_CATEGORIES)
 
     async def _save() -> None:
@@ -920,26 +919,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             )
         catalog.sort(key=lambda entry: entry["name"].lower())
         return catalog
-
-    def _undo_payload() -> dict[str, str]:
-        undo_action = hass.data[DOMAIN].get("undo_action", {})
-        if not isinstance(undo_action, dict) or not undo_action.get("kind"):
-            return {"pending": False, "label": ""}
-        return {
-            "pending": True,
-            "label": str(undo_action.get("label", "Undo last action")).strip() or "Undo last action",
-            "kind": str(undo_action.get("kind", "")).strip(),
-        }
-
-    def _set_undo_action(kind: str, label: str, payload: dict[str, Any]) -> None:
-        hass.data[DOMAIN]["undo_action"] = {
-            "kind": kind.strip(),
-            "label": label.strip(),
-            "payload": deepcopy(payload),
-        }
-
-    def _clear_undo_action() -> None:
-        hass.data[DOMAIN]["undo_action"] = {}
 
     def _active_categories() -> list[str]:
         return list(hass.data[DOMAIN].get("categories", list(DEFAULT_CATEGORIES)))
@@ -2227,17 +2206,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     items: list[dict[str, Any]] = list_obj.setdefault("items", [])
                     item = _internal_find_item(items, item_ref)
                     if item is not None:
-                        previous_status = str(item.get("status", "")).strip() or "needs_action"
-                        _set_undo_action(
-                            "set_status",
-                            ("Completed" if status == "completed" else "Restored") + f" {str(item.get('summary', '')).strip()}",
-                            {
-                                "list_id": str(hass.data[DOMAIN]["multilist"].get("active_list_id", "default")).strip() or "default",
-                                "item_id": str(item.get("id", "")).strip() or item_ref,
-                                "previous_status": previous_status,
-                                "next_status": status,
-                            },
-                        )
                         item["status"] = status
                         await _save()
                         await _record_activity(
@@ -2277,17 +2245,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 summary = str(found_internal.get("summary", "")).strip()
                 if not summary:
                     return {"ok": False, "error": "item_summary_missing"}
-                previous_category = str(found_internal.get("category", "other")).strip() or "other"
-                _set_undo_action(
-                    "recategorize",
-                    f"Moved {summary}",
-                    {
-                        "list_id": str(hass.data[DOMAIN]["multilist"].get("active_list_id", "default")).strip() or "default",
-                        "item_id": str(found_internal.get("id", "")).strip() or item_ref,
-                        "previous_category": previous_category,
-                        "next_category": target_category,
-                    },
-                )
                 found_internal["category"] = target_category
                 if learn and target_category in categories:
                     norm = _normalize_term(summary)
@@ -2345,14 +2302,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if multilist_mode:
                 active_list_id, list_obj = _active_internal_list()
                 items: list[dict[str, Any]] = list_obj.setdefault("items", [])
-                removed_items = [deepcopy(i) for i in items if str(i.get("status", "")).strip() == "completed"]
-                removed_count = len(removed_items)
-                if removed_items:
-                    _set_undo_action(
-                        "clear_completed",
-                        f"Cleared {removed_count} completed item{'s' if removed_count != 1 else ''}",
-                        {"list_id": active_list_id, "items": removed_items},
-                    )
+                removed_count = len([i for i in items if str(i.get("status", "")).strip() == "completed"])
                 list_obj["items"] = [i for i in items if str(i.get("status", "")).strip() != "completed"]
                 await _save()
                 await _record_activity(
@@ -2507,72 +2457,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 },
                 blocking=True,
             )
-            return {"ok": True}
-
-        if action == "undo_last":
-            undo_action = hass.data[DOMAIN].get("undo_action", {})
-            if not isinstance(undo_action, dict) or not undo_action.get("kind"):
-                return {"ok": True}
-            kind = str(undo_action.get("kind", "")).strip()
-            undo_payload = undo_action.get("payload", {})
-            _clear_undo_action()
-            if not isinstance(undo_payload, dict):
-                return {"ok": True}
-
-            if kind == "set_status":
-                list_id = str(undo_payload.get("list_id", "")).strip() or "default"
-                item_id = str(undo_payload.get("item_id", "")).strip()
-                previous_status = str(undo_payload.get("previous_status", "")).strip()
-                _, undo_list = _internal_list_by_id(list_id)
-                undo_items: list[dict[str, Any]] = undo_list.setdefault("items", [])
-                undo_item = _internal_find_item(undo_items, item_id)
-                if undo_item is not None and previous_status in {"needs_action", "completed"}:
-                    undo_item["status"] = previous_status
-                    await _save()
-                return {"ok": True}
-
-            if kind == "recategorize":
-                list_id = str(undo_payload.get("list_id", "")).strip() or "default"
-                item_id = str(undo_payload.get("item_id", "")).strip()
-                previous_category = str(undo_payload.get("previous_category", "")).strip() or "other"
-                _, undo_list = _internal_list_by_id(list_id)
-                undo_items: list[dict[str, Any]] = undo_list.setdefault("items", [])
-                undo_item = _internal_find_item(undo_items, item_id)
-                if undo_item is not None:
-                    undo_item["category"] = previous_category
-                    await _save()
-                return {"ok": True}
-
-            if kind == "clear_completed":
-                list_id = str(undo_payload.get("list_id", "")).strip() or "default"
-                restored_items = undo_payload.get("items", [])
-                if isinstance(restored_items, list) and restored_items:
-                    _, undo_list = _internal_list_by_id(list_id)
-                    undo_items: list[dict[str, Any]] = undo_list.setdefault("items", [])
-                    existing_ids = {str(item.get("id", "")).strip() for item in undo_items}
-                    for restored in restored_items:
-                        if not isinstance(restored, dict):
-                            continue
-                        restored_id = str(restored.get("id", "")).strip()
-                        if restored_id and restored_id in existing_ids:
-                            continue
-                        undo_items.append(restored)
-                    await _save()
-                return {"ok": True}
-
-            if kind == "archive_list":
-                list_id = str(undo_payload.get("list_id", "")).strip()
-                list_obj = undo_payload.get("list_obj")
-                previous_active_list_id = str(undo_payload.get("previous_active_list_id", "default")).strip() or "default"
-                if list_id and isinstance(list_obj, dict):
-                    _ensure_multilist_model()
-                    model = hass.data[DOMAIN]["multilist"]
-                    lists = model.get("lists", {})
-                    lists[list_id] = list_obj
-                    model["active_list_id"] = previous_active_list_id if previous_active_list_id in lists else list_id
-                    await _save()
-                return {"ok": True}
-
             return {"ok": True}
 
         return {"ok": False, "error": "unknown_action"}

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.2
+- Simplified the Configure UI into clearer sections for app settings, create list, active list, and archived lists.
+- Moved noisy maintenance controls into an advanced area and reduced rerender interruptions while a field is active.
+
 ## 0.11.1
 - Removed the generic undo banner from the panel and made list archive a real archive with restore/delete controls in Configure.
 - Reduced rerender interruptions while a field is focused, which stabilizes controls like the list color picker.
