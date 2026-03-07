@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.0
+- Broadened direct Assist phrase coverage for custom lists and hardened internal list-name normalization so spoken custom list targets resolve more reliably.
+- Moved Recent Activity into its own in-app tab so the main shopping view stays focused on the current list.
+- Added per-list color theming for internal lists, including a configurable active-list color in Configure.
+
 ## 0.9.0
 - Added a one-click `Install Voice Phrases` flow in Configure that writes the bundled sentence pack into Home Assistant's `custom_sentences` folder and attempts a conversation reload.
 - Exposed the same capability as `grocery_learning.install_voice_sentences` for scripted setup and future automation.

@@ -6,6 +6,7 @@ class LocalListAssistPanel extends HTMLElement {
     this._panel = null;
     this._state = null;
     this._configOpen = false;
+    this._view = "list";
     this._loading = false;
     this._error = "";
   }
@@ -165,6 +166,12 @@ class LocalListAssistPanel extends HTMLElement {
       this._configOpen = !this._configOpen;
       this.render();
     });
+    root.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        this._view = btn.dataset.view || "list";
+        this.render();
+      });
+    });
     root.querySelector("#clearCompletedBtn")?.addEventListener("click", async () => {
       await this.act({ action: "clear_completed" });
     });
@@ -243,6 +250,12 @@ class LocalListAssistPanel extends HTMLElement {
       if (!activeSelect?.value) return;
       await this.act({ action: "save_list_categories", list_id: activeSelect.value, categories: "" });
     });
+    root.querySelector("#saveListColorBtn")?.addEventListener("click", async () => {
+      const activeSelect = root.querySelector("#activeListSelect");
+      const colorInput = root.querySelector("#activeListColor");
+      if (!activeSelect?.value || !colorInput?.value) return;
+      await this.act({ action: "set_list_color", list_id: activeSelect.value, color: colorInput.value });
+    });
 
     root.querySelectorAll(".item").forEach((row) => {
       const listEntity = row.dataset.listEntity || "";
@@ -281,6 +294,7 @@ class LocalListAssistPanel extends HTMLElement {
     const multilist = !!state?.settings?.experimental_multilist;
     const active = state?.lists?.find((list) => list.active) || null;
     const activeListName = active?.name || "Grocery List";
+    const activeListColor = state?.system?.active_list_color || active?.color || "#2c78ba";
     const groups = (state?.groups || [])
       .map((group) => {
         const items = group.items?.length
@@ -327,6 +341,9 @@ class LocalListAssistPanel extends HTMLElement {
     const listOptions = (state?.lists || [])
       .map((list) => `<option value="${this.esc(list.id)}" ${list.active ? "selected" : ""}>${this.esc(list.name)}</option>`)
       .join("");
+    const listChips = (state?.lists || [])
+      .map((list) => `<button class="list-chip ${list.active ? "active" : ""}" data-list-id="${this.esc(list.id)}" style="--chip-color:${this.esc(list.color || "#2c78ba")}">${this.esc(list.name)}</button>`)
+      .join("");
     const configPanel = this._configOpen
       ? `
         <section class="section">
@@ -360,10 +377,15 @@ class LocalListAssistPanel extends HTMLElement {
             </div>
             <div class="grid">
               <input id="activeListCategories" class="input" placeholder="Active list categories" value="${this.esc((state?.system?.active_list_categories || []).join(", "))}" />
+              <div>
+                <div class="label">Active list color</div>
+                <input id="activeListColor" class="color-input" type="color" value="${this.esc(activeListColor)}" />
+              </div>
             </div>
             <div class="row">
               <button id="saveListCatsBtn" class="btn">Save Categories</button>
               <button id="clearListCatsBtn" class="btn">No Categories</button>
+              <button id="saveListColorBtn" class="btn">Save Color</button>
             </div>
           ` : ""}
         </section>
@@ -372,28 +394,35 @@ class LocalListAssistPanel extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display:block; min-height:100%; background:linear-gradient(180deg,#0d1520,#09111a); color:#f3f7fb; }
+        :host { display:block; min-height:100%; background:linear-gradient(180deg,#0d1520,#09111a); color:#f3f7fb; --accent:${this.esc(activeListColor)}; }
         * { box-sizing:border-box; font-family: "Segoe UI", system-ui, sans-serif; }
         .wrap { max-width: 1120px; margin: 0 auto; padding: 20px; }
-        .hero, .section { background: rgba(18,31,48,0.92); border:1px solid #203a57; border-radius: 24px; padding: 20px; margin-bottom: 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }
+        .hero, .section { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, rgba(18,31,48,0.96)), rgba(18,31,48,0.92)); border:1px solid color-mix(in srgb, var(--accent) 38%, #203a57); border-radius: 24px; padding: 20px; margin-bottom: 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }
         .title { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
         .hero-title { font-size: 28px; font-weight: 800; margin: 0 0 8px; }
         .sub, .small, .label, .empty { color:#9fb4ca; }
         .row { display:flex; gap:10px; flex-wrap:wrap; margin-top: 10px; align-items:center; }
         .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
         .input, .select { width:100%; background:#08111b; color:#f3f7fb; border:1px solid #2e5276; border-radius:14px; padding: 12px 14px; }
+        .color-input { width:100%; min-height:48px; background:#08111b; border:1px solid #2e5276; border-radius:14px; padding: 6px; }
         .btn { border:1px solid #416588; background:#27425f; color:#fff; border-radius:14px; padding: 12px 16px; cursor:pointer; }
-        .btn.primary { background:#2c78ba; border-color:#57a3eb; }
+        .btn.primary { background:var(--accent); border-color:color-mix(in srgb, var(--accent) 60%, white); }
         .btn.danger { background:#6a2d2d; border-color:#d96b6b; }
         .mobile-bar { display:flex; align-items:center; gap:10px; margin-bottom: 12px; }
         .mobile-title { font-size:14px; font-weight:700; color:#9fb4ca; letter-spacing:0.04em; text-transform:uppercase; }
         .icon-btn { width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; font-size:20px; padding:0; }
+        .tabs { display:flex; gap:8px; margin-top:14px; }
+        .tab-btn { background:#122132; border:1px solid #284766; color:#b9cde1; border-radius:999px; padding:10px 14px; cursor:pointer; }
+        .tab-btn.active { background:color-mix(in srgb, var(--accent) 32%, #122132); border-color:color-mix(in srgb, var(--accent) 65%, #284766); color:#fff; }
+        .list-chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+        .list-chip { border:1px solid color-mix(in srgb, var(--chip-color) 60%, #284766); background:color-mix(in srgb, var(--chip-color) 20%, #122132); color:#fff; border-radius:999px; padding:8px 12px; cursor:pointer; }
+        .list-chip.active { box-shadow:0 0 0 1px rgba(255,255,255,0.12) inset; }
         .item { background:#0d1826; border:1px solid #1f3348; border-radius:16px; padding: 12px; margin-bottom: 10px; }
         .item-main { display:flex; justify-content:space-between; gap:10px; align-items:center; cursor:pointer; }
         .item-summary { display:flex; align-items:center; gap:10px; min-width:0; }
         .editor { display:none; gap:10px; margin-top:10px; }
         .editor.open { display:flex; }
-        .pill { font-size:11px; padding:4px 10px; border-radius:999px; background:#1f3a57; color:#c4e0ff; }
+        .pill { font-size:11px; padding:4px 10px; border-radius:999px; background:color-mix(in srgb, var(--accent) 28%, #1f3a57); color:#c4e0ff; }
         .divider { height:1px; background:#243c56; margin: 16px 0; }
         .error { color:#ffb0b0; font-weight:600; }
         @media (max-width: 720px) {
@@ -410,6 +439,11 @@ class LocalListAssistPanel extends HTMLElement {
           <div class="hero-title">${this.esc(activeListName)}</div>
           <div class="sub">Local List Assist</div>
           ${multilist ? `<div class="row"><select id="activeListSelect" class="select" style="max-width:360px;">${listOptions}</select><div class="small">Current list: <strong>${this.esc(activeListName)}</strong></div></div>` : ""}
+          ${multilist ? `<div class="list-chip-row">${listChips}</div>` : ""}
+          <div class="tabs">
+            <button class="tab-btn ${this._view === "list" ? "active" : ""}" data-view="list">List</button>
+            <button class="tab-btn ${this._view === "activity" ? "active" : ""}" data-view="activity">Recent Activity</button>
+          </div>
           <div class="row">
             <input id="quickAdd" class="input" placeholder="Add item" />
             <button id="addBtn" class="btn primary">Add</button>
@@ -419,11 +453,14 @@ class LocalListAssistPanel extends HTMLElement {
         ${configPanel}
         ${this._error ? `<section class="section"><div class="title">Error</div><div class="error">${this.esc(this._error)}</div></section>` : ""}
         ${attention.join("")}
-        ${groups || ""}
-        <section class="section"><div class="title">Completed</div><div class="row" style="justify-content:space-between;"><div class="small">Completed history stays visible until cleared.</div><button id="clearCompletedBtn" class="btn danger">Clear Completed</button></div><div style="margin-top:10px;">${completed}</div></section>
-        <section class="section"><div class="title">Recent Activity</div>${activity}</section>
+        ${this._view === "list" ? `${groups || ""}<section class="section"><div class="title">Completed</div><div class="row" style="justify-content:space-between;"><div class="small">Completed history stays visible until cleared.</div><button id="clearCompletedBtn" class="btn danger">Clear Completed</button></div><div style="margin-top:10px;">${completed}</div></section>` : `<section class="section"><div class="title">Recent Activity</div>${activity}</section>`}
       </div>
     `;
+    this.shadowRoot.querySelectorAll(".list-chip").forEach((chip) => {
+      chip.addEventListener("click", async () => {
+        await this.act({ action: "switch_list", list_id: chip.dataset.listId || "" });
+      });
+    });
     this.bindEvents();
   }
 }

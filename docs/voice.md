@@ -10,6 +10,8 @@
 - "Add milk to shopping list"
 - "Add eggs to grocery list"
 - "Add ibuprofen to shopping list"
+- "Add batteries to Ryne list"
+- "Add paper towels to test"
 
 ## Recommended Architecture
 - Best compatibility: keep the legacy bridge enabled as a fallback.
@@ -29,3 +31,4 @@
 3. Restart Home Assistant if Assist still has stale sentence data.
 4. Re-test voice add.
 5. If you are using your own custom Assist sentences, confirm they target `LocalListAssistAddItem` or `grocery_learning.add_to_list`.
+6. If you upgraded from an earlier sentence pack, click `Install Voice Phrases` again so the newer custom-list phrases are written to disk.

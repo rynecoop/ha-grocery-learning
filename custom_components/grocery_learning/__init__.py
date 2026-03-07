@@ -1017,11 +1017,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             by_entity = _internal_list_id_from_voice_entity(str(list_name).strip())
             if by_entity:
                 return by_entity
-        normalized_name = _normalize_term(list_name)
-        normalized_name = re.sub(r"\s+'?s\b", "", normalized_name).strip()
-        normalized_name = re.sub(r"\s+s\b", "", normalized_name).strip()
-        if normalized_name.endswith(" list"):
-            normalized_name = normalized_name[: -len(" list")].strip()
+        normalized_name = _normalize_voice_list_name(list_name)
         if not normalized_name:
             return ""
 
@@ -1031,12 +1027,21 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         for list_id, list_obj in lists.items():
             if not isinstance(list_obj, dict):
                 continue
-            current_name = _normalize_term(str(list_obj.get("name", "")).strip())
-            current_name = re.sub(r"\s+'?s\b", "", current_name).strip()
-            current_name = re.sub(r"\s+s\b", "", current_name).strip()
-            if current_name.endswith(" list"):
-                current_name = current_name[: -len(" list")].strip()
+            current_name = _normalize_voice_list_name(str(list_obj.get("name", "")).strip())
+            normalized_id = _normalize_voice_list_name(str(list_id))
             if current_name and current_name == normalized_name:
+                return str(list_id)
+            if normalized_id and normalized_id == normalized_name:
+                return str(list_id)
+            if current_name and (
+                normalized_name.startswith(f"{current_name} ")
+                or current_name.startswith(f"{normalized_name} ")
+            ):
+                return str(list_id)
+            if normalized_id and (
+                normalized_name.startswith(f"{normalized_id} ")
+                or normalized_id.startswith(f"{normalized_name} ")
+            ):
                 return str(list_id)
         return ""
 
@@ -1063,6 +1068,31 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         normalized = _normalize_term(name)
         return "grocery" in normalized or "shopping" in normalized
 
+    def _default_list_color(list_id: str) -> str:
+        palette = [
+            "#2c78ba",
+            "#1f8a70",
+            "#b26b00",
+            "#8f3f71",
+            "#5b6ee1",
+            "#7a8b00",
+            "#b04d3c",
+            "#3d6f8f",
+        ]
+        if list_id == "default":
+            return "#2c78ba"
+        index = sum(ord(char) for char in list_id) % len(palette)
+        return palette[index]
+
+    def _normalize_voice_list_name(value: str) -> str:
+        normalized = _normalize_term(value)
+        normalized = re.sub(r"\b(my|the)\b", " ", normalized).strip()
+        normalized = re.sub(r"\s+'?s\b", "", normalized).strip()
+        normalized = re.sub(r"\s+s\b", "", normalized).strip()
+        normalized = re.sub(r"\blist\b", " ", normalized).strip()
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return normalized
+
     def _internal_list_catalog() -> list[dict[str, Any]]:
         _ensure_multilist_model()
         model = hass.data[DOMAIN]["multilist"]
@@ -1077,6 +1107,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 {
                     "id": str(list_id),
                     "name": name,
+                    "color": str(list_obj.get("color", _default_list_color(str(list_id)))).strip() or _default_list_color(str(list_id)),
                     "active": str(list_id) == active_id,
                 }
             )
@@ -1570,6 +1601,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "runtime_ready": bool(hass.data.get(DOMAIN, {}).get("runtime_ready")),
                 "active_list_id": list_id,
                 "active_list_name": str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
+                "active_list_color": str(list_obj.get("color", _default_list_color(list_id))).strip() or _default_list_color(list_id),
                 "active_list_categories": categories,
             },
             "activity": _activity_payload(),
@@ -1900,6 +1932,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "name": name,
                 "voice_entity": _internal_voice_bridge_entity(list_id),
                 "voice_alias_entities": [],
+                "color": str(payload.get("color", _default_list_color(list_id))).strip() or _default_list_color(list_id),
                 "categories": base_categories + ["other"],
                 "items": [],
             }
@@ -1967,6 +2000,29 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             list_obj["name"] = new_name
             await _save()
             await _record_activity("Renamed list", f"{previous_name} -> {new_name}", new_name, "typed")
+            return {"ok": True}
+
+        if action == "set_list_color":
+            if not multilist_mode:
+                return {"ok": False, "error": "multilist_disabled"}
+            list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            color = str(payload.get("color", "")).strip()
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                return {"ok": False, "error": "invalid_color"}
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            lists = model.get("lists", {})
+            list_obj = lists.get(list_id)
+            if not isinstance(list_obj, dict):
+                return {"ok": False, "error": "list_not_found"}
+            list_obj["color"] = color
+            await _save()
+            await _record_activity(
+                "Updated list color",
+                color,
+                str(list_obj.get("name", list_id)).strip() or list_id,
+                "typed",
+            )
             return {"ok": True}
 
         if action == "archive_list":
@@ -3016,11 +3072,19 @@ intents:
       - sentences:
           - "(add|put) {item} to [my] (grocery|shopping) list"
           - "(add|put) {item} on [my] (grocery|shopping) list"
+          - "(add|put) {item} to [my] grocery"
+          - "(add|put) {item} on [my] shopping"
         slots:
           list_name: "Grocery List"
       - sentences:
           - "(add|put) {item} to [my] {list_name} list"
           - "(add|put) {item} on [my] {list_name} list"
+          - "(add|put) {item} to [my] {list_name}"
+          - "(add|put) {item} on [my] {list_name}"
+          - "(add|put) {item} for [my] {list_name} list"
+          - "(add|put) {item} for [my] {list_name}"
+          - "(add|put) {item} into [my] {list_name} list"
+          - "(add|put) {item} into [my] {list_name}"
 lists:
   item:
     wildcard: true

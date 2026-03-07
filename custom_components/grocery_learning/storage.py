@@ -9,6 +9,23 @@ from homeassistant.helpers.storage import Store
 from .const import DEFAULT_CATEGORIES, STORAGE_KEY, STORAGE_VERSION
 
 
+def _default_list_color(list_id: str) -> str:
+    palette = [
+        "#2c78ba",
+        "#1f8a70",
+        "#b26b00",
+        "#8f3f71",
+        "#5b6ee1",
+        "#7a8b00",
+        "#b04d3c",
+        "#3d6f8f",
+    ]
+    if list_id == "default":
+        return "#2c78ba"
+    index = sum(ord(char) for char in list_id) % len(palette)
+    return palette[index]
+
+
 @dataclass
 class LearnedTerms:
     """In-memory representation of learned terms by category."""
@@ -128,6 +145,7 @@ class GroceryLearningStore:
             cleaned_lists[normalized_id] = {
                 "name": name,
                 "voice_entity": voice_entity,
+                "color": str(list_obj.get("color", _default_list_color(normalized_id))).strip() or _default_list_color(normalized_id),
                 "categories": category_order,
                 "items": items_clean,
             }
@@ -136,6 +154,7 @@ class GroceryLearningStore:
             cleaned_lists["default"] = {
                 "name": "Grocery List",
                 "voice_entity": "todo.lla_default",
+                "color": _default_list_color("default"),
                 "categories": list(categories) + ["other"],
                 "items": [],
             }
