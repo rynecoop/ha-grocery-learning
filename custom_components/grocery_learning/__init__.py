@@ -20,7 +20,7 @@ from homeassistant.components.panel_custom import async_register_panel
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import Context, HomeAssistant, ServiceCall
-from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import config_validation as cv, intent as intent_helper
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -63,6 +63,7 @@ from .storage import GroceryLearningStore, LearnedTerms
 
 _LOGGER = logging.getLogger(__name__)
 MAX_ACTIVITY_ITEMS = 40
+INTENT_LOCAL_LIST_ASSIST_ADD_ITEM = "LocalListAssistAddItem"
 
 PLATFORMS: list[Platform] = []
 
@@ -2993,6 +2994,110 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             blocking=True,
         )
 
+    class LocalListAssistAddItemIntent(intent_helper.IntentHandler):
+        """Direct Assist intent handler for internal list adds."""
+
+        intent_type = INTENT_LOCAL_LIST_ASSIST_ADD_ITEM
+        description = "Add an item to a Local List Assist list"
+        platforms = {"conversation"}
+
+        @property
+        def slot_schema(self) -> dict[str, Any]:
+            return {
+                vol.Required("item"): intent_helper.non_empty_string,
+                vol.Optional("list_name"): intent_helper.non_empty_string,
+            }
+
+        async def async_handle(
+            self,
+            intent_obj: intent_helper.Intent,
+        ) -> intent_helper.IntentResponse:
+            slots = self.async_validate_slots(intent_obj.slots)
+            item = str(slots.get("item", {}).get("value", "")).strip()
+            requested_list_name = str(slots.get("list_name", {}).get("value", "")).strip()
+            response = intent_obj.create_response()
+
+            if not item:
+                response.async_set_error(
+                    intent_helper.IntentResponseErrorCode.NO_INTENT_MATCH,
+                    "I didn't catch the item to add.",
+                )
+                return response
+
+            actor_user_id = str(intent_obj.context.user_id or "").strip()
+            actor_name = ""
+            if actor_user_id:
+                actor_user = await hass.auth.async_get_user(actor_user_id)
+                actor_name = _display_name_from_user(actor_user)
+
+            if _multilist_enabled():
+                target_list_id = ""
+                if requested_list_name:
+                    target_list_id = _internal_list_id_from_voice_name(requested_list_name)
+                    if not target_list_id:
+                        normalized_list_name = _normalize_term(requested_list_name)
+                        if "grocery" in normalized_list_name or "shopping" in normalized_list_name:
+                            target_list_id = "default"
+                if not target_list_id:
+                    target_list_id = "default"
+
+                resolved_list_id, resolved_list = _internal_list_by_id(target_list_id)
+                resolved_list_name = str(resolved_list.get("name", "Grocery List")).strip() or "Grocery List"
+                normalized_item = _normalize_term(item)
+                before_count = sum(
+                    1
+                    for existing in resolved_list.get("items", [])
+                    if str(existing.get("status", "")).strip() == "needs_action"
+                    and _normalize_term(str(existing.get("summary", "")).strip()) == normalized_item
+                )
+
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_ADD_TO_LIST,
+                    {
+                        "item": item,
+                        "list_id": resolved_list_id,
+                        "list_name": resolved_list_name,
+                        "source": "voice_assistant",
+                        "actor_user_id": actor_user_id,
+                        "actor_name": actor_name,
+                        "allow_duplicate": False,
+                    },
+                    blocking=True,
+                    context=intent_obj.context,
+                )
+
+                _, refreshed_list = _internal_list_by_id(resolved_list_id)
+                after_count = sum(
+                    1
+                    for existing in refreshed_list.get("items", [])
+                    if str(existing.get("status", "")).strip() == "needs_action"
+                    and _normalize_term(str(existing.get("summary", "")).strip()) == normalized_item
+                )
+                if before_count > 0 and after_count == before_count:
+                    response.async_set_speech(f"{item} is already on {resolved_list_name}.")
+                else:
+                    response.async_set_speech(f"Added {item} to {resolved_list_name}.")
+                response.async_set_card("Local List Assist", f"{item} -> {resolved_list_name}")
+                return response
+
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_ADD_TO_LIST,
+                {
+                    "item": item,
+                    "source": "voice_assistant",
+                    "actor_user_id": actor_user_id,
+                    "actor_name": actor_name,
+                    "allow_duplicate": False,
+                },
+                blocking=True,
+                context=intent_obj.context,
+            )
+            response.async_set_speech("Added item to Grocery List.")
+            response.async_set_card("Local List Assist", f"{item} -> Grocery List")
+            return response
+
     hass.services.async_register(DOMAIN, SERVICE_LEARN_TERM, _learn_term, schema=LEARN_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_FORGET_TERM, _forget_term, schema=FORGET_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SYNC_HELPERS, _sync_helpers)
@@ -3005,6 +3110,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         _confirm_duplicate,
         schema=CONFIRM_DUPLICATE_SCHEMA,
     )
+    if not data.get("intent_registered"):
+        intent_helper.async_register(hass, LocalListAssistAddItemIntent())
+        data["intent_registered"] = True
 
     _update_review_status_entities(pending=False)
     _update_duplicate_status_entities(pending=False)

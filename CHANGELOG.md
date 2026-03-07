@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0
+- Added a first-class `LocalListAssistAddItem` Assist intent handler so Local List Assist can accept direct internal voice adds without depending only on `todo` bridge events.
+- Kept the legacy `todo`/shopping-list bridge path as a fallback so existing voice setups do not break during migration.
+- Updated the repo docs to reflect the internal `grocery_learning.add_to_list` service and the current voice architecture.
+
 ## 0.7.2
 - Added a mobile fallback header with a menu button so the panel is still navigable when Home Assistant mobile does not expose its usual chrome.
 - Changed the main app header to show the active list name instead of repeating the app name, which keeps the top of the view focused on the current list.

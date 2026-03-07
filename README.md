@@ -9,8 +9,9 @@ Local List Assist is a Home Assistant custom integration that gives you a clean,
 - Keep shopping simple in-store with category-ordered lists.
 
 ## Highlights
-- Dedicated sidebar app: `Grocery List`
+- Dedicated sidebar app: `Local List Assist`
 - Quick Add with per-user attribution
+- Direct internal add path: `grocery_learning.add_to_list`
 - Voice/list alias intake routing (for example: shopping list, grocery list)
 - Auto-route by learned terms + defaults
 - Duplicate decision flow (Add Anyway or Skip)
@@ -36,17 +37,17 @@ Local List Assist is a Home Assistant custom integration that gives you a clean,
 3. Restart Home Assistant.
 4. Go to `Settings -> Devices & Services`.
 5. Add `Local List Assist`.
-6. Open `Grocery List` from the sidebar.
+6. Open `Local List Assist` from the sidebar.
 7. Click `Configure` and complete setup.
 
 ### Manual
 1. Copy `custom_components/grocery_learning` into your HA config directory.
 2. Restart Home Assistant.
 3. Add integration from `Settings -> Devices & Services`.
-4. Open `Grocery List` and complete setup.
+4. Open `Local List Assist` and complete setup.
 
 ## Quick Start
-1. Open sidebar item `Grocery List`.
+1. Open sidebar item `Local List Assist`.
 2. Add 2-3 items with Quick Add.
 3. Add one item by voice to your shopping/grocery list.
 4. If an item lands in `Other`, use review actions to teach the category once.
@@ -63,6 +64,7 @@ Local List Assist is a Home Assistant custom integration that gives you a clean,
 
 ## Service APIs
 - `grocery_learning.route_item`
+- `grocery_learning.add_to_list`
 - `grocery_learning.apply_review`
 - `grocery_learning.confirm_duplicate`
 - `grocery_learning.learn_term`
