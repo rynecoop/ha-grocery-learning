@@ -9,6 +9,14 @@ class LocalListAssistPanel extends HTMLElement {
     this._view = "list";
     this._loading = false;
     this._error = "";
+    this._drafts = {
+      newListName: "",
+      newListCategories: "",
+      newListVoiceAliases: "",
+      activeListCategories: "",
+      activeListVoiceAliases: "",
+      activeListColor: "",
+    };
   }
 
   set hass(hass) {
@@ -29,6 +37,18 @@ class LocalListAssistPanel extends HTMLElement {
   set narrow(narrow) {
     this._narrow = narrow;
     this.render();
+  }
+
+  syncDrafts() {
+    const state = this._state;
+    const active = state?.lists?.find((list) => list.active) || null;
+    const activeId = active?.id || "";
+    if (this._drafts.activeListId !== activeId) {
+      this._drafts.activeListId = activeId;
+      this._drafts.activeListCategories = (state?.system?.active_list_categories || []).join(", ");
+      this._drafts.activeListVoiceAliases = (state?.system?.active_list_voice_aliases || []).join(", ");
+      this._drafts.activeListColor = state?.system?.active_list_color || active?.color || "#2c78ba";
+    }
   }
 
   get _token() {
@@ -74,6 +94,7 @@ class LocalListAssistPanel extends HTMLElement {
     this._loading = true;
     try {
       this._state = await this.api("dashboard");
+      this.syncDrafts();
       this._error = "";
     } catch (err) {
       this._error = err.message || String(err);
@@ -86,6 +107,10 @@ class LocalListAssistPanel extends HTMLElement {
   async act(payload) {
     await this.api("action", "POST", payload);
     await this.load();
+  }
+
+  updateDraft(key, value) {
+    this._drafts[key] = value;
   }
 
   openNavigation() {
@@ -219,11 +244,14 @@ class LocalListAssistPanel extends HTMLElement {
       await this.act({ action: "apply_review", category: "other", learn: false });
     });
     root.querySelector("#createListBtn")?.addEventListener("click", async () => {
-      const name = root.querySelector("#newListName")?.value?.trim();
+      const name = (this._drafts.newListName || "").trim();
       if (!name) return;
-      const categories = root.querySelector("#newListCategories")?.value || "";
-      const voiceAliases = root.querySelector("#newListVoiceAliases")?.value || "";
+      const categories = this._drafts.newListCategories || "";
+      const voiceAliases = this._drafts.newListVoiceAliases || "";
       await this.act({ action: "create_list", name, categories, voice_aliases: voiceAliases });
+      this._drafts.newListName = "";
+      this._drafts.newListCategories = "";
+      this._drafts.newListVoiceAliases = "";
     });
     root.querySelector("#renameListBtn")?.addEventListener("click", async () => {
       const activeSelect = root.querySelector("#activeListSelect");
@@ -237,34 +265,37 @@ class LocalListAssistPanel extends HTMLElement {
       if (!activeSelect?.value) return;
       await this.act({ action: "archive_list", list_id: activeSelect.value });
     });
-    root.querySelector("#saveListCatsBtn")?.addEventListener("click", async () => {
+    root.querySelector("#saveActiveListBtn")?.addEventListener("click", async () => {
       const activeSelect = root.querySelector("#activeListSelect");
       if (!activeSelect?.value) return;
-      await this.act({
+      await this.api("action", "POST", {
         action: "save_list_categories",
         list_id: activeSelect.value,
-        categories: root.querySelector("#activeListCategories")?.value || "",
+        categories: this._drafts.activeListCategories || "",
       });
-    });
-    root.querySelector("#clearListCatsBtn")?.addEventListener("click", async () => {
-      const activeSelect = root.querySelector("#activeListSelect");
-      if (!activeSelect?.value) return;
-      await this.act({ action: "save_list_categories", list_id: activeSelect.value, categories: "" });
-    });
-    root.querySelector("#saveListVoiceAliasesBtn")?.addEventListener("click", async () => {
-      const activeSelect = root.querySelector("#activeListSelect");
-      if (!activeSelect?.value) return;
-      await this.act({
+      await this.api("action", "POST", {
         action: "save_list_voice_aliases",
         list_id: activeSelect.value,
-        voice_aliases: root.querySelector("#activeListVoiceAliases")?.value || "",
+        voice_aliases: this._drafts.activeListVoiceAliases || "",
       });
+      await this.api("action", "POST", {
+        action: "set_list_color",
+        list_id: activeSelect.value,
+        color: this._drafts.activeListColor || "#2c78ba",
+      });
+      await this.load();
     });
-    root.querySelector("#saveListColorBtn")?.addEventListener("click", async () => {
-      const activeSelect = root.querySelector("#activeListSelect");
-      const colorInput = root.querySelector("#activeListColor");
-      if (!activeSelect?.value || !colorInput?.value) return;
-      await this.act({ action: "set_list_color", list_id: activeSelect.value, color: colorInput.value });
+    root.querySelector("#clearListCatsBtn")?.addEventListener("click", () => {
+      this.updateDraft("activeListCategories", "");
+      const input = root.querySelector("#activeListCategories");
+      if (input) input.value = "";
+    });
+
+    root.querySelectorAll("[data-draft]").forEach((input) => {
+      const eventName = input.type === "color" ? "input" : "input";
+      input.addEventListener(eventName, (ev) => {
+        this.updateDraft(input.dataset.draft, ev.target.value);
+      });
     });
 
     root.querySelectorAll(".item").forEach((row) => {
@@ -301,6 +332,7 @@ class LocalListAssistPanel extends HTMLElement {
 
   render() {
     const state = this._state;
+    this.syncDrafts();
     const multilist = !!state?.settings?.experimental_multilist;
     const active = state?.lists?.find((list) => list.active) || null;
     const activeListName = active?.name || "Grocery List";
@@ -377,9 +409,9 @@ class LocalListAssistPanel extends HTMLElement {
           ${multilist ? `
             <div class="divider"></div>
             <div class="grid">
-              <input id="newListName" class="input" placeholder="New list name" />
-              <input id="newListCategories" class="input" placeholder="Optional categories (comma separated)" />
-              <input id="newListVoiceAliases" class="input" placeholder="Optional voice aliases (comma separated)" />
+              <input id="newListName" data-draft="newListName" class="input" placeholder="New list name" value="${this.esc(this._drafts.newListName || "")}" />
+              <input id="newListCategories" data-draft="newListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.newListCategories || "")}" />
+              <input id="newListVoiceAliases" data-draft="newListVoiceAliases" class="input" placeholder="Optional voice aliases (comma separated)" value="${this.esc(this._drafts.newListVoiceAliases || "")}" />
             </div>
             <div class="row">
               <button id="createListBtn" class="btn">Create List</button>
@@ -387,18 +419,16 @@ class LocalListAssistPanel extends HTMLElement {
               <button id="archiveListBtn" class="btn danger">Archive Active</button>
             </div>
             <div class="grid">
-              <input id="activeListCategories" class="input" placeholder="Active list categories" value="${this.esc((state?.system?.active_list_categories || []).join(", "))}" />
-              <input id="activeListVoiceAliases" class="input" placeholder="Active list voice aliases" value="${this.esc((state?.system?.active_list_voice_aliases || []).join(", "))}" />
+              <input id="activeListCategories" data-draft="activeListCategories" class="input" placeholder="Active list categories" value="${this.esc(this._drafts.activeListCategories || "")}" />
+              <input id="activeListVoiceAliases" data-draft="activeListVoiceAliases" class="input" placeholder="Active list voice aliases" value="${this.esc(this._drafts.activeListVoiceAliases || "")}" />
               <div>
                 <div class="label">Active list color</div>
-                <input id="activeListColor" class="color-input" type="color" value="${this.esc(activeListColor)}" />
+                <input id="activeListColor" data-draft="activeListColor" class="color-input" type="color" value="${this.esc(this._drafts.activeListColor || activeListColor)}" />
               </div>
             </div>
             <div class="row">
-              <button id="saveListCatsBtn" class="btn">Save Categories</button>
+              <button id="saveActiveListBtn" class="btn primary">Save Active List</button>
               <button id="clearListCatsBtn" class="btn">No Categories</button>
-              <button id="saveListVoiceAliasesBtn" class="btn">Save Voice Aliases</button>
-              <button id="saveListColorBtn" class="btn">Save Color</button>
             </div>
           ` : ""}
         </section>

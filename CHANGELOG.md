@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.3
+- Fixed Configure inputs so text fields keep their local draft while typing instead of losing focus on rerender.
+- Simplified active-list editing by replacing multiple save buttons with a single `Save Active List` action.
+
 ## 0.10.2
 - Added per-list voice aliases so users can define one or more spoken names for each list in Configure.
 - Voice routing now matches against configured aliases before falling back to the default grocery list.
