@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.10.4
+- Fixed the quick-add input so it keeps local draft state and restores focus after rerenders, which keeps the mobile keyboard open while typing.
+
 ## 0.10.3
 - Fixed Configure inputs so text fields keep their local draft while typing instead of losing focus on rerender.
 - Simplified active-list editing by replacing multiple save buttons with a single `Save Active List` action.

@@ -10,6 +10,7 @@ class LocalListAssistPanel extends HTMLElement {
     this._loading = false;
     this._error = "";
     this._drafts = {
+      quickAdd: "",
       newListName: "",
       newListCategories: "",
       newListVoiceAliases: "",
@@ -17,6 +18,7 @@ class LocalListAssistPanel extends HTMLElement {
       activeListVoiceAliases: "",
       activeListColor: "",
     };
+    this._focusTarget = "";
   }
 
   set hass(hass) {
@@ -113,6 +115,25 @@ class LocalListAssistPanel extends HTMLElement {
     this._drafts[key] = value;
   }
 
+  rememberFocus(target) {
+    this._focusTarget = target || "";
+  }
+
+  restoreFocus() {
+    if (!this._focusTarget) return;
+    const element = this.shadowRoot?.querySelector(`#${this._focusTarget}`);
+    if (!element) return;
+    requestAnimationFrame(() => {
+      try {
+        element.focus();
+        if (typeof element.value === "string" && typeof element.setSelectionRange === "function") {
+          const end = element.value.length;
+          element.setSelectionRange(end, end);
+        }
+      } catch (_err) {}
+    });
+  }
+
   openNavigation() {
     const toggleEvent = new CustomEvent("hass-toggle-menu", {
       bubbles: true,
@@ -171,9 +192,11 @@ class LocalListAssistPanel extends HTMLElement {
     });
     root.querySelector("#addBtn")?.addEventListener("click", async () => {
       const input = root.querySelector("#quickAdd");
-      const item = input?.value?.trim();
+      const item = (this._drafts.quickAdd || input?.value || "").trim();
       if (!item) return;
-      input.value = "";
+      this._drafts.quickAdd = "";
+      this._focusTarget = "quickAdd";
+      if (input) input.value = "";
       await this.act({
         action: "add_item",
         item,
@@ -185,6 +208,19 @@ class LocalListAssistPanel extends HTMLElement {
       if (ev.key === "Enter") {
         ev.preventDefault();
         root.querySelector("#addBtn")?.click();
+      }
+    });
+    root.querySelector("#quickAdd")?.addEventListener("focus", () => {
+      this.rememberFocus("quickAdd");
+    });
+    root.querySelector("#quickAdd")?.addEventListener("blur", () => {
+      if (this._focusTarget === "quickAdd") {
+        requestAnimationFrame(() => {
+          const active = this.shadowRoot?.activeElement;
+          if (!active || active.id !== "quickAdd") {
+            this._focusTarget = "";
+          }
+        });
       }
     });
     root.querySelector("#configureBtn")?.addEventListener("click", () => {
@@ -292,9 +328,21 @@ class LocalListAssistPanel extends HTMLElement {
     });
 
     root.querySelectorAll("[data-draft]").forEach((input) => {
-      const eventName = input.type === "color" ? "input" : "input";
-      input.addEventListener(eventName, (ev) => {
+      input.addEventListener("input", (ev) => {
         this.updateDraft(input.dataset.draft, ev.target.value);
+      });
+      input.addEventListener("focus", () => {
+        if (input.id) this.rememberFocus(input.id);
+      });
+      input.addEventListener("blur", () => {
+        if (this._focusTarget === input.id) {
+          requestAnimationFrame(() => {
+            const active = this.shadowRoot?.activeElement;
+            if (!active || active.id !== input.id) {
+              this._focusTarget = "";
+            }
+          });
+        }
       });
     });
 
@@ -488,7 +536,7 @@ class LocalListAssistPanel extends HTMLElement {
             <button class="tab-btn ${this._view === "activity" ? "active" : ""}" data-view="activity">Recent Activity</button>
           </div>
           <div class="row">
-            <input id="quickAdd" class="input" placeholder="Add item" />
+            <input id="quickAdd" data-draft="quickAdd" class="input" placeholder="Add item" value="${this.esc(this._drafts.quickAdd || "")}" />
             <button id="addBtn" class="btn primary">Add</button>
             <button id="configureBtn" class="btn">Configure</button>
           </div>
@@ -505,6 +553,7 @@ class LocalListAssistPanel extends HTMLElement {
       });
     });
     this.bindEvents();
+    this.restoreFocus();
   }
 }
 
