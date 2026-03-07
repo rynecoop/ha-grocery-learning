@@ -101,54 +101,72 @@ class GroceryLearningStore:
         if not isinstance(lists_raw, dict):
             lists_raw = {}
 
-        cleaned_lists: dict[str, dict] = {}
-        for list_id, list_obj in lists_raw.items():
-            if not isinstance(list_id, str) or not isinstance(list_obj, dict):
-                continue
-            normalized_id = list_id.strip()
-            if not normalized_id:
-                continue
-            name = str(list_obj.get("name", normalized_id.title())).strip() or normalized_id.title()
-            voice_entity = str(list_obj.get("voice_entity", f"todo.lla_{normalized_id}")).strip() or f"todo.lla_{normalized_id}"
-            categories_raw = list_obj.get("categories", [])
-            categories_clean = [str(c).strip().lower() for c in categories_raw if str(c).strip()] if isinstance(categories_raw, list) else []
-            category_order = [c for c in categories_clean if c != "completed"]
-            if not category_order and normalized_id == "default":
-                category_order = list(categories)
-            if "other" not in category_order:
-                category_order.append("other")
-            items_raw = list_obj.get("items", [])
-            items_clean: list[dict] = []
-            if isinstance(items_raw, list):
-                for item in items_raw:
-                    if not isinstance(item, dict):
-                        continue
-                    item_id = str(item.get("id", "")).strip()
-                    summary = str(item.get("summary", "")).strip()
-                    if not item_id or not summary:
-                        continue
-                    category = str(item.get("category", "other")).strip().lower() or "other"
-                    if category not in category_order and category != "other":
-                        category = "other"
-                    status = str(item.get("status", "needs_action")).strip().lower()
-                    if status not in {"needs_action", "completed"}:
-                        status = "needs_action"
-                    items_clean.append(
-                        {
-                            "id": item_id,
-                            "summary": summary,
-                            "category": category,
-                            "status": status,
-                            "description": str(item.get("description", "")).strip(),
-                        }
-                    )
-            cleaned_lists[normalized_id] = {
-                "name": name,
-                "voice_entity": voice_entity,
-                "color": str(list_obj.get("color", _default_list_color(normalized_id))).strip() or _default_list_color(normalized_id),
-                "categories": category_order,
-                "items": items_clean,
-            }
+        def _clean_list_map(raw_lists: dict, *, use_default_categories_for_default: bool) -> dict[str, dict]:
+            cleaned_lists: dict[str, dict] = {}
+            for list_id, list_obj in raw_lists.items():
+                if not isinstance(list_id, str) or not isinstance(list_obj, dict):
+                    continue
+                normalized_id = list_id.strip()
+                if not normalized_id:
+                    continue
+                name = str(list_obj.get("name", normalized_id.title())).strip() or normalized_id.title()
+                voice_entity = str(list_obj.get("voice_entity", f"todo.lla_{normalized_id}")).strip() or f"todo.lla_{normalized_id}"
+                categories_raw = list_obj.get("categories", [])
+                categories_clean = [str(c).strip().lower() for c in categories_raw if str(c).strip()] if isinstance(categories_raw, list) else []
+                category_order = [c for c in categories_clean if c != "completed"]
+                if not category_order and normalized_id == "default" and use_default_categories_for_default:
+                    category_order = list(categories)
+                if "other" not in category_order:
+                    category_order.append("other")
+                items_raw = list_obj.get("items", [])
+                items_clean: list[dict] = []
+                if isinstance(items_raw, list):
+                    for item in items_raw:
+                        if not isinstance(item, dict):
+                            continue
+                        item_id = str(item.get("id", "")).strip()
+                        summary = str(item.get("summary", "")).strip()
+                        if not item_id or not summary:
+                            continue
+                        category = str(item.get("category", "other")).strip().lower() or "other"
+                        if category not in category_order and category != "other":
+                            category = "other"
+                        status = str(item.get("status", "needs_action")).strip().lower()
+                        if status not in {"needs_action", "completed"}:
+                            status = "needs_action"
+                        items_clean.append(
+                            {
+                                "id": item_id,
+                                "summary": summary,
+                                "category": category,
+                                "status": status,
+                                "description": str(item.get("description", "")).strip(),
+                            }
+                        )
+                cleaned_lists[normalized_id] = {
+                    "name": name,
+                    "voice_entity": voice_entity,
+                    "voice_alias_entities": [
+                        str(candidate).strip()
+                        for candidate in list_obj.get("voice_alias_entities", [])
+                        if isinstance(candidate, str) and str(candidate).strip()
+                    ],
+                    "voice_aliases": [
+                        str(candidate).strip()
+                        for candidate in list_obj.get("voice_aliases", [])
+                        if isinstance(candidate, str) and str(candidate).strip()
+                    ],
+                    "color": str(list_obj.get("color", _default_list_color(normalized_id))).strip() or _default_list_color(normalized_id),
+                    "categories": category_order,
+                    "items": items_clean,
+                }
+            return cleaned_lists
+
+        cleaned_lists = _clean_list_map(lists_raw, use_default_categories_for_default=True)
+        archived_raw = raw.get("archived_lists", {})
+        if not isinstance(archived_raw, dict):
+            archived_raw = {}
+        cleaned_archived_lists = _clean_list_map(archived_raw, use_default_categories_for_default=False)
 
         if "default" not in cleaned_lists:
             cleaned_lists["default"] = {
@@ -165,6 +183,7 @@ class GroceryLearningStore:
         return {
             "active_list_id": active_list_id,
             "lists": cleaned_lists,
+            "archived_lists": cleaned_archived_lists,
         }
 
     async def load_activity(self) -> list[dict[str, str]]:

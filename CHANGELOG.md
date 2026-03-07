@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.0
+- Fixed archived-list persistence so archived lists reload with the same normalized structure as active lists.
+- Added a lightweight unit test suite for learned-term and multilist storage normalization, and wired it into CI.
+
 ## 0.11.3
 - Added local panel-state updates for simple item actions so complete, recategorize, and clear completed feel faster and less jumpy.
 
