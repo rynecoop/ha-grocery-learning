@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.5
+- Cleaned up Configure by replacing the rename prompt with an inline active-list name field and moving low-frequency list controls into an advanced section.
+- Kept active-list edits on a single save path so Configure feels less crowded and more stable on mobile.
+
 ## 0.12.4
 - Added optimistic local panel updates for create list, rename list, and delete archived list so those actions no longer require a full panel reload.
 - Expanded frontend helper tests to cover list creation, rename, and archived-list removal behavior.

@@ -17,6 +17,7 @@ class LocalListAssistPanel extends HTMLElement {
       newListName: "",
       newListCategories: "",
       newListVoiceAliases: "",
+      activeListName: "",
       activeListCategories: "",
       activeListVoiceAliases: "",
       activeListColor: "",
@@ -54,6 +55,7 @@ class LocalListAssistPanel extends HTMLElement {
     const activeId = active?.id || "";
     if (this._drafts.activeListId !== activeId) {
       this._drafts.activeListId = activeId;
+      this._drafts.activeListName = active?.name || "";
       this._drafts.activeListCategories = (state?.system?.active_list_categories || []).join(", ");
       this._drafts.activeListVoiceAliases = (state?.system?.active_list_voice_aliases || []).join(", ");
       this._drafts.activeListColor = state?.system?.active_list_color || active?.color || "#2c78ba";
@@ -351,16 +353,6 @@ class LocalListAssistPanel extends HTMLElement {
       this._drafts.newListCategories = "";
       this._drafts.newListVoiceAliases = "";
     });
-    root.querySelector("#renameListBtn")?.addEventListener("click", async () => {
-      const activeSelect = root.querySelector("#activeListSelect");
-      if (!activeSelect?.value) return;
-      const next = window.prompt("New list name");
-      if (!next?.trim()) return;
-      const name = next.trim();
-      await this.actFast({ action: "rename_list", list_id: activeSelect.value, name }, (state) => {
-        applyRenameListLocal(state, activeSelect.value, name);
-      });
-    });
     root.querySelector("#archiveListBtn")?.addEventListener("click", async () => {
       const activeSelect = root.querySelector("#activeListSelect");
       if (!activeSelect?.value) return;
@@ -382,19 +374,30 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#saveActiveListBtn")?.addEventListener("click", async () => {
       const activeSelect = root.querySelector("#activeListSelect");
       if (!activeSelect?.value) return;
+      const listId = activeSelect.value;
+      const activeList = (this._state?.lists || []).find((list) => list.id === listId) || null;
+      const nextName = (this._drafts.activeListName || "").trim();
+      if (nextName && nextName !== (activeList?.name || "")) {
+        await this.api("action", "POST", {
+          action: "rename_list",
+          list_id: listId,
+          name: nextName,
+        });
+        applyRenameListLocal(this._state, listId, nextName);
+      }
       await this.api("action", "POST", {
         action: "save_list_categories",
-        list_id: activeSelect.value,
+        list_id: listId,
         categories: this._drafts.activeListCategories || "",
       });
       await this.api("action", "POST", {
         action: "save_list_voice_aliases",
-        list_id: activeSelect.value,
+        list_id: listId,
         voice_aliases: this._drafts.activeListVoiceAliases || "",
       });
       await this.api("action", "POST", {
         action: "set_list_color",
-        list_id: activeSelect.value,
+        list_id: listId,
         color: this._drafts.activeListColor || "#2c78ba",
       });
       await this.load();
@@ -585,12 +588,12 @@ class LocalListAssistPanel extends HTMLElement {
               <div class="small">Editing ${currentListLabel}</div>
               <div class="grid compact-grid">
                 <div>
-                  <div class="label">Categories</div>
-                  <input id="activeListCategories" data-draft="activeListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.activeListCategories || "")}" />
+                  <div class="label">List name</div>
+                  <input id="activeListName" data-draft="activeListName" class="input" placeholder="List name" value="${this.esc(this._drafts.activeListName || activeListName)}" />
                 </div>
                 <div>
-                  <div class="label">Voice aliases</div>
-                  <input id="activeListVoiceAliases" data-draft="activeListVoiceAliases" class="input" placeholder="Optional voice aliases" value="${this.esc(this._drafts.activeListVoiceAliases || "")}" />
+                  <div class="label">Categories</div>
+                  <input id="activeListCategories" data-draft="activeListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.activeListCategories || "")}" />
                 </div>
                 <div>
                   <div class="label">List color</div>
@@ -600,9 +603,19 @@ class LocalListAssistPanel extends HTMLElement {
               <div class="row">
                 <button id="saveActiveListBtn" class="btn primary">Save Active List</button>
                 <button id="clearListCatsBtn" class="btn">No Categories</button>
-                <button id="renameListBtn" class="btn">Rename</button>
-                <button id="archiveListBtn" class="btn danger">Archive</button>
               </div>
+              <details class="advanced-box">
+                <summary>Advanced List Options</summary>
+                <div class="grid compact-grid" style="margin-top:12px;">
+                  <div>
+                    <div class="label">Voice aliases</div>
+                    <input id="activeListVoiceAliases" data-draft="activeListVoiceAliases" class="input" placeholder="Optional voice aliases" value="${this.esc(this._drafts.activeListVoiceAliases || "")}" />
+                  </div>
+                </div>
+                <div class="row advanced-row">
+                  <button id="archiveListBtn" class="btn danger">Archive List</button>
+                </div>
+              </details>
             </div>
             <div class="divider"></div>
             <div class="subsection">
