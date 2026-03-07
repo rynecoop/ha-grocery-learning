@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.2
+- Added per-list voice aliases so users can define one or more spoken names for each list in Configure.
+- Voice routing now matches against configured aliases before falling back to the default grocery list.
+
 ## 0.10.1
 - Fixed direct Assist matching for possessive custom list names like `Ryne's list` by comparing multiple normalized voice-name variants instead of a single exact form.
 

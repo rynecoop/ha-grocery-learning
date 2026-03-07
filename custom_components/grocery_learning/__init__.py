@@ -951,6 +951,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 if isinstance(candidate, str) and str(candidate).strip()
             ]
             list_obj["voice_alias_entities"] = alias_entities
+            list_obj["voice_aliases"] = _voice_aliases_from_input(list_obj.get("voice_aliases", []))
         model["active_list_id"] = active_list_id if active_list_id in lists else "default"
 
     def _active_internal_list() -> tuple[str, dict[str, Any]]:
@@ -1029,9 +1030,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 continue
             current_name_variants = _voice_list_name_variants(str(list_obj.get("name", "")).strip())
             id_variants = _voice_list_name_variants(str(list_id))
+            alias_variants: set[str] = set()
+            for alias in list_obj.get("voice_aliases", []):
+                if isinstance(alias, str):
+                    alias_variants.update(_voice_list_name_variants(alias))
             if requested_variants.intersection(current_name_variants):
                 return str(list_id)
             if requested_variants.intersection(id_variants):
+                return str(list_id)
+            if requested_variants.intersection(alias_variants):
                 return str(list_id)
         return ""
 
@@ -1052,6 +1059,25 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 continue
             if value not in out:
                 out.append(value)
+        return out
+
+    def _voice_aliases_from_input(raw: Any) -> list[str]:
+        if isinstance(raw, str):
+            values = [str(v).strip() for v in raw.replace("\n", ",").split(",")]
+        elif isinstance(raw, list):
+            values = [str(v).strip() for v in raw]
+        else:
+            values = []
+        out: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not value:
+                continue
+            normalized = _normalize_voice_list_name(value)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            out.append(value)
         return out
 
     def _looks_like_grocery_list(name: str) -> bool:
@@ -1136,6 +1162,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "id": str(list_id),
                     "name": name,
                     "color": str(list_obj.get("color", _default_list_color(str(list_id)))).strip() or _default_list_color(str(list_id)),
+                    "voice_aliases": [
+                        str(alias).strip()
+                        for alias in list_obj.get("voice_aliases", [])
+                        if isinstance(alias, str) and str(alias).strip()
+                    ],
                     "active": str(list_id) == active_id,
                 }
             )
@@ -1631,6 +1662,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "active_list_name": str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
                 "active_list_color": str(list_obj.get("color", _default_list_color(list_id))).strip() or _default_list_color(list_id),
                 "active_list_categories": categories,
+                "active_list_voice_aliases": [
+                    str(alias).strip()
+                    for alias in list_obj.get("voice_aliases", [])
+                    if isinstance(alias, str) and str(alias).strip()
+                ],
             },
             "activity": _activity_payload(),
             "setup": {
@@ -1960,6 +1996,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "name": name,
                 "voice_entity": _internal_voice_bridge_entity(list_id),
                 "voice_alias_entities": [],
+                "voice_aliases": _voice_aliases_from_input(payload.get("voice_aliases", "")),
                 "color": str(payload.get("color", _default_list_color(list_id))).strip() or _default_list_color(list_id),
                 "categories": base_categories + ["other"],
                 "items": [],
@@ -1995,6 +2032,27 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 if str(item.get("category", "other")).strip() not in allowed_categories:
                     item["category"] = "other"
             await _save()
+            return {"ok": True}
+
+        if action == "save_list_voice_aliases":
+            if not multilist_mode:
+                return {"ok": False, "error": "multilist_disabled"}
+            list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            lists = model.get("lists", {})
+            list_obj = lists.get(list_id)
+            if not isinstance(list_obj, dict):
+                return {"ok": False, "error": "list_not_found"}
+            aliases = _voice_aliases_from_input(payload.get("voice_aliases", ""))
+            list_obj["voice_aliases"] = aliases
+            await _save()
+            await _record_activity(
+                "Updated voice aliases",
+                ", ".join(aliases) if aliases else "No aliases",
+                str(list_obj.get("name", list_id)).strip() or list_id,
+                "typed",
+            )
             return {"ok": True}
 
         if action == "switch_list":

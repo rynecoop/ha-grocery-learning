@@ -222,7 +222,8 @@ class LocalListAssistPanel extends HTMLElement {
       const name = root.querySelector("#newListName")?.value?.trim();
       if (!name) return;
       const categories = root.querySelector("#newListCategories")?.value || "";
-      await this.act({ action: "create_list", name, categories });
+      const voiceAliases = root.querySelector("#newListVoiceAliases")?.value || "";
+      await this.act({ action: "create_list", name, categories, voice_aliases: voiceAliases });
     });
     root.querySelector("#renameListBtn")?.addEventListener("click", async () => {
       const activeSelect = root.querySelector("#activeListSelect");
@@ -249,6 +250,15 @@ class LocalListAssistPanel extends HTMLElement {
       const activeSelect = root.querySelector("#activeListSelect");
       if (!activeSelect?.value) return;
       await this.act({ action: "save_list_categories", list_id: activeSelect.value, categories: "" });
+    });
+    root.querySelector("#saveListVoiceAliasesBtn")?.addEventListener("click", async () => {
+      const activeSelect = root.querySelector("#activeListSelect");
+      if (!activeSelect?.value) return;
+      await this.act({
+        action: "save_list_voice_aliases",
+        list_id: activeSelect.value,
+        voice_aliases: root.querySelector("#activeListVoiceAliases")?.value || "",
+      });
     });
     root.querySelector("#saveListColorBtn")?.addEventListener("click", async () => {
       const activeSelect = root.querySelector("#activeListSelect");
@@ -369,6 +379,7 @@ class LocalListAssistPanel extends HTMLElement {
             <div class="grid">
               <input id="newListName" class="input" placeholder="New list name" />
               <input id="newListCategories" class="input" placeholder="Optional categories (comma separated)" />
+              <input id="newListVoiceAliases" class="input" placeholder="Optional voice aliases (comma separated)" />
             </div>
             <div class="row">
               <button id="createListBtn" class="btn">Create List</button>
@@ -377,6 +388,7 @@ class LocalListAssistPanel extends HTMLElement {
             </div>
             <div class="grid">
               <input id="activeListCategories" class="input" placeholder="Active list categories" value="${this.esc((state?.system?.active_list_categories || []).join(", "))}" />
+              <input id="activeListVoiceAliases" class="input" placeholder="Active list voice aliases" value="${this.esc((state?.system?.active_list_voice_aliases || []).join(", "))}" />
               <div>
                 <div class="label">Active list color</div>
                 <input id="activeListColor" class="color-input" type="color" value="${this.esc(activeListColor)}" />
@@ -385,6 +397,7 @@ class LocalListAssistPanel extends HTMLElement {
             <div class="row">
               <button id="saveListCatsBtn" class="btn">Save Categories</button>
               <button id="clearListCatsBtn" class="btn">No Categories</button>
+              <button id="saveListVoiceAliasesBtn" class="btn">Save Voice Aliases</button>
               <button id="saveListColorBtn" class="btn">Save Color</button>
             </div>
           ` : ""}
