@@ -119,19 +119,35 @@ class LocalListAssistPanel extends HTMLElement {
   }
 
   async act(payload) {
-    await this.api("action", "POST", payload);
+    const result = await this.api("action", "POST", payload);
+    if (result?.dashboard && typeof result.dashboard === "object") {
+      this._state = result.dashboard;
+      this.syncDrafts();
+      this._error = "";
+      this.render();
+      return result;
+    }
     await this.load();
+    return result;
   }
 
   async actFast(payload, updater = null) {
-    await this.api("action", "POST", payload);
+    const result = await this.api("action", "POST", payload);
+    if (result?.dashboard && typeof result.dashboard === "object") {
+      this._state = result.dashboard;
+      this.syncDrafts();
+      this._error = "";
+      this.render();
+      return result;
+    }
     if (typeof updater === "function" && this._state) {
       updater(this._state);
       this.syncDrafts();
       this.render();
-      return;
+      return result;
     }
     await this.load();
+    return result;
   }
 
   updateDraft(key, value) {
@@ -277,12 +293,6 @@ class LocalListAssistPanel extends HTMLElement {
       this._configOpen = !this._configOpen;
       this.render();
     });
-    root.querySelectorAll(".tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        this._view = btn.dataset.view || "list";
-        this.render();
-      });
-    });
     root.querySelector("#clearCompletedBtn")?.addEventListener("click", async () => {
       await this.actFast({ action: "clear_completed" }, (state) => {
         state.completed = [];
@@ -303,6 +313,10 @@ class LocalListAssistPanel extends HTMLElement {
     });
     root.querySelector("#installVoiceBtn")?.addEventListener("click", async () => {
       await this.act({ action: "install_voice_sentences", language: "en" });
+    });
+    root.querySelector("#activityToggleBtn")?.addEventListener("click", () => {
+      this._view = this._view === "activity" ? "list" : "activity";
+      this.render();
     });
     root.querySelector("#dupAddBtn")?.addEventListener("click", async () => {
       await this.act({
@@ -548,6 +562,7 @@ class LocalListAssistPanel extends HTMLElement {
             <div class="row">
               <button id="saveSettingsBtn" class="btn primary">Save Settings</button>
               <button id="installVoiceBtn" class="btn">Install Voice Phrases</button>
+              <button id="activityToggleBtn" class="btn">${this._view === "activity" ? "Back to List" : "Recent Activity"}</button>
             </div>
             <details class="advanced-box">
               <summary>Advanced</summary>
@@ -642,9 +657,6 @@ class LocalListAssistPanel extends HTMLElement {
         .mobile-bar { display:flex; align-items:center; gap:10px; margin-bottom: 12px; }
         .mobile-title { font-size:14px; font-weight:700; color:#9fb4ca; letter-spacing:0.04em; text-transform:uppercase; }
         .icon-btn { width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; font-size:20px; padding:0; }
-        .tabs { display:flex; gap:8px; margin-top:14px; }
-        .tab-btn { background:#122132; border:1px solid #284766; color:#b9cde1; border-radius:999px; padding:10px 14px; cursor:pointer; }
-        .tab-btn.active { background:color-mix(in srgb, var(--accent) 32%, #122132); border-color:color-mix(in srgb, var(--accent) 65%, #284766); color:#fff; }
         .list-chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
         .list-chip { border:1px solid color-mix(in srgb, var(--chip-color) 60%, #284766); background:color-mix(in srgb, var(--chip-color) 20%, #122132); color:#fff; border-radius:999px; padding:8px 12px; cursor:pointer; transition:transform 140ms ease, border-color 140ms ease, background 140ms ease; }
         .list-chip.active { box-shadow:0 0 0 1px rgba(255,255,255,0.12) inset; }
@@ -671,10 +683,6 @@ class LocalListAssistPanel extends HTMLElement {
           <div class="hero-title">${this.esc(activeListName)}</div>
           <div class="sub">${multilist ? "Switch lists from the chips below." : "Local List Assist"}</div>
           ${multilist ? `<div class="list-chip-row">${listChips}</div>` : ""}
-          <div class="tabs">
-            <button class="tab-btn ${this._view === "list" ? "active" : ""}" data-view="list">List</button>
-            <button class="tab-btn ${this._view === "activity" ? "active" : ""}" data-view="activity">Recent Activity</button>
-          </div>
           <div class="row">
             <input id="quickAdd" data-draft="quickAdd" class="input" placeholder="Add item" value="${this.esc(this._drafts.quickAdd || "")}" />
             <button id="addBtn" class="btn primary">Add</button>

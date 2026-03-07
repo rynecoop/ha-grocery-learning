@@ -2088,7 +2088,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             archived_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Archived list", archived_name, archived_name, "typed")
-            return {"ok": True}
+            return {"ok": True, "dashboard": _internal_dashboard_payload()}
 
         if action == "restore_archived_list":
             if not multilist_mode:
@@ -2102,7 +2102,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             restored_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Restored archived list", restored_name, restored_name, "typed")
-            return {"ok": True}
+            return {"ok": True, "dashboard": _internal_dashboard_payload()}
 
         if action == "delete_archived_list":
             if not multilist_mode:

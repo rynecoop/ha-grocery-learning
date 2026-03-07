@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.7
+- Moved the Recent Activity toggle into Configure so it no longer takes space in the header.
+- Added richer archive/restore action responses so the panel can swap to the updated dashboard state without a second reload.
+
 ## 0.12.6
 - Removed the redundant list dropdown from the header and made the color-coded chips the single list switcher.
 - Cleaned up the hero/header copy so the active list is clearer and the top of the app reads less cluttered.
