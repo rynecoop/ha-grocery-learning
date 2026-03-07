@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.24
+- Fixed voice intake handling for `todo.add_item` calls that include list name fields but no explicit entity target.
+- Added name-based voice routing inputs (`name` / `list_name`) so spoken target list names are preserved for internal routing.
+- Hardened bridge-source removal and voice intake routing with exception handling to prevent Assist from returning generic errors.
+
 ## 0.5.23
 - Fixed voice-target routing to resolve internal list by both source bridge entity and source list friendly name.
 - Added safe voice fallback: unresolved voice targets now route to default Grocery list instead of the currently active list.

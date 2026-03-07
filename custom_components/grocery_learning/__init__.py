@@ -1088,38 +1088,41 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not list_entity or hass.states.get(list_entity) is None:
             return
         needle = _normalize_term(item_summary)
-        for attempt in range(4):
-            response = await hass.services.async_call(
-                "todo",
-                "get_items",
-                {"status": "needs_action"},
-                target={"entity_id": list_entity},
-                blocking=True,
-                return_response=True,
-            )
-            resp = response.get(list_entity, response) if isinstance(response, dict) else {}
-            items = resp.get("items", []) if isinstance(resp, dict) else []
-            match = next(
-                (
-                    i
-                    for i in items
-                    if _normalize_term(str(i.get("summary", "")).strip()) == needle
-                ),
-                None,
-            )
-            if match:
-                remove_id = str(match.get("uid", "")).strip() or str(match.get("summary", "")).strip()
-                if remove_id:
-                    await hass.services.async_call(
-                        "todo",
-                        "remove_item",
-                        {"item": remove_id},
-                        target={"entity_id": list_entity},
-                        blocking=True,
-                    )
-                return
-            if attempt < 3:
-                await asyncio.sleep(0.25)
+        try:
+            for attempt in range(4):
+                response = await hass.services.async_call(
+                    "todo",
+                    "get_items",
+                    {"status": "needs_action"},
+                    target={"entity_id": list_entity},
+                    blocking=True,
+                    return_response=True,
+                )
+                resp = response.get(list_entity, response) if isinstance(response, dict) else {}
+                items = resp.get("items", []) if isinstance(resp, dict) else []
+                match = next(
+                    (
+                        i
+                        for i in items
+                        if _normalize_term(str(i.get("summary", "")).strip()) == needle
+                    ),
+                    None,
+                )
+                if match:
+                    remove_id = str(match.get("uid", "")).strip() or str(match.get("summary", "")).strip()
+                    if remove_id:
+                        await hass.services.async_call(
+                            "todo",
+                            "remove_item",
+                            {"item": remove_id},
+                            target={"entity_id": list_entity},
+                            blocking=True,
+                        )
+                    return
+                if attempt < 3:
+                    await asyncio.sleep(0.25)
+        except Exception as err:  # pragma: no cover
+            _LOGGER.debug("Ignoring bridge source removal failure for %s: %s", list_entity, err)
 
     def _display_name_from_user(user: Any) -> str:
         if user is None:
@@ -3024,8 +3027,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         service_name = str(event.data.get("service", "")).strip()
         list_id = _extract_entity_id(event.data, data_event)
-        if not list_id:
-            return
+        source_ctx = _source_from_event_context(event.context)
+        source_list_name = str(data_event.get("name", "")).strip()
+        if not source_list_name:
+            source_list_name = str(data_event.get("list_name", "")).strip()
+        if not source_list_name and list_id:
+            list_state = hass.states.get(list_id)
+            source_list_name = str(list_state.attributes.get("friendly_name", "")).strip() if list_state is not None else ""
         inbox_entity = _entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")
         category_lists = [_target_list_for_category(category) for category in data.get("categories", list(DEFAULT_CATEGORIES))]
         tracked_lists = category_lists + [_target_list_for_category("other")]
@@ -3049,34 +3057,45 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             item_text = str(data_event.get("item", "")).strip()
             if not item_text:
                 return
-            list_state = hass.states.get(list_id)
-            list_name = str(list_state.attributes.get("friendly_name", "")).strip() if list_state is not None else ""
-            is_internal_voice_target = list_id in internal_voice_lists
+            is_internal_voice_target = bool(list_id and list_id in internal_voice_lists)
             if not is_internal_voice_target and not _entry_value(entry, CONF_AUTO_ROUTE_INBOX, True):
                 return
-            is_intake_list = is_internal_voice_target or _is_voice_intake_list(list_id, inbox_entity, tracked_lists)
+            is_intake_list = False
+            if is_internal_voice_target:
+                is_intake_list = True
+            elif list_id:
+                is_intake_list = _is_voice_intake_list(list_id, inbox_entity, tracked_lists)
+            elif multilist_enabled and source_ctx == "voice_assistant" and source_list_name:
+                is_intake_list = True
+            elif multilist_enabled and source_ctx == "voice_assistant":
+                is_intake_list = True
             if not is_intake_list:
                 return
-            source_label = "voice_assistant"
-            await hass.services.async_call(
-                DOMAIN,
-                SERVICE_ROUTE_ITEM,
-                {
-                    "item": item_text,
-                    "source_list": list_id,
-                    "source_list_name": list_name,
-                    "remove_from_source": bool(is_internal_voice_target),
-                    "review_on_other": True,
-                    "allow_duplicate": True,
-                    "interactive_duplicate": False,
-                    "source": source_label,
-                },
-                blocking=True,
-                context=event.context,
-            )
+            source_label = "voice_assistant" if source_ctx == "voice_assistant" else source_ctx
+            try:
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_ROUTE_ITEM,
+                    {
+                        "item": item_text,
+                        "source_list": list_id,
+                        "source_list_name": source_list_name,
+                        "remove_from_source": bool(is_internal_voice_target),
+                        "review_on_other": True,
+                        "allow_duplicate": True,
+                        "interactive_duplicate": False,
+                        "source": source_label,
+                    },
+                    blocking=True,
+                    context=event.context,
+                )
+            except Exception as err:  # pragma: no cover
+                _LOGGER.exception("Failed routing todo.add_item event item=%s list_id=%s list_name=%s: %s", item_text, list_id, source_list_name, err)
             return
 
         if service_name != "update_item":
+            return
+        if not list_id:
             return
 
         item_ref = str(data_event.get("item", "")).strip()
