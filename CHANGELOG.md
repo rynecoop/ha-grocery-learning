@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+- Replaced the sidebar iframe registration with a real Home Assistant custom panel backed by a module-loaded web component.
+- Added an internal `add_to_list` service for future Assist/automation ingestion that does not depend on Home Assistant `todo` entities.
+- Added a persistent Recent Activity feed and Debug Mode to improve traceability and troubleshooting.
+- Kept duplicate-review, recategorize, complete/restore, clear-completed, and multi-list management inside the new panel.
+
 ## 0.6.0
 - Added a first-class internal `add_to_list` service so future Assist/automation paths can add directly into Local List Assist storage without depending on Home Assistant `todo` entities.
 - Added a persistent Recent Activity feed in the app showing item adds, completions, restores, category changes, list operations, and completed-list clearing.

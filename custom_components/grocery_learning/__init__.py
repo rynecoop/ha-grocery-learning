@@ -7,6 +7,7 @@ import logging
 import re
 import asyncio
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -14,6 +15,8 @@ import voluptuous as vol
 from aiohttp import web
 from homeassistant.components.frontend import async_register_built_in_panel
 from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.panel_custom import async_register_panel
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import Context, HomeAssistant, ServiceCall
@@ -3013,15 +3016,21 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         data["views_registered"] = True
 
     if not data.get("panel_registered"):
-        async_register_built_in_panel(
+        panel_dir = Path(__file__).resolve().parent / "frontend"
+        if not data.get("panel_assets_registered"):
+            await hass.http.async_register_static_paths(
+                [StaticPathConfig("/grocery_learning-panel", str(panel_dir), False)]
+            )
+            data["panel_assets_registered"] = True
+        await async_register_panel(
             hass,
-            "iframe",
             frontend_url_path="grocery-app",
+            webcomponent_name="local-list-assist-panel",
             sidebar_title="Local List Assist",
             sidebar_icon="mdi:cart-variant",
-            config={"url": "/api/grocery_learning/app"},
+            module_url="/grocery_learning-panel/local-list-assist-panel.js",
             require_admin=False,
-            update=True,
+            config={"title": "Local List Assist"},
         )
         data["panel_registered"] = True
 
