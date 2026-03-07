@@ -1,3 +1,5 @@
+import { categoryDisplay as displayCategory, groupTitle as deriveGroupTitle, moveItemToCompleted as applyMoveItemToCompleted, recategorizeItemLocal as applyRecategorizeItemLocal, switchListLocal as applySwitchListLocal } from "./state-helpers.js";
+
 class LocalListAssistPanel extends HTMLElement {
   constructor() {
     super();
@@ -187,76 +189,23 @@ class LocalListAssistPanel extends HTMLElement {
   }
 
   categoryDisplay(category) {
-    const normalized = String(category || "").trim();
-    if (!normalized) return "Items";
-    if (normalized === "other") {
-      return (this._state?.categories || []).length > 1 ? "Other" : "Items";
-    }
-    return normalized
-      .split("_")
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
+    return displayCategory(category, this._state?.categories || []);
   }
 
   groupTitle(category) {
-    const existing = (this._state?.groups || []).find((group) => group.category === category);
-    return existing?.title || this.categoryDisplay(category);
+    return deriveGroupTitle(this._state, category);
   }
 
   moveItemToCompleted(itemRef) {
-    if (!this._state) return;
-    for (const group of this._state.groups || []) {
-      const index = (group.items || []).findIndex((item) => item.item_ref === itemRef);
-      if (index >= 0) {
-        const [item] = group.items.splice(index, 1);
-        this._state.completed = this._state.completed || [];
-        this._state.completed.unshift({
-          item_ref: item.item_ref,
-          summary: item.summary,
-          description: item.description,
-          list_entity: "internal:completed",
-        });
-        break;
-      }
-    }
+    applyMoveItemToCompleted(this._state, itemRef);
   }
 
   recategorizeItemLocal(itemRef, targetCategory) {
-    if (!this._state) return;
-    let movedItem = null;
-    for (const group of this._state.groups || []) {
-      const index = (group.items || []).findIndex((item) => item.item_ref === itemRef);
-      if (index >= 0) {
-        [movedItem] = group.items.splice(index, 1);
-        break;
-      }
-    }
-    if (!movedItem) return;
-    movedItem.category = targetCategory;
-    movedItem.category_display = this.categoryDisplay(targetCategory);
-    movedItem.list_entity = `internal:${targetCategory}`;
-    let targetGroup = (this._state.groups || []).find((group) => group.category === targetCategory);
-    if (!targetGroup) {
-      targetGroup = { category: targetCategory, title: this.groupTitle(targetCategory), items: [] };
-      this._state.groups = this._state.groups || [];
-      this._state.groups.push(targetGroup);
-    }
-    targetGroup.items = targetGroup.items || [];
-    targetGroup.items.unshift(movedItem);
+    applyRecategorizeItemLocal(this._state, itemRef, targetCategory);
   }
 
   switchListLocal(listId) {
-    if (!this._state) return false;
-    const nextList = (this._state.lists || []).find((list) => list.id === listId);
-    if (!nextList) return false;
-    for (const list of this._state.lists || []) {
-      list.active = list.id === listId;
-    }
-    this._state.system = this._state.system || {};
-    this._state.system.active_list_id = nextList.id;
-    this._state.system.active_list_name = nextList.name;
-    this._state.system.active_list_color = nextList.color || "#2c78ba";
-    return true;
+    return applySwitchListLocal(this._state, listId);
   }
 
   itemMarkup(item, categories) {

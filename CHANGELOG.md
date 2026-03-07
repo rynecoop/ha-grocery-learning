@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.3
+- Extracted panel-side local state mutations into a dedicated frontend helper module and added regression tests for complete, recategorize, list switch, and label behavior.
+- Added Node-based frontend helper validation to CI so the mobile/input stability fixes are covered alongside backend tests.
+
 ## 0.12.2
 - Extracted archive, restore, and delete-archived-list mutations into a pure helper module and added regression tests around those flows.
 - Tightened backend validation for archive lifecycle behavior so list-management changes are safer to refactor.
