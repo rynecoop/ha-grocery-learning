@@ -810,6 +810,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 continue
             voice_entity = str(list_obj.get("voice_entity", _internal_voice_bridge_entity(str(list_id)))).strip()
             list_obj["voice_entity"] = voice_entity or _internal_voice_bridge_entity(str(list_id))
+            alias_entities = [
+                str(candidate).strip()
+                for candidate in list_obj.get("voice_alias_entities", [])
+                if isinstance(candidate, str) and str(candidate).strip()
+            ]
+            list_obj["voice_alias_entities"] = alias_entities
         model["active_list_id"] = active_list_id if active_list_id in lists else "default"
 
     def _active_internal_list() -> tuple[str, dict[str, Any]]:
@@ -829,6 +835,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     def _internal_voice_bridge_entity(list_id: str) -> str:
         return f"todo.lla_{_normalize_list_id(list_id)}"
 
+    def _internal_voice_alias_entity(list_id: str) -> str:
+        return f"todo.lla_alias_{_normalize_list_id(list_id)}"
+
+    def _voice_bridge_title(name: str) -> str:
+        clean = str(name).strip() or "List"
+        normalized = _normalize_term(clean)
+        if normalized.endswith(" list"):
+            return clean
+        return f"{clean} list"
+
     def _internal_list_by_id(list_id: str) -> tuple[str, dict[str, Any]]:
         _ensure_multilist_model()
         model = hass.data[DOMAIN]["multilist"]
@@ -840,6 +856,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         return _active_internal_list()
 
     def _internal_list_id_from_voice_entity(entity_id: str) -> str:
+        if not entity_id:
+            return ""
         _ensure_multilist_model()
         model = hass.data[DOMAIN]["multilist"]
         lists = model.get("lists", {})
@@ -847,7 +865,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if not isinstance(list_obj, dict):
                 continue
             voice_entity = str(list_obj.get("voice_entity", _internal_voice_bridge_entity(str(list_id)))).strip()
-            if entity_id == voice_entity:
+            alias_entity = _internal_voice_alias_entity(str(list_id))
+            alias_entities = [
+                str(candidate).strip()
+                for candidate in list_obj.get("voice_alias_entities", [])
+                if isinstance(candidate, str) and str(candidate).strip()
+            ]
+            if entity_id == voice_entity or entity_id == alias_entity or entity_id in alias_entities:
                 return str(list_id)
         return ""
 
@@ -1675,11 +1699,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             lists[list_id] = {
                 "name": name,
                 "voice_entity": _internal_voice_bridge_entity(list_id),
+                "voice_alias_entities": [],
                 "categories": base_categories + ["other"],
                 "items": [],
             }
             model["active_list_id"] = list_id
-            await _ensure_local_todo_list(_internal_voice_bridge_entity(list_id), name)
+            resolved_voice = await _ensure_local_todo_list(_internal_voice_bridge_entity(list_id), name)
+            if resolved_voice:
+                lists[list_id]["voice_entity"] = resolved_voice
+            alias_title = _voice_bridge_title(name)
+            if alias_title.strip().lower() != name.strip().lower():
+                resolved_alias = await _ensure_local_todo_list(_internal_voice_alias_entity(list_id), alias_title)
+                if resolved_alias and resolved_alias != lists[list_id]["voice_entity"]:
+                    lists[list_id]["voice_alias_entities"] = [resolved_alias]
             await _save()
             return {"ok": True}
 
@@ -2046,9 +2078,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await _set_helper_if_exists(REVIEW_SOURCE_HELPER, "")
         _update_review_status_entities(pending=False)
 
-    async def _ensure_local_todo_list(entity_id: str, title: str) -> None:
+    def _find_todo_entity_by_friendly_name(title: str) -> str:
+        expected = str(title).strip().lower()
+        if not expected:
+            return ""
+        for state_obj in hass.states.async_all("todo"):
+            friendly = str(state_obj.attributes.get("friendly_name", "")).strip().lower()
+            if friendly == expected:
+                return str(state_obj.entity_id).strip()
+        return ""
+
+    async def _ensure_local_todo_list(entity_id: str, title: str) -> str:
         if hass.states.get(entity_id) is not None:
-            return
+            return entity_id
 
         slug = entity_id.split(".", 1)[1] if "." in entity_id else entity_id
         payloads = (
@@ -2094,7 +2136,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input=next_input)
 
             if hass.states.get(entity_id) is not None:
-                return
+                return entity_id
+            matched = _find_todo_entity_by_friendly_name(title)
+            if matched:
+                return matched
+        return ""
 
     async def _ensure_required_lists(entry: ConfigEntry | None) -> None:
         if not bool(_entry_value(entry, CONF_AUTO_PROVISION, True)):
@@ -2118,6 +2164,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         _ensure_multilist_model()
         model = hass.data[DOMAIN]["multilist"]
         lists = model.get("lists", {})
+        changed = False
         for list_id, list_obj in lists.items():
             if not isinstance(list_obj, dict):
                 continue
@@ -2125,8 +2172,30 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             voice_entity = str(list_obj.get("voice_entity", _internal_voice_bridge_entity(str(list_id)))).strip()
             if not voice_entity:
                 voice_entity = _internal_voice_bridge_entity(str(list_id))
+            resolved_voice = await _ensure_local_todo_list(voice_entity, name)
+            if resolved_voice:
+                voice_entity = resolved_voice
+            if str(list_obj.get("voice_entity", "")).strip() != voice_entity:
                 list_obj["voice_entity"] = voice_entity
-            await _ensure_local_todo_list(voice_entity, name)
+                changed = True
+            alias_title = _voice_bridge_title(name)
+            if alias_title.strip().lower() != name.strip().lower():
+                alias_entity = _internal_voice_alias_entity(str(list_id))
+                resolved_alias = await _ensure_local_todo_list(alias_entity, alias_title)
+                alias_entities = [
+                    str(candidate).strip()
+                    for candidate in list_obj.get("voice_alias_entities", [])
+                    if isinstance(candidate, str) and str(candidate).strip()
+                ]
+                if resolved_alias and resolved_alias != voice_entity and resolved_alias not in alias_entities:
+                    alias_entities.append(resolved_alias)
+                if alias_entity not in alias_entities and hass.states.get(alias_entity) is not None:
+                    alias_entities.append(alias_entity)
+                if alias_entities != list_obj.get("voice_alias_entities", []):
+                    list_obj["voice_alias_entities"] = alias_entities
+                    changed = True
+        if changed:
+            await _save()
 
     async def _ensure_helper_entity(
         helper_domain: str,
@@ -2941,6 +3010,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 voice_entity = str(list_obj.get("voice_entity", f"todo.lla_{_normalize_category(str(list_id))}")).strip()
                 if voice_entity:
                     internal_voice_lists.append(voice_entity)
+                    internal_voice_lists.append(_internal_voice_alias_entity(str(list_id)))
+                for alias_entity in list_obj.get("voice_alias_entities", []):
+                    if isinstance(alias_entity, str) and alias_entity.strip():
+                        internal_voice_lists.append(alias_entity.strip())
 
         if service_name == "add_item":
             item_text = str(data_event.get("item", "")).strip()

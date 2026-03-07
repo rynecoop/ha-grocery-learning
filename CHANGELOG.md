@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.22
+- Fixed long-term voice bridge reliability by storing and using the actual created bridge entity IDs per list instead of assuming static IDs.
+- Added persisted `voice_alias_entities` tracking so all resolved alias bridge entities route back to the correct internal list.
+- Improved bridge provisioning to recover existing `todo.*` lists by friendly name when creation returns a different entity ID.
+
+## 0.5.21
+- Added voice alias bridge entities (`todo.lla_alias_<list_id>`) to improve Assist matching for phrases like "`<name> list`".
+- Voice routing now accepts both primary and alias bridge entities for each internal list.
+- Internal list bridge provisioning now creates voice-friendly alias names automatically where needed.
+
 ## 0.5.20
 - Updated internal-list voice bridges to use the actual list name as the bridge todo title for better Assist matching.
 - Made bridge routing independent from `auto_route_inbox` so voice targeting of app-created lists continues to work even if inbox auto-route is disabled.
