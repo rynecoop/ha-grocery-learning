@@ -19,6 +19,7 @@ class LocalListAssistPanel extends HTMLElement {
       activeListColor: "",
     };
     this._focusTarget = "";
+    this._openEditorKey = "";
   }
 
   set hass(hass) {
@@ -121,7 +122,7 @@ class LocalListAssistPanel extends HTMLElement {
 
   restoreFocus() {
     if (!this._focusTarget) return;
-    const element = this.shadowRoot?.querySelector(`#${this._focusTarget}`);
+    const element = this.shadowRoot?.getElementById(this._focusTarget);
     if (!element) return;
     requestAnimationFrame(() => {
       try {
@@ -163,12 +164,19 @@ class LocalListAssistPanel extends HTMLElement {
     }[char]));
   }
 
+  editorKey(item) {
+    return `${item.list_entity || ""}::${item.item_ref || ""}`;
+  }
+
   itemMarkup(item, categories) {
+    const editorKey = this.editorKey(item);
+    const selectedCategory = this._drafts[`category:${editorKey}`] || item.category || "";
+    const editorOpen = this._openEditorKey === editorKey;
     const options = categories
-      .map((cat) => `<option value="${this.esc(cat)}">${this.esc(cat)}</option>`)
+      .map((cat) => `<option value="${this.esc(cat)}" ${cat === selectedCategory ? "selected" : ""}>${this.esc(cat)}</option>`)
       .join("");
     return `
-      <div class="item" data-list-entity="${this.esc(item.list_entity)}" data-item-ref="${this.esc(item.item_ref)}">
+      <div class="item" data-editor-key="${this.esc(editorKey)}" data-list-entity="${this.esc(item.list_entity)}" data-item-ref="${this.esc(item.item_ref)}">
         <div class="item-main">
           <div class="item-summary">
             <input class="complete-toggle" type="checkbox" />
@@ -177,8 +185,8 @@ class LocalListAssistPanel extends HTMLElement {
           <span class="pill">${this.esc(item.category_display)}</span>
         </div>
         <div class="small">${this.esc(item.description || "")}</div>
-        <div class="editor">
-          <select class="select cat-select">${options}</select>
+        <div class="editor ${editorOpen ? "open" : ""}">
+          <select id="editor-${this.esc(editorKey)}" class="select cat-select" data-draft="category:${this.esc(editorKey)}">${options}</select>
           <button class="btn move-btn">Move</button>
         </div>
       </div>
@@ -347,21 +355,28 @@ class LocalListAssistPanel extends HTMLElement {
     });
 
     root.querySelectorAll(".item").forEach((row) => {
+      const editorKey = row.dataset.editorKey || "";
       const listEntity = row.dataset.listEntity || "";
       const itemRef = row.dataset.itemRef || "";
       const editor = row.querySelector(".editor");
       row.querySelector(".item-main")?.addEventListener("click", () => {
-        editor?.classList.toggle("open");
+        const nextOpen = this._openEditorKey === editorKey ? "" : editorKey;
+        this._openEditorKey = nextOpen;
+        this._focusTarget = nextOpen ? `editor-${editorKey}` : "";
+        this.render();
       });
       row.querySelector(".complete-toggle")?.addEventListener("click", (ev) => ev.stopPropagation());
       row.querySelector(".complete-toggle")?.addEventListener("change", async (ev) => {
         if (ev.target.checked) {
+          this._openEditorKey = "";
           await this.act({ action: "set_status", list_entity: listEntity, item: itemRef, status: "completed" });
         }
       });
       row.querySelector(".move-btn")?.addEventListener("click", async () => {
-        const target = row.querySelector(".cat-select")?.value || "";
+        const target = this._drafts[`category:${editorKey}`] || row.querySelector(".cat-select")?.value || "";
         if (!target) return;
+        this._openEditorKey = "";
+        this._focusTarget = "";
         await this.act({ action: "recategorize", from_list: listEntity, item: itemRef, target_category: target, learn: true });
       });
       row.querySelector(".cat-select")?.addEventListener("click", (ev) => ev.stopPropagation());

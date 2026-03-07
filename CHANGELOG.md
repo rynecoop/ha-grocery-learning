@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.5
+- Fixed inline category editors so they stay open across rerenders and keep the selected category while you are changing an item.
+- Opening an item now focuses the category selector directly instead of collapsing the editor during background UI updates.
+
 ## 0.10.4
 - Fixed the quick-add input so it keeps local draft state and restores focus after rerenders, which keeps the mobile keyboard open while typing.
 
