@@ -923,9 +923,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         catalog.sort(key=lambda entry: entry["name"].lower())
         return catalog
 
-    def _ordered_list_ids() -> list[str]:
-        _ensure_multilist_model()
-        model = hass.data[DOMAIN]["multilist"]
+    def _normalize_list_order(model: dict[str, Any]) -> list[str]:
         lists = model.get("lists", {})
         raw_order = model.get("list_order", [])
         ordered: list[str] = []
@@ -943,6 +941,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         ordered.insert(0, "default")
         model["list_order"] = ordered
         return ordered
+
+    def _ordered_list_ids() -> list[str]:
+        model = hass.data[DOMAIN].get("multilist", {})
+        if not isinstance(model, dict):
+            model = {}
+            hass.data[DOMAIN]["multilist"] = model
+        return _normalize_list_order(model)
 
     def _active_categories() -> list[str]:
         return list(hass.data[DOMAIN].get("categories", list(DEFAULT_CATEGORIES)))
@@ -1008,7 +1013,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 continue
             list_obj["voice_aliases"] = _voice_aliases_from_input(list_obj.get("voice_aliases", []))
         model["active_list_id"] = active_list_id if active_list_id in lists else "default"
-        _ordered_list_ids()
+        _normalize_list_order(model)
 
     def _active_internal_list() -> tuple[str, dict[str, Any]]:
         _ensure_multilist_model()

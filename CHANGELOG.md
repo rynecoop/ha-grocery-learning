@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.13.1
+- Fixed a recursion bug in the internal multi-list model normalization that could prevent the dashboard payload from building and stop the app from loading.
+
 ## 0.13.0
 - Added template-driven category autofill in the create-list form and exposed built-in list templates from the backend.
 - Added persistent list ordering with pin, move-left, and move-right controls for list chips.
