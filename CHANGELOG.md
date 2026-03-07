@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.1
+- Extracted voice list-name matching into a pure helper module and added regression tests for display-name, alias, and list-id matching.
+- Tightened release validation around voice alias behavior so custom-list voice routing changes are easier to verify safely.
+
 ## 0.12.0
 - Fixed archived-list persistence so archived lists reload with the same normalized structure as active lists.
 - Added a lightweight unit test suite for learned-term and multilist storage normalization, and wired it into CI.
