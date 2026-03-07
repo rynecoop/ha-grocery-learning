@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.13.3
+- Added render queuing in the native panel so active fields and inline editors stay open during background Home Assistant updates instead of collapsing mid-edit.
+
 ## 0.13.2
 - Removed the legacy beta toggle and old HA todo/inbox options from the integration options flow so Local List Assist stays on the supported internal multi-list mode.
 - Forced the runtime settings path to keep internal multi-list mode enabled even if stale clients or old options try to disable it.

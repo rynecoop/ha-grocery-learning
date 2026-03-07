@@ -33,6 +33,7 @@ class LocalListAssistPanel extends HTMLElement {
     };
     this._focusTarget = "";
     this._openEditorKey = "";
+    this._pendingRender = false;
   }
 
   set hass(hass) {
@@ -41,21 +42,18 @@ class LocalListAssistPanel extends HTMLElement {
     if (first) {
       this.load();
     } else {
-      if (this._focusTarget) {
-        return;
-      }
-      this.render();
+      this.requestRender();
     }
   }
 
   set panel(panel) {
     this._panel = panel;
-    this.render();
+    this.requestRender();
   }
 
   set narrow(narrow) {
     this._narrow = narrow;
-    this.render();
+    this.requestRender();
   }
 
   syncDrafts() {
@@ -123,7 +121,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._error = err.message || String(err);
     } finally {
       this._loading = false;
-      this.render();
+      this.requestRender();
     }
   }
 
@@ -133,7 +131,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._state = result.dashboard;
       this.syncDrafts();
       this._error = "";
-      this.render();
+      this.requestRender();
       return result;
     }
     await this.load();
@@ -152,7 +150,7 @@ class LocalListAssistPanel extends HTMLElement {
     if (typeof updater === "function" && this._state) {
       updater(this._state);
       this.syncDrafts();
-      this.render();
+      this.requestRender();
       return result;
     }
     await this.load();
@@ -161,6 +159,26 @@ class LocalListAssistPanel extends HTMLElement {
 
   updateDraft(key, value) {
     this._drafts[key] = value;
+  }
+
+  isInteractive() {
+    return Boolean(this._focusTarget || this._openEditorKey);
+  }
+
+  requestRender(force = false) {
+    if (!force && this.isInteractive()) {
+      this._pendingRender = true;
+      return;
+    }
+    this._pendingRender = false;
+    this.render();
+  }
+
+  flushPendingRender() {
+    if (this._pendingRender && !this.isInteractive()) {
+      this._pendingRender = false;
+      this.render();
+    }
   }
 
   rememberFocus(target) {
@@ -294,13 +312,14 @@ class LocalListAssistPanel extends HTMLElement {
           const active = this.shadowRoot?.activeElement;
           if (!active || active.id !== "quickAdd") {
             this._focusTarget = "";
+            this.flushPendingRender();
           }
         });
       }
     });
     root.querySelector("#configureBtn")?.addEventListener("click", () => {
       this._configOpen = !this._configOpen;
-      this.render();
+      this.requestRender(true);
     });
     root.querySelector("#clearCompletedBtn")?.addEventListener("click", async () => {
       await this.actFast({ action: "clear_completed" }, (state) => {
@@ -325,7 +344,7 @@ class LocalListAssistPanel extends HTMLElement {
     });
     root.querySelector("#activityToggleBtn")?.addEventListener("click", () => {
       this._view = this._view === "activity" ? "list" : "activity";
-      this.render();
+      this.requestRender(true);
     });
     root.querySelector("#dupAddBtn")?.addEventListener("click", async () => {
       await this.act({
@@ -446,6 +465,7 @@ class LocalListAssistPanel extends HTMLElement {
             const active = this.shadowRoot?.activeElement;
             if (!active || active.id !== input.id) {
               this._focusTarget = "";
+              this.flushPendingRender();
             }
           });
         }
@@ -461,7 +481,7 @@ class LocalListAssistPanel extends HTMLElement {
         const nextOpen = this._openEditorKey === editorKey ? "" : editorKey;
         this._openEditorKey = nextOpen;
         this._focusTarget = nextOpen ? `editor-${editorKey}` : "";
-        this.render();
+        this.requestRender(true);
       });
       row.querySelector(".complete-toggle")?.addEventListener("click", (ev) => ev.stopPropagation());
       row.querySelector(".complete-toggle")?.addEventListener("change", async (ev) => {
@@ -734,7 +754,6 @@ class LocalListAssistPanel extends HTMLElement {
         await this.actFast({ action: "switch_list", list_id: listId }, () => {
           this.switchListLocal(listId);
         });
-        await this.load();
       });
     });
     this.bindEvents();
