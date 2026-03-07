@@ -4,16 +4,12 @@
       "user": {
         "data": {
           "auto_dashboard": "Auto-create/update Grocery dashboards",
-          "auto_provision": "Auto-create missing grocery todo lists",
-          "auto_route_inbox": "Auto-route inbox items",
-          "inbox_entity": "Inbox todo entity",
           "categories": "Categories (comma or newline separated)",
           "notify_service": "Optional notify service (example: notify.mobile_app_phone)",
-          "experimental_multilist": "Enable experimental multi-list mode (beta)",
           "default_grocery_categories": "Use default grocery categories for new grocery/shopping lists"
         },
         "title": "Local List Assist",
-        "description": "Configure your grocery routing defaults."
+        "description": "Configure your internal list defaults."
       }
     },
     "error": {},
@@ -26,16 +22,12 @@
       "init": {
         "data": {
           "auto_dashboard": "Auto-create/update Grocery dashboards",
-          "auto_provision": "Auto-create missing grocery todo lists",
-          "auto_route_inbox": "Auto-route inbox items",
-          "inbox_entity": "Inbox todo entity",
           "categories": "Categories (comma or newline separated)",
           "notify_service": "Optional notify service (example: notify.mobile_app_phone)",
-          "experimental_multilist": "Enable experimental multi-list mode (beta)",
           "default_grocery_categories": "Use default grocery categories for new grocery/shopping lists"
         },
         "title": "Local List Assist Options",
-        "description": "Update grocery routing behavior."
+        "description": "Update internal list defaults."
       }
     }
   }

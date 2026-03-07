@@ -953,8 +953,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         return list(hass.data[DOMAIN].get("categories", list(DEFAULT_CATEGORIES)))
 
     def _multilist_enabled() -> bool:
-        entry = hass.data.get(DOMAIN, {}).get("entry")
-        return bool(_entry_value(entry, CONF_EXPERIMENTAL_MULTILIST, False))
+        return True
 
     def _ensure_multilist_model() -> None:
         model = hass.data[DOMAIN].setdefault("multilist", {})
@@ -1645,9 +1644,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "archived_lists": _archived_list_catalog(),
             "settings": {
                 "categories": default_categories,
-                "inbox_entity": str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip(),
-                "auto_route_inbox": bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True)),
-                "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
                 "experimental_multilist": True,
                 "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
                 "debug_mode": bool(_entry_value(active_entry, CONF_DEBUG_MODE, False)),
@@ -1746,10 +1742,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "archived_lists": [],
             "settings": {
                 "categories": categories,
-                "inbox_entity": inbox_entity,
-                "auto_route_inbox": bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True)),
-                "auto_provision": bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True)),
-                "experimental_multilist": bool(_entry_value(active_entry, CONF_EXPERIMENTAL_MULTILIST, False)),
+                "experimental_multilist": True,
                 "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
                 "debug_mode": bool(_entry_value(active_entry, CONF_DEBUG_MODE, False)),
             },
@@ -2394,7 +2387,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
             auto_route = bool(payload.get("auto_route_inbox", bool(_entry_value(active_entry, CONF_AUTO_ROUTE_INBOX, True))))
             auto_provision = bool(payload.get("auto_provision", bool(_entry_value(active_entry, CONF_AUTO_PROVISION, True))))
-            experimental_multilist = bool(payload.get("experimental_multilist", bool(_entry_value(active_entry, CONF_EXPERIMENTAL_MULTILIST, False))))
+            experimental_multilist = True
             default_grocery_categories = bool(
                 payload.get("default_grocery_categories", bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)))
             )
@@ -2424,14 +2417,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if isinstance(default_list, dict):
                 default_list["categories"] = categories + ["other"]
             await _save()
-            if experimental_multilist:
-                await _ensure_internal_voice_bridges()
-
-            if not experimental_multilist:
-                await _ensure_required_lists(active_entry)
-                await _ensure_required_helpers()
-                if bool(_entry_value(active_entry, CONF_AUTO_DASHBOARD, True)):
-                    await _ensure_dashboards(active_entry)
+            await _ensure_internal_voice_bridges()
             await _sync_helpers_internal()
             return {"ok": True, "dashboard": _dashboard_payload()}
 
@@ -3707,7 +3693,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         inbox_entity = _entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")
         category_lists = [_target_list_for_category(category) for category in data.get("categories", list(DEFAULT_CATEGORIES))]
         tracked_lists = category_lists + [_target_list_for_category("other")]
-        multilist_enabled = bool(_entry_value(entry, CONF_EXPERIMENTAL_MULTILIST, False))
+        multilist_enabled = _multilist_enabled()
         internal_voice_lists: list[str] = []
         if multilist_enabled:
             model = data.get("multilist", {})

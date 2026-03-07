@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.2
+- Removed the legacy beta toggle and old HA todo/inbox options from the integration options flow so Local List Assist stays on the supported internal multi-list mode.
+- Forced the runtime settings path to keep internal multi-list mode enabled even if stale clients or old options try to disable it.
+
 ## 0.13.1
 - Fixed a recursion bug in the internal multi-list model normalization that could prevent the dashboard payload from building and stop the app from loading.
 

@@ -26,12 +26,8 @@ from .const import (
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_AUTO_DASHBOARD, default=True): bool,
-        vol.Required(CONF_AUTO_PROVISION, default=True): bool,
-        vol.Required(CONF_AUTO_ROUTE_INBOX, default=True): bool,
-        vol.Required(CONF_INBOX_ENTITY, default="todo.grocery_inbox"): cv.string,
         vol.Required(CONF_CATEGORIES, default=",".join(DEFAULT_CATEGORIES)): cv.string,
         vol.Optional(CONF_NOTIFY_SERVICE, default=""): cv.string,
-        vol.Required(CONF_EXPERIMENTAL_MULTILIST, default=False): bool,
         vol.Required(CONF_DEFAULT_GROCERY_CATEGORIES, default=True): bool,
         vol.Required(CONF_DEBUG_MODE, default=False): bool,
     }
@@ -62,6 +58,10 @@ class GroceryLearningConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="single_instance_allowed")
         if user_input is not None:
             user_input[CONF_CATEGORIES] = _normalize_categories(user_input.get(CONF_CATEGORIES, ""))
+            user_input[CONF_EXPERIMENTAL_MULTILIST] = True
+            user_input[CONF_AUTO_PROVISION] = True
+            user_input[CONF_AUTO_ROUTE_INBOX] = True
+            user_input[CONF_INBOX_ENTITY] = "todo.grocery_inbox"
             return self.async_create_entry(title="Local List Assist", data=user_input)
         return self.async_show_form(step_id="user", data_schema=STEP_USER_DATA_SCHEMA)
 
@@ -82,23 +82,20 @@ class GroceryLearningOptionsFlow(config_entries.OptionsFlow):
             user_input[CONF_CATEGORIES] = _normalize_categories(user_input.get(CONF_CATEGORIES, ""))
             merged = dict(self._config_entry.options)
             merged.update(user_input)
+            merged[CONF_EXPERIMENTAL_MULTILIST] = True
+            merged[CONF_AUTO_PROVISION] = True
+            merged[CONF_AUTO_ROUTE_INBOX] = True
+            merged[CONF_INBOX_ENTITY] = "todo.grocery_inbox"
             return self.async_create_entry(data=merged)
 
         schema = vol.Schema(
             {
                 vol.Required(CONF_AUTO_DASHBOARD, default=current_data.get(CONF_AUTO_DASHBOARD, True)): bool,
-                vol.Required(CONF_AUTO_PROVISION, default=current_data.get(CONF_AUTO_PROVISION, True)): bool,
-                vol.Required(CONF_AUTO_ROUTE_INBOX, default=current_data.get(CONF_AUTO_ROUTE_INBOX, True)): bool,
-                vol.Required(CONF_INBOX_ENTITY, default=current_data.get(CONF_INBOX_ENTITY, "todo.grocery_inbox")): cv.string,
                 vol.Required(
                     CONF_CATEGORIES,
                     default=",".join(current_data.get(CONF_CATEGORIES, list(DEFAULT_CATEGORIES))),
                 ): cv.string,
                 vol.Optional(CONF_NOTIFY_SERVICE, default=current_data.get(CONF_NOTIFY_SERVICE, "")): cv.string,
-                vol.Required(
-                    CONF_EXPERIMENTAL_MULTILIST,
-                    default=bool(current_data.get(CONF_EXPERIMENTAL_MULTILIST, False)),
-                ): bool,
                 vol.Required(
                     CONF_DEFAULT_GROCERY_CATEGORIES,
                     default=bool(current_data.get(CONF_DEFAULT_GROCERY_CATEGORIES, True)),
