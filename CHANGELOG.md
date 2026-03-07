@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.8
+- Added direct dashboard responses for switch list, create list, rename list, delete archived list, clear completed, and save settings so more actions update without an extra reload.
+- Tightened the mobile presentation of completed and recent activity cards so long histories are easier to scan.
+
 ## 0.12.7
 - Moved the Recent Activity toggle into Configure so it no longer takes space in the header.
 - Added richer archive/restore action responses so the panel can swap to the updated dashboard state without a second reload.

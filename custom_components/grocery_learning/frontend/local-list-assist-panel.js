@@ -518,12 +518,12 @@ class LocalListAssistPanel extends HTMLElement {
     }
     const activity = (state?.activity || []).length
       ? state.activity
-          .map((entry) => `<div class="item"><strong>${this.esc(entry.title)}</strong><div class="small">${this.esc(entry.detail)}${entry.list_name ? ` · ${this.esc(entry.list_name)}` : ""}${entry.source ? ` · ${this.esc(entry.source)}` : ""}${entry.when ? ` · ${this.esc(entry.when)}` : ""}</div></div>`)
+          .map((entry) => `<div class="item activity-item"><strong>${this.esc(entry.title)}</strong><div class="small meta-line">${this.esc(entry.detail)}${entry.list_name ? ` | ${this.esc(entry.list_name)}` : ""}${entry.source ? ` | ${this.esc(entry.source)}` : ""}${entry.when ? ` | ${this.esc(entry.when)}` : ""}</div></div>`)
           .join("")
       : `<div class="empty">No recent activity.</div>`;
     const completed = (state?.completed || []).length
       ? state.completed
-          .map((item) => `<div class="item"><label><input class="completed-toggle" data-item-ref="${this.esc(item.item_ref)}" type="checkbox" checked /> <strong>${this.esc(item.summary)}</strong></label><div class="small">${this.esc(item.description || "")}</div></div>`)
+          .map((item) => `<div class="item completed-item"><label class="completed-row"><input class="completed-toggle" data-item-ref="${this.esc(item.item_ref)}" type="checkbox" checked /> <strong>${this.esc(item.summary)}</strong></label><div class="small meta-line">${this.esc(item.description || "")}</div></div>`)
           .join("")
       : `<div class="empty">No completed items.</div>`;
     const listChips = (state?.lists || [])
@@ -662,6 +662,9 @@ class LocalListAssistPanel extends HTMLElement {
         .list-chip.active { box-shadow:0 0 0 1px rgba(255,255,255,0.12) inset; }
         .list-chip:hover { transform:translateY(-1px); }
         .item { background:#0d1826; border:1px solid #1f3348; border-radius:16px; padding: 12px; margin-bottom: 10px; }
+        .activity-item, .completed-item { padding: 10px 12px; }
+        .completed-row { display:flex; gap:10px; align-items:flex-start; }
+        .meta-line { line-height:1.45; }
         .item-main { display:flex; justify-content:space-between; gap:10px; align-items:center; cursor:pointer; }
         .item-summary { display:flex; align-items:center; gap:10px; min-width:0; }
         .editor { display:none; gap:10px; margin-top:10px; }
@@ -673,6 +676,9 @@ class LocalListAssistPanel extends HTMLElement {
           .wrap { padding: 14px; }
           .hero, .section { border-radius: 20px; padding: 16px; }
           .hero-title { font-size: 24px; }
+          .row { gap:8px; }
+          .activity-item, .completed-item { padding: 10px; margin-bottom: 8px; }
+          .meta-line { font-size: 13px; }
           .item-main { align-items:flex-start; }
           .pill { margin-top: 2px; }
         }
@@ -710,3 +716,5 @@ class LocalListAssistPanel extends HTMLElement {
 }
 
 customElements.define("local-list-assist-panel", LocalListAssistPanel);
+
+

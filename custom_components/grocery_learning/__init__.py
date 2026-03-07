@@ -1977,7 +1977,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     lists[list_id]["voice_alias_entities"] = [resolved_alias]
             await _save()
             await _record_activity("List created", name, name, "service_call")
-            return {"ok": True}
+            return {"ok": True, "dashboard": _internal_dashboard_payload()}
 
         if action == "save_list_categories":
             if not multilist_mode:
@@ -2032,7 +2032,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             model["active_list_id"] = list_id
             await _save()
             await _record_activity("Switched list", str(lists[list_id].get("name", list_id)).strip(), str(lists[list_id].get("name", list_id)).strip(), "typed")
-            return {"ok": True}
+            return {"ok": True, "dashboard": _internal_dashboard_payload()}
 
         if action == "rename_list":
             if not multilist_mode:
@@ -2051,7 +2051,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             list_obj["name"] = new_name
             await _save()
             await _record_activity("Renamed list", f"{previous_name} -> {new_name}", new_name, "typed")
-            return {"ok": True}
+            return {"ok": True, "dashboard": _internal_dashboard_payload()}
 
         if action == "set_list_color":
             if not multilist_mode:
@@ -2115,7 +2115,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             archived_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Deleted archived list", archived_name, archived_name, "typed")
-            return {"ok": True}
+            return {"ok": True, "dashboard": _internal_dashboard_payload()}
 
         if action == "set_status":
             list_entity = str(payload.get("list_entity", "")).strip()
@@ -2232,7 +2232,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
                     "typed",
                 )
-                return {"ok": True}
+                return {"ok": True, "dashboard": _internal_dashboard_payload()}
             completed_items = await _list_items(COMPLETED_LIST_ENTITY, "completed")
             removed_count = 0
             for item in completed_items:
@@ -2248,7 +2248,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 )
                 removed_count += 1
             await _record_activity("Cleared completed", f"Removed {removed_count} completed item{'s' if removed_count != 1 else ''}", "Grocery Completed", "typed")
-            return {"ok": True}
+            return {"ok": True, "dashboard": _dashboard_payload()}
 
         if action == "repair_system":
             if multilist_mode:
@@ -2326,7 +2326,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 if bool(_entry_value(active_entry, CONF_AUTO_DASHBOARD, True)):
                     await _ensure_dashboards(active_entry)
             await _sync_helpers_internal()
-            return {"ok": True}
+            return {"ok": True, "dashboard": _dashboard_payload()}
 
         if action == "apply_review":
             if multilist_mode:
