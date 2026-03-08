@@ -1486,6 +1486,25 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         }
         await _save()
 
+    def _move_item_meta_entry(
+        old_list_entity: str,
+        old_summary: str,
+        new_list_entity: str,
+        new_summary: str,
+    ) -> None:
+        old_normalized = _normalize_term(old_summary)
+        new_normalized = _normalize_term(new_summary)
+        if not old_normalized or not new_normalized:
+            return
+        old_key = _item_meta_key(old_list_entity, old_normalized)
+        new_key = _item_meta_key(new_list_entity, new_normalized)
+        if old_key == new_key:
+            return
+        meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].setdefault("item_meta", {})
+        existing = meta_map.pop(old_key, None)
+        if existing:
+            meta_map[new_key] = existing
+
     async def _find_open_duplicate(list_entity: str, item_summary: str) -> dict[str, Any] | None:
         if not list_entity or hass.states.get(list_entity) is None:
             return None
@@ -2243,6 +2262,96 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     target={"entity_id": list_entity},
                     blocking=True,
                 )
+            return {"ok": True}
+
+        if action == "update_item":
+            list_entity = str(payload.get("list_entity", "")).strip()
+            item_ref = str(payload.get("item", "")).strip()
+            next_summary = str(payload.get("summary", "")).strip()
+            target_category = _normalize_category(str(payload.get("target_category", "")).strip())
+            learn = bool(payload.get("learn", True))
+            categories = _active_categories()
+            if not list_entity or not item_ref or not next_summary:
+                return {"ok": False, "error": "missing_item_reference"}
+            if multilist_mode:
+                _, list_obj = _active_internal_list()
+                list_categories = [c for c in list_obj.get("categories", []) if c != "other"]
+                if target_category not in list_categories and target_category != "other":
+                    target_category = "other"
+                items: list[dict[str, Any]] = list_obj.setdefault("items", [])
+                found_internal = _internal_find_item(items, item_ref)
+                if found_internal is None:
+                    return {"ok": False, "error": "item_not_found"}
+                old_summary = str(found_internal.get("summary", "")).strip()
+                old_category = str(found_internal.get("category", "other")).strip() or "other"
+                found_internal["summary"] = next_summary
+                if target_category:
+                    found_internal["category"] = target_category
+                _move_item_meta_entry(
+                    _internal_list_entity(old_category),
+                    old_summary,
+                    _internal_list_entity(str(found_internal.get("category", "other")).strip() or "other"),
+                    next_summary,
+                )
+                if learn and target_category in categories:
+                    norm = _normalize_term(next_summary)
+                    terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
+                    existing = set(terms_obj.data.get(target_category, []))
+                    if norm and norm not in existing:
+                        terms_obj.data.setdefault(target_category, []).append(norm)
+                await _save()
+                await _record_activity(
+                    "Item updated",
+                    f"{old_summary} -> {next_summary}" if old_summary != next_summary else next_summary,
+                    str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
+                    "typed",
+                )
+                return {"ok": True}
+            found = await _resolve_item_ref(list_entity, item_ref)
+            if found is None:
+                return {"ok": False, "error": "item_not_found"}
+            old_summary = str(found.get("summary", "")).strip()
+            description = str(found.get("description", "")).strip()
+            status = str(found.get("status", "needs_action")).strip().lower() or "needs_action"
+            remove_id = str(found.get("uid", "")).strip() or old_summary
+            target_list = list_entity
+            if target_category:
+                if target_category not in categories and target_category != "other":
+                    target_category = "other"
+                target_list = _target_list_for_category(target_category)
+            await hass.services.async_call(
+                "todo",
+                "add_item",
+                {"item": next_summary, "description": description},
+                target={"entity_id": target_list},
+                blocking=True,
+            )
+            replacement = await _resolve_item_ref(target_list, next_summary)
+            if replacement is not None and status == "completed":
+                replacement_id = str(replacement.get("uid", "")).strip() or next_summary
+                await hass.services.async_call(
+                    "todo",
+                    "update_item",
+                    {"item": replacement_id, "status": "completed"},
+                    target={"entity_id": target_list},
+                    blocking=True,
+                )
+            if remove_id:
+                await hass.services.async_call(
+                    "todo",
+                    "remove_item",
+                    {"item": remove_id},
+                    target={"entity_id": list_entity},
+                    blocking=True,
+                )
+            _move_item_meta_entry(list_entity, old_summary, target_list, next_summary)
+            if learn and target_category in categories:
+                norm = _normalize_term(next_summary)
+                terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
+                existing = set(terms_obj.data.get(target_category, []))
+                if norm and norm not in existing:
+                    terms_obj.data.setdefault(target_category, []).append(norm)
+            await _save()
             return {"ok": True}
 
         if action == "recategorize":

@@ -1,4 +1,4 @@
-import { categoryDisplay as displayCategory, createListLocal as applyCreateListLocal, deleteArchivedListLocal as applyDeleteArchivedListLocal, groupTitle as deriveGroupTitle, moveItemToCompleted as applyMoveItemToCompleted, recategorizeItemLocal as applyRecategorizeItemLocal, renameListLocal as applyRenameListLocal, switchListLocal as applySwitchListLocal } from "./state-helpers.js";
+import { categoryDisplay as displayCategory, createListLocal as applyCreateListLocal, deleteArchivedListLocal as applyDeleteArchivedListLocal, groupTitle as deriveGroupTitle, moveItemToCompleted as applyMoveItemToCompleted, recategorizeItemLocal as applyRecategorizeItemLocal, renameListLocal as applyRenameListLocal, switchListLocal as applySwitchListLocal, updateItemLocal as applyUpdateItemLocal } from "./state-helpers.js";
 
 const TEMPLATE_LABELS = {
   flat: "Flat List",
@@ -249,12 +249,17 @@ class LocalListAssistPanel extends HTMLElement {
     applyRecategorizeItemLocal(this._state, itemRef, targetCategory);
   }
 
+  updateItemLocal(itemRef, summary, targetCategory) {
+    applyUpdateItemLocal(this._state, itemRef, { summary, targetCategory });
+  }
+
   switchListLocal(listId) {
     return applySwitchListLocal(this._state, listId);
   }
 
   itemMarkup(item, categories) {
     const editorKey = this.editorKey(item);
+    const summaryDraft = this._drafts[`summary:${editorKey}`] ?? item.summary ?? "";
     const selectedCategory = this._drafts[`category:${editorKey}`] || item.category || "";
     const editorOpen = this._openEditorKey === editorKey;
     const options = categories
@@ -271,8 +276,9 @@ class LocalListAssistPanel extends HTMLElement {
         </div>
         <div class="small">${this.esc(item.description || "")}</div>
         <div class="editor ${editorOpen ? "open" : ""}">
+          <input id="summary-${this.esc(editorKey)}" class="input edit-summary" data-draft="summary:${this.esc(editorKey)}" value="${this.esc(summaryDraft)}" />
           <select id="editor-${this.esc(editorKey)}" class="select cat-select" data-draft="category:${this.esc(editorKey)}">${options}</select>
-          <button class="btn move-btn">Move</button>
+          <button class="btn save-item-btn">Save</button>
         </div>
       </div>
     `;
@@ -478,9 +484,13 @@ class LocalListAssistPanel extends HTMLElement {
       const itemRef = row.dataset.itemRef || "";
       const editor = row.querySelector(".editor");
       row.querySelector(".item-main")?.addEventListener("click", () => {
+        const currentSummary = row.querySelector("strong")?.textContent || "";
+        const currentCategory = row.querySelector(".cat-select")?.value || "";
+        this._drafts[`summary:${editorKey}`] = this._drafts[`summary:${editorKey}`] ?? currentSummary;
+        this._drafts[`category:${editorKey}`] = this._drafts[`category:${editorKey}`] ?? currentCategory;
         const nextOpen = this._openEditorKey === editorKey ? "" : editorKey;
         this._openEditorKey = nextOpen;
-        this._focusTarget = nextOpen ? `editor-${editorKey}` : "";
+        this._focusTarget = nextOpen ? `summary-${editorKey}` : "";
         this.requestRender(true);
       });
       row.querySelector(".complete-toggle")?.addEventListener("click", (ev) => ev.stopPropagation());
@@ -493,18 +503,26 @@ class LocalListAssistPanel extends HTMLElement {
           });
         }
       });
-      row.querySelector(".move-btn")?.addEventListener("click", async () => {
+      row.querySelector(".save-item-btn")?.addEventListener("click", async () => {
+        const nextSummary = (this._drafts[`summary:${editorKey}`] || row.querySelector(".edit-summary")?.value || "").trim();
         const target = this._drafts[`category:${editorKey}`] || row.querySelector(".cat-select")?.value || "";
-        if (!target) return;
+        if (!target || !nextSummary) return;
         this._openEditorKey = "";
         this._focusTarget = "";
-        await this.actFast({ action: "recategorize", from_list: listEntity, item: itemRef, target_category: target, learn: true }, () => {
-          this.recategorizeItemLocal(itemRef, target);
+        await this.actFast({ action: "update_item", list_entity: listEntity, item: itemRef, summary: nextSummary, target_category: target, learn: true }, () => {
+          this.updateItemLocal(itemRef, nextSummary, target);
         });
+      });
+      row.querySelector(".edit-summary")?.addEventListener("click", (ev) => ev.stopPropagation());
+      row.querySelector(".edit-summary")?.addEventListener("keydown", async (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          row.querySelector(".save-item-btn")?.click();
+        }
       });
       row.querySelector(".cat-select")?.addEventListener("click", (ev) => ev.stopPropagation());
       row.querySelector(".cat-select")?.addEventListener("change", (ev) => ev.stopPropagation());
-      row.querySelector(".move-btn")?.addEventListener("click", (ev) => ev.stopPropagation());
+      row.querySelector(".save-item-btn")?.addEventListener("click", (ev) => ev.stopPropagation());
     });
 
     root.querySelectorAll(".completed-toggle").forEach((el) => {

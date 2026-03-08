@@ -9,6 +9,7 @@ import {
   recategorizeItemLocal,
   renameListLocal,
   switchListLocal,
+  updateItemLocal,
 } from "../custom_components/grocery_learning/frontend/state-helpers.js";
 
 test("moveItemToCompleted moves an active item into completed", () => {
@@ -116,4 +117,25 @@ test("deleteArchivedListLocal removes an archived list entry", () => {
 
   assert.equal(deleted, true);
   assert.deepEqual(state.archived_lists, [{ id: "weekend", name: "Weekend" }]);
+});
+
+test("updateItemLocal updates summary and category in one pass", () => {
+  const state = {
+    categories: ["produce", "bakery", "other"],
+    groups: [
+      {
+        category: "produce",
+        title: "Produce",
+        items: [{ item_ref: "1", summary: "Aples", category: "produce", category_display: "Produce", list_entity: "internal:produce" }],
+      },
+    ],
+  };
+
+  const updated = updateItemLocal(state, "1", { summary: "Apples", targetCategory: "bakery" });
+
+  assert.equal(updated, true);
+  const bakery = state.groups.find((group) => group.category === "bakery");
+  assert.ok(bakery);
+  assert.equal(bakery.items[0].summary, "Apples");
+  assert.equal(bakery.items[0].category, "bakery");
 });

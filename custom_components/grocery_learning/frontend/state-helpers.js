@@ -59,6 +59,41 @@ export function recategorizeItemLocal(state, itemRef, targetCategory) {
   return true;
 }
 
+export function updateItemLocal(state, itemRef, updates = {}) {
+  if (!state) return false;
+  const nextSummary = String(updates.summary || "").trim();
+  const nextCategory = String(updates.targetCategory || "").trim();
+  let targetItem = null;
+  let sourceGroup = null;
+  for (const group of state.groups || []) {
+    const found = (group.items || []).find((item) => item.item_ref === itemRef);
+    if (found) {
+      targetItem = found;
+      sourceGroup = group;
+      break;
+    }
+  }
+  if (!targetItem) return false;
+  if (nextSummary) {
+    targetItem.summary = nextSummary;
+  }
+  if (nextCategory && nextCategory !== targetItem.category) {
+    const moved = recategorizeItemLocal(state, itemRef, nextCategory);
+    if (!moved) return false;
+    for (const group of state.groups || []) {
+      const found = (group.items || []).find((item) => item.item_ref === itemRef);
+      if (found) {
+        targetItem = found;
+        sourceGroup = group;
+        break;
+      }
+    }
+  } else if (sourceGroup) {
+    sourceGroup.title = groupTitle(state, sourceGroup.category);
+  }
+  return true;
+}
+
 export function switchListLocal(state, listId) {
   if (!state) return false;
   const nextList = (state.lists || []).find((list) => list.id === listId);
