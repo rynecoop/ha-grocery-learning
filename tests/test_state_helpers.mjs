@@ -139,3 +139,14 @@ test("updateItemLocal updates summary and category in one pass", () => {
   assert.equal(bakery.items[0].summary, "Apples");
   assert.equal(bakery.items[0].category, "bakery");
 });
+
+test("updateItemLocal can rename a completed item", () => {
+  const state = {
+    completed: [{ item_ref: "done1", summary: "Mlk", description: "Added by Ryne" }],
+  };
+
+  const updated = updateItemLocal(state, "done1", { summary: "Milk" });
+
+  assert.equal(updated, true);
+  assert.equal(state.completed[0].summary, "Milk");
+});

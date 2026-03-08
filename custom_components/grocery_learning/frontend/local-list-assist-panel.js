@@ -284,6 +284,24 @@ class LocalListAssistPanel extends HTMLElement {
     `;
   }
 
+  completedItemMarkup(item) {
+    const editorKey = this.editorKey(item);
+    const summaryDraft = this._drafts[`summary:${editorKey}`] ?? item.summary ?? "";
+    const editorOpen = this._openEditorKey === editorKey;
+    return `
+      <div class="item completed-item" data-editor-key="${this.esc(editorKey)}" data-list-entity="${this.esc(item.list_entity)}" data-item-ref="${this.esc(item.item_ref)}" data-completed-item="true">
+        <div class="item-main completed-main">
+          <label class="completed-row"><input class="completed-toggle" data-item-ref="${this.esc(item.item_ref)}" type="checkbox" checked /> <strong>${this.esc(item.summary)}</strong></label>
+        </div>
+        <div class="small meta-line">${this.esc(item.description || "")}</div>
+        <div class="editor ${editorOpen ? "open" : ""}">
+          <input id="summary-${this.esc(editorKey)}" class="input edit-summary" data-draft="summary:${this.esc(editorKey)}" value="${this.esc(summaryDraft)}" />
+          <button class="btn save-completed-item-btn">Save</button>
+        </div>
+      </div>
+    `;
+  }
+
   bindEvents() {
     const root = this.shadowRoot;
     root.querySelector("#menuBtn")?.addEventListener("click", () => {
@@ -479,6 +497,9 @@ class LocalListAssistPanel extends HTMLElement {
     });
 
     root.querySelectorAll(".item").forEach((row) => {
+      if (row.dataset.completedItem === "true") {
+        return;
+      }
       const editorKey = row.dataset.editorKey || "";
       const listEntity = row.dataset.listEntity || "";
       const itemRef = row.dataset.itemRef || "";
@@ -531,6 +552,38 @@ class LocalListAssistPanel extends HTMLElement {
           await this.act({ action: "set_status", list_entity: "todo.grocery_completed", item: el.dataset.itemRef || "", status: "needs_action" });
         }
       });
+      el.addEventListener("click", (ev) => ev.stopPropagation());
+    });
+
+    root.querySelectorAll('[data-completed-item="true"]').forEach((row) => {
+      const editorKey = row.dataset.editorKey || "";
+      const listEntity = row.dataset.listEntity || "";
+      const itemRef = row.dataset.itemRef || "";
+      row.querySelector(".completed-main")?.addEventListener("click", () => {
+        const currentSummary = row.querySelector("strong")?.textContent || "";
+        this._drafts[`summary:${editorKey}`] = this._drafts[`summary:${editorKey}`] ?? currentSummary;
+        const nextOpen = this._openEditorKey === editorKey ? "" : editorKey;
+        this._openEditorKey = nextOpen;
+        this._focusTarget = nextOpen ? `summary-${editorKey}` : "";
+        this.requestRender(true);
+      });
+      row.querySelector(".edit-summary")?.addEventListener("click", (ev) => ev.stopPropagation());
+      row.querySelector(".edit-summary")?.addEventListener("keydown", async (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          row.querySelector(".save-completed-item-btn")?.click();
+        }
+      });
+      row.querySelector(".save-completed-item-btn")?.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        const nextSummary = (this._drafts[`summary:${editorKey}`] || row.querySelector(".edit-summary")?.value || "").trim();
+        if (!nextSummary) return;
+        this._openEditorKey = "";
+        this._focusTarget = "";
+        await this.actFast({ action: "update_item", list_entity: listEntity, item: itemRef, summary: nextSummary }, () => {
+          this.updateItemLocal(itemRef, nextSummary, "");
+        });
+      });
     });
   }
 
@@ -581,7 +634,7 @@ class LocalListAssistPanel extends HTMLElement {
       : `<div class="empty">No recent activity.</div>`;
     const completed = (state?.completed || []).length
       ? state.completed
-          .map((item) => `<div class="item completed-item"><label class="completed-row"><input class="completed-toggle" data-item-ref="${this.esc(item.item_ref)}" type="checkbox" checked /> <strong>${this.esc(item.summary)}</strong></label><div class="small meta-line">${this.esc(item.description || "")}</div></div>`)
+          .map((item) => this.completedItemMarkup(item))
           .join("")
       : `<div class="empty">No completed items.</div>`;
     const listChips = (state?.lists || [])

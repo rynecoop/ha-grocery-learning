@@ -73,7 +73,14 @@ export function updateItemLocal(state, itemRef, updates = {}) {
       break;
     }
   }
-  if (!targetItem) return false;
+  if (!targetItem) {
+    const completedItem = (state.completed || []).find((item) => item.item_ref === itemRef);
+    if (!completedItem) return false;
+    if (nextSummary) {
+      completedItem.summary = nextSummary;
+    }
+    return true;
+  }
   if (nextSummary) {
     targetItem.summary = nextSummary;
   }
