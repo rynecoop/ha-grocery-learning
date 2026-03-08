@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.13.5
+- Added a manual refresh button in the native panel header so users can pull in newly added items or cross-device changes on demand without reloading the whole Home Assistant app.
+
 ## 0.13.4
 - Added inline item editing in the native panel so active items can be renamed and recategorized in a single save action.
 - Added completed-item name editing so users can correct or refine completed entries before clearing history.

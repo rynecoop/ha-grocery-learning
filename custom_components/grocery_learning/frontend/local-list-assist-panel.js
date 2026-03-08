@@ -345,6 +345,11 @@ class LocalListAssistPanel extends HTMLElement {
       this._configOpen = !this._configOpen;
       this.requestRender(true);
     });
+    root.querySelector("#refreshBtn")?.addEventListener("click", async () => {
+      this._focusTarget = "";
+      this._openEditorKey = "";
+      await this.load();
+    });
     root.querySelector("#clearCompletedBtn")?.addEventListener("click", async () => {
       await this.actFast({ action: "clear_completed" }, (state) => {
         state.completed = [];
@@ -755,6 +760,7 @@ class LocalListAssistPanel extends HTMLElement {
         .wrap { max-width: 1120px; margin: 0 auto; padding: 20px; }
         .hero, .section { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, rgba(18,31,48,0.96)), rgba(18,31,48,0.92)); border:1px solid color-mix(in srgb, var(--accent) 38%, #203a57); border-radius: 24px; padding: 20px; margin-bottom: 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }
         .title { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+        .hero-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
         .hero-title { font-size: 28px; font-weight: 800; margin: 0 0 8px; }
         .sub, .small, .label, .empty { color:#9fb4ca; }
         .section-label { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
@@ -775,6 +781,7 @@ class LocalListAssistPanel extends HTMLElement {
         .mobile-bar { display:flex; align-items:center; gap:10px; margin-bottom: 12px; }
         .mobile-title { font-size:14px; font-weight:700; color:#9fb4ca; letter-spacing:0.04em; text-transform:uppercase; }
         .icon-btn { width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; font-size:20px; padding:0; }
+        .icon-btn.compact { width:42px; height:42px; font-size:18px; flex:0 0 auto; }
         .list-chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
         .list-chip { border:1px solid color-mix(in srgb, var(--chip-color) 60%, #284766); background:color-mix(in srgb, var(--chip-color) 20%, #122132); color:#fff; border-radius:999px; padding:8px 12px; cursor:pointer; transition:transform 140ms ease, border-color 140ms ease, background 140ms ease; }
         .list-chip.active { box-shadow:0 0 0 1px rgba(255,255,255,0.12) inset; }
@@ -793,6 +800,7 @@ class LocalListAssistPanel extends HTMLElement {
         @media (max-width: 720px) {
           .wrap { padding: 14px; }
           .hero, .section { border-radius: 20px; padding: 16px; }
+          .hero-head { align-items:flex-start; }
           .hero-title { font-size: 24px; }
           .row { gap:8px; }
           .activity-item, .completed-item { padding: 10px; margin-bottom: 8px; }
@@ -804,8 +812,13 @@ class LocalListAssistPanel extends HTMLElement {
       <div class="wrap">
         ${this._narrow ? `<div class="mobile-bar"><button id="menuBtn" class="btn icon-btn" aria-label="Open navigation">☰</button><div class="mobile-title">Local List Assist</div></div>` : ""}
         <section class="hero">
-          <div class="hero-title">${this.esc(activeListName)}</div>
-          <div class="sub">${multilist ? "Switch lists from the chips below." : "Local List Assist"}</div>
+          <div class="hero-head">
+            <div>
+              <div class="hero-title">${this.esc(activeListName)}</div>
+              <div class="sub">${multilist ? "Switch lists from the chips below." : "Local List Assist"}</div>
+            </div>
+            <button id="refreshBtn" class="btn icon-btn compact" aria-label="Refresh list data" title="Refresh">↻</button>
+          </div>
           ${multilist ? `<div class="list-chip-row">${listChips}</div>` : ""}
           <div class="row">
             <input id="quickAdd" data-draft="quickAdd" class="input" placeholder="Add item" value="${this.esc(this._drafts.quickAdd || "")}" />
