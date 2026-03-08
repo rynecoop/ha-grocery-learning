@@ -108,7 +108,7 @@ class LocalListAssistPanel extends HTMLElement {
     return data;
   }
 
-  async load() {
+  async load(forceRender = false) {
     if (!this._hass || this._loading) {
       return;
     }
@@ -121,7 +121,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._error = err.message || String(err);
     } finally {
       this._loading = false;
-      this.requestRender();
+      this.requestRender(forceRender);
     }
   }
 
@@ -134,7 +134,7 @@ class LocalListAssistPanel extends HTMLElement {
       this.requestRender(true);
       return result;
     }
-    await this.load();
+    await this.load(true);
     return result;
   }
 
@@ -348,7 +348,7 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#refreshBtn")?.addEventListener("click", async () => {
       this._focusTarget = "";
       this._openEditorKey = "";
-      await this.load();
+      await this.load(true);
     });
     root.querySelector("#clearCompletedBtn")?.addEventListener("click", async () => {
       await this.actFast({ action: "clear_completed" }, (state) => {

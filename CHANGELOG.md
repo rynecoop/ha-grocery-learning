@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.13.7
+- Fixed the Quick Add fallback refresh path so newly added items render immediately even when the backend action returns a plain success response instead of an embedded dashboard payload.
+
 ## 0.13.6
 - Fixed a panel rendering regression so newly added items appear immediately again after Quick Add, while keeping the manual refresh button available for cross-device sync checks.
 
