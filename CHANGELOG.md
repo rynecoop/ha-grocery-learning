@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.13.6
+- Fixed a panel rendering regression so newly added items appear immediately again after Quick Add, while keeping the manual refresh button available for cross-device sync checks.
+
 ## 0.13.5
 - Added a manual refresh button in the native panel header so users can pull in newly added items or cross-device changes on demand without reloading the whole Home Assistant app.
 

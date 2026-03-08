@@ -131,7 +131,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._state = result.dashboard;
       this.syncDrafts();
       this._error = "";
-      this.requestRender();
+      this.requestRender(true);
       return result;
     }
     await this.load();
