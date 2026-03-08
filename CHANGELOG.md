@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.4
+- Added inline item editing in the native panel so active items can be renamed and recategorized in a single save action.
+- Added completed-item name editing so users can correct or refine completed entries before clearing history.
+- Preserved item metadata across renames by migrating the stored item-meta key, keeping the added-by/time/source subtitle intact after edits.
+
 ## 0.13.3
 - Added render queuing in the native panel so active fields and inline editors stay open during background Home Assistant updates instead of collapsing mid-edit.
 
