@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import voluptuous as vol
 from aiohttp import web
-from homeassistant.components.frontend import async_register_built_in_panel
+from homeassistant.components.frontend import async_register_built_in_panel, async_remove_panel
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.panel_custom import async_register_panel
@@ -767,6 +767,34 @@ def _dashboard_name(entry: ConfigEntry | None) -> str:
 
 def _admin_dashboard_name(entry: ConfigEntry | None) -> str:
     return f"{_dashboard_name(entry)} Admin"
+
+
+async def _register_sidebar_panel(hass: HomeAssistant, title: str, *, replace_existing: bool = False) -> None:
+    """Register the Home Assistant sidebar panel with the requested title."""
+    data = hass.data.setdefault(DOMAIN, {})
+    if replace_existing and data.get("panel_registered"):
+        try:
+            async_remove_panel(hass, "grocery-app")
+        except Exception:  # pragma: no cover - defensive against HA API changes
+            _LOGGER.debug("Sidebar panel removal failed during refresh", exc_info=True)
+        data["panel_registered"] = False
+
+    if data.get("panel_registered"):
+        data["panel_title"] = title
+        return
+
+    await async_register_panel(
+        hass,
+        frontend_url_path="grocery-app",
+        webcomponent_name="local-list-assist-panel",
+        sidebar_title=title,
+        sidebar_icon="mdi:cart-variant",
+        module_url="/grocery_learning-panel/local-list-assist-panel.js",
+        require_admin=False,
+        config={"title": title},
+    )
+    data["panel_registered"] = True
+    data["panel_title"] = title
 
 
 def _relative_time(iso_value: str) -> str:
@@ -3554,17 +3582,7 @@ lists:
                 [StaticPathConfig("/grocery_learning-panel", str(panel_dir), False)]
             )
             data["panel_assets_registered"] = True
-        await async_register_panel(
-            hass,
-            frontend_url_path="grocery-app",
-            webcomponent_name="local-list-assist-panel",
-            sidebar_title="Local List Assist",
-            sidebar_icon="mdi:cart-variant",
-            module_url="/grocery_learning-panel/local-list-assist-panel.js",
-            require_admin=False,
-            config={"title": "Local List Assist"},
-        )
-        data["panel_registered"] = True
+        await _register_sidebar_panel(hass, "Local List Assist")
 
     data["build_dashboard_payload"] = _build_dashboard_payload
     data["handle_dashboard_action"] = _handle_dashboard_action
@@ -3581,6 +3599,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = hass.data[DOMAIN]
     data["entry"] = entry
     data["categories"] = _categories_from_entry(entry)
+    await _register_sidebar_panel(hass, _dashboard_name(entry), replace_existing=True)
 
     store: GroceryLearningStore = data["store"]
     data["terms"] = await store.load(data["categories"])

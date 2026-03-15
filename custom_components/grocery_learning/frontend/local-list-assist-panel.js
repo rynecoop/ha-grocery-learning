@@ -360,14 +360,30 @@ class LocalListAssistPanel extends HTMLElement {
       });
     });
     root.querySelector("#saveSettingsBtn")?.addEventListener("click", async () => {
+      const nextDashboardName = (this._drafts.dashboardName || "Local List Assist").trim() || "Local List Assist";
+      const previousDashboardName = this._state?.settings?.dashboard_name || "Local List Assist";
       await this.act({
         action: "save_settings",
-        dashboard_name: this._drafts.dashboardName || "Local List Assist",
+        dashboard_name: nextDashboardName,
         categories: this._drafts.settingsCategories || "",
         default_grocery_categories: !!root.querySelector("#settingsDefaultGroceryCategories")?.checked,
         debug_mode: !!root.querySelector("#settingsDebugMode")?.checked,
       });
+      if (this._panel) {
+        this._panel = {
+          ...this._panel,
+          title: nextDashboardName,
+          config: {
+            ...(this._panel.config || {}),
+            title: nextDashboardName,
+          },
+        };
+      }
+      document.title = nextDashboardName;
       this._configOpen = false;
+      if (nextDashboardName !== previousDashboardName) {
+        window.setTimeout(() => window.location.reload(), 450);
+      }
     });
     root.querySelector("#repairBtn")?.addEventListener("click", async () => {
       await this.act({ action: "repair_system" });
@@ -668,39 +684,41 @@ class LocalListAssistPanel extends HTMLElement {
     const configPanel = this._configOpen
       ? `
         <section class="section">
-          <div class="title">Configure</div>
+          <div class="title">Settings</div>
+          <div class="small">Local-only mode. Lists, learned terms, dashboards, and routing stay inside Home Assistant.</div>
           <div class="subsection">
-            <div class="section-label">App Settings</div>
+            <div class="section-label">Local App</div>
             <div class="grid compact-grid">
               <div>
                 <div class="label">Dashboard name</div>
                 <input id="settingsDashboardName" data-draft="dashboardName" class="input" value="${this.esc(this._drafts.dashboardName || dashboardName)}" />
+                <div class="small">Used for the HA sidebar and generated dashboards. The panel refreshes after save.</div>
               </div>
               <div>
-                <div class="label">Default grocery categories</div>
+                <div class="label">Default list categories</div>
                 <input id="settingsCategories" data-draft="settingsCategories" class="input" value="${this.esc(this._drafts.settingsCategories || "")}" />
               </div>
             </div>
             <div class="toggle-grid">
-              <label class="toggle-row"><input id="settingsDefaultGroceryCategories" type="checkbox" ${state?.settings?.default_grocery_categories ? "checked" : ""}/> Use grocery defaults for new grocery-style lists</label>
+              <label class="toggle-row"><input id="settingsDefaultGroceryCategories" type="checkbox" ${state?.settings?.default_grocery_categories ? "checked" : ""}/> Use grocery defaults for new list templates</label>
             </div>
             <div class="row">
-              <button id="saveSettingsBtn" class="btn primary">Save Settings</button>
-              <button id="installVoiceBtn" class="btn">Install Voice Phrases</button>
-              <button id="activityToggleBtn" class="btn">${this._view === "activity" ? "Back to List" : "Recent Activity"}</button>
+              <button id="saveSettingsBtn" class="btn primary">Save</button>
+              <button id="activityToggleBtn" class="btn">${this._view === "activity" ? "Back to List" : "Activity"}</button>
             </div>
             <details class="advanced-box">
-              <summary>Advanced</summary>
+              <summary>Tools</summary>
               <div class="row advanced-row">
+                <button id="installVoiceBtn" class="btn">Install Voice Phrases</button>
+                <button id="repairBtn" class="btn">Repair Local Setup</button>
                 <label class="toggle-row"><input id="settingsDebugMode" type="checkbox" ${state?.settings?.debug_mode ? "checked" : ""}/> Debug mode</label>
-                <button id="repairBtn" class="btn">Repair</button>
               </div>
             </details>
           </div>
           ${multilist ? `
             <div class="divider"></div>
             <div class="subsection">
-              <div class="section-label">Create List</div>
+              <div class="section-label">Create Local List</div>
               <div class="grid compact-grid">
                 <input id="newListName" data-draft="newListName" class="input" placeholder="New list name" value="${this.esc(this._drafts.newListName || "")}" />
                 <select id="newListTemplate" data-draft="newListTemplate" class="select">
@@ -715,7 +733,7 @@ class LocalListAssistPanel extends HTMLElement {
             </div>
             <div class="divider"></div>
             <div class="subsection">
-              <div class="section-label">Active List</div>
+              <div class="section-label">Current List</div>
               <div class="small">Editing ${currentListLabel}</div>
               <div class="grid compact-grid">
                 <div>
@@ -732,11 +750,11 @@ class LocalListAssistPanel extends HTMLElement {
                 </div>
               </div>
               <div class="row">
-                <button id="saveActiveListBtn" class="btn primary">Save Active List</button>
+                <button id="saveActiveListBtn" class="btn primary">Save List</button>
                 <button id="clearListCatsBtn" class="btn">No Categories</button>
               </div>
               <details class="advanced-box">
-                <summary>Advanced List Options</summary>
+                <summary>Advanced List Tools</summary>
                 <div class="grid compact-grid" style="margin-top:12px;">
                   <div>
                     <div class="label">Voice aliases</div>
@@ -753,7 +771,7 @@ class LocalListAssistPanel extends HTMLElement {
             </div>
             <div class="divider"></div>
             <div class="subsection">
-              <div class="section-label">Archived Lists</div>
+              <div class="section-label">Archived Local Lists</div>
               ${archivedLists}
             </div>
           ` : ""}
@@ -822,8 +840,8 @@ class LocalListAssistPanel extends HTMLElement {
         <section class="hero">
           <div class="hero-head">
             <div>
-              <div class="hero-title">${this.esc(activeListName)}</div>
-              <div class="sub">${multilist ? `${this.esc(dashboardName)} | switch lists from the chips below.` : this.esc(dashboardName)}</div>
+              <div class="hero-title">${this.esc(dashboardName)}</div>
+              <div class="sub">Local-only Home Assistant workspace. Current list: ${this.esc(activeListName)}.</div>
             </div>
             <button id="refreshBtn" class="btn icon-btn compact" aria-label="Refresh list data" title="Refresh">↻</button>
           </div>
@@ -831,7 +849,7 @@ class LocalListAssistPanel extends HTMLElement {
           <div class="row">
             <input id="quickAdd" data-draft="quickAdd" class="input" placeholder="Add item" value="${this.esc(this._drafts.quickAdd || "")}" />
             <button id="addBtn" class="btn primary">Add</button>
-            <button id="configureBtn" class="btn">Configure</button>
+            <button id="configureBtn" class="btn">Settings</button>
           </div>
         </section>
         ${configPanel}
@@ -854,5 +872,4 @@ class LocalListAssistPanel extends HTMLElement {
 }
 
 customElements.define("local-list-assist-panel", LocalListAssistPanel);
-
 
