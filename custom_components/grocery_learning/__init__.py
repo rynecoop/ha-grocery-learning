@@ -2042,7 +2042,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 list_order.append(list_id)
             await _save()
             await _record_activity("List created", name, name, "service_call")
-            return {"ok": True, "dashboard": _internal_dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "save_list_categories":
             if not multilist_mode:
@@ -2121,7 +2121,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     item["category"] = "other"
 
             await _save()
-            return {"ok": True, "dashboard": _internal_dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "switch_list":
             if not multilist_mode:
@@ -2135,7 +2135,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             model["active_list_id"] = list_id
             await _save()
             await _record_activity("Switched list", str(lists[list_id].get("name", list_id)).strip(), str(lists[list_id].get("name", list_id)).strip(), "typed")
-            return {"ok": True, "dashboard": _internal_dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "reorder_list":
             if not multilist_mode:
@@ -2159,7 +2159,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 ordered[index], ordered[index + 1] = ordered[index + 1], ordered[index]
             model["list_order"] = ordered
             await _save()
-            return {"ok": True, "dashboard": _internal_dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "rename_list":
             if not multilist_mode:
@@ -2178,7 +2178,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             list_obj["name"] = new_name
             await _save()
             await _record_activity("Renamed list", f"{previous_name} -> {new_name}", new_name, "typed")
-            return {"ok": True, "dashboard": _internal_dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "set_list_color":
             if not multilist_mode:
@@ -2216,7 +2216,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             archived_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Archived list", archived_name, archived_name, "typed")
-            return {"ok": True, "dashboard": _internal_dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "restore_archived_list":
             if not multilist_mode:
@@ -2234,7 +2234,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             restored_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Restored archived list", restored_name, restored_name, "typed")
-            return {"ok": True, "dashboard": _internal_dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "delete_archived_list":
             if not multilist_mode:
@@ -2247,7 +2247,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             archived_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Deleted archived list", archived_name, archived_name, "typed")
-            return {"ok": True, "dashboard": _internal_dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "set_status":
             list_entity = str(payload.get("list_entity", "")).strip()
@@ -2454,7 +2454,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
                     "typed",
                 )
-                return {"ok": True, "dashboard": _internal_dashboard_payload()}
+                return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
             completed_items = await _list_items(COMPLETED_LIST_ENTITY, "completed")
             removed_count = 0
             for item in completed_items:
@@ -2470,7 +2470,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 )
                 removed_count += 1
             await _record_activity("Cleared completed", f"Removed {removed_count} completed item{'s' if removed_count != 1 else ''}", "Grocery Completed", "typed")
-            return {"ok": True, "dashboard": _dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload()}
 
         if action == "repair_system":
             if multilist_mode:
@@ -2545,7 +2545,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _sync_helpers_internal()
             if bool(_entry_value(active_entry, CONF_AUTO_DASHBOARD, True)):
                 await _ensure_dashboards(active_entry)
-            return {"ok": True, "dashboard": _dashboard_payload()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload()}
 
         if action == "apply_review":
             if multilist_mode:
@@ -3581,16 +3581,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = hass.data[DOMAIN]
     data["entry"] = entry
     data["categories"] = _categories_from_entry(entry)
-    await async_register_panel(
-        hass,
-        frontend_url_path="grocery-app",
-        webcomponent_name="local-list-assist-panel",
-        sidebar_title=_dashboard_name(entry),
-        sidebar_icon="mdi:cart-variant",
-        module_url="/grocery_learning-panel/local-list-assist-panel.js",
-        require_admin=False,
-        config={"title": _dashboard_name(entry)},
-    )
 
     store: GroceryLearningStore = data["store"]
     data["terms"] = await store.load(data["categories"])
