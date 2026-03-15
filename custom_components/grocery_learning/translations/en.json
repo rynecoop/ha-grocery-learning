@@ -4,6 +4,7 @@
       "user": {
         "data": {
           "auto_dashboard": "Auto-create/update Grocery dashboards",
+          "dashboard_name": "Dashboard name",
           "categories": "Categories (comma or newline separated)",
           "notify_service": "Optional notify service (example: notify.mobile_app_phone)",
           "default_grocery_categories": "Use default grocery categories for new grocery/shopping lists"
@@ -22,6 +23,7 @@
       "init": {
         "data": {
           "auto_dashboard": "Auto-create/update Grocery dashboards",
+          "dashboard_name": "Dashboard name",
           "categories": "Categories (comma or newline separated)",
           "notify_service": "Optional notify service (example: notify.mobile_app_phone)",
           "default_grocery_categories": "Use default grocery categories for new grocery/shopping lists"

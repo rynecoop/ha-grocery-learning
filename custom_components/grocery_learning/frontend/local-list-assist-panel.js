@@ -21,6 +21,7 @@ class LocalListAssistPanel extends HTMLElement {
     this._error = "";
     this._drafts = {
       quickAdd: "",
+      dashboardName: "",
       settingsCategories: "",
       newListName: "",
       newListTemplate: "flat",
@@ -69,6 +70,9 @@ class LocalListAssistPanel extends HTMLElement {
     }
     if (!this._drafts.settingsCategories) {
       this._drafts.settingsCategories = (state?.settings?.categories || []).join(", ");
+    }
+    if (!this._drafts.dashboardName) {
+      this._drafts.dashboardName = state?.settings?.dashboard_name || "Local List Assist";
     }
   }
 
@@ -358,8 +362,8 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#saveSettingsBtn")?.addEventListener("click", async () => {
       await this.act({
         action: "save_settings",
+        dashboard_name: this._drafts.dashboardName || "Local List Assist",
         categories: this._drafts.settingsCategories || "",
-        experimental_multilist: !!root.querySelector("#settingsExperimentalMultilist")?.checked,
         default_grocery_categories: !!root.querySelector("#settingsDefaultGroceryCategories")?.checked,
         debug_mode: !!root.querySelector("#settingsDebugMode")?.checked,
       });
@@ -596,6 +600,7 @@ class LocalListAssistPanel extends HTMLElement {
     const state = this._state;
     this.syncDrafts();
     const multilist = !!state?.settings?.experimental_multilist;
+    const dashboardName = state?.settings?.dashboard_name || "Local List Assist";
     const active = state?.lists?.find((list) => list.active) || null;
     const activeListName = active?.name || "Grocery List";
     const activeListColor = state?.system?.active_list_color || active?.color || "#2c78ba";
@@ -666,15 +671,18 @@ class LocalListAssistPanel extends HTMLElement {
           <div class="title">Configure</div>
           <div class="subsection">
             <div class="section-label">App Settings</div>
-            <div class="toggle-grid">
-              <label class="toggle-row"><input id="settingsExperimentalMultilist" type="checkbox" ${state?.settings?.experimental_multilist ? "checked" : ""}/> Multi-list mode</label>
-              <label class="toggle-row"><input id="settingsDefaultGroceryCategories" type="checkbox" ${state?.settings?.default_grocery_categories ? "checked" : ""}/> Use grocery defaults for grocery-style lists</label>
-            </div>
             <div class="grid compact-grid">
+              <div>
+                <div class="label">Dashboard name</div>
+                <input id="settingsDashboardName" data-draft="dashboardName" class="input" value="${this.esc(this._drafts.dashboardName || dashboardName)}" />
+              </div>
               <div>
                 <div class="label">Default grocery categories</div>
                 <input id="settingsCategories" data-draft="settingsCategories" class="input" value="${this.esc(this._drafts.settingsCategories || "")}" />
               </div>
+            </div>
+            <div class="toggle-grid">
+              <label class="toggle-row"><input id="settingsDefaultGroceryCategories" type="checkbox" ${state?.settings?.default_grocery_categories ? "checked" : ""}/> Use grocery defaults for new grocery-style lists</label>
             </div>
             <div class="row">
               <button id="saveSettingsBtn" class="btn primary">Save Settings</button>
@@ -810,12 +818,12 @@ class LocalListAssistPanel extends HTMLElement {
         }
       </style>
       <div class="wrap">
-        ${this._narrow ? `<div class="mobile-bar"><button id="menuBtn" class="btn icon-btn" aria-label="Open navigation">☰</button><div class="mobile-title">Local List Assist</div></div>` : ""}
+        ${this._narrow ? `<div class="mobile-bar"><button id="menuBtn" class="btn icon-btn" aria-label="Open navigation">☰</button><div class="mobile-title">${this.esc(dashboardName)}</div></div>` : ""}
         <section class="hero">
           <div class="hero-head">
             <div>
               <div class="hero-title">${this.esc(activeListName)}</div>
-              <div class="sub">${multilist ? "Switch lists from the chips below." : "Local List Assist"}</div>
+              <div class="sub">${multilist ? `${this.esc(dashboardName)} | switch lists from the chips below.` : this.esc(dashboardName)}</div>
             </div>
             <button id="refreshBtn" class="btn icon-btn compact" aria-label="Refresh list data" title="Refresh">↻</button>
           </div>

@@ -4,6 +4,7 @@
       "user": {
         "data": {
           "auto_dashboard": "Auto-create/update Grocery dashboards",
+          "dashboard_name": "Dashboard name",
           "auto_provision": "Auto-create missing grocery todo lists",
           "auto_route_inbox": "Auto-route inbox items",
           "inbox_entity": "Inbox todo entity",
@@ -26,6 +27,7 @@
       "init": {
         "data": {
           "auto_dashboard": "Auto-create/update Grocery dashboards",
+          "dashboard_name": "Dashboard name",
           "auto_provision": "Auto-create missing grocery todo lists",
           "auto_route_inbox": "Auto-route inbox items",
           "inbox_entity": "Inbox todo entity",

@@ -1,10 +1,10 @@
 # Local List Assist
 
-Local List Assist is a Home Assistant custom integration that gives you a clean, local-first grocery app with smart category routing, duplicate handling, and voice-friendly add flows.
+Local List Assist is a Home Assistant custom integration that gives you a clean, local-first list app with smart category routing, duplicate handling, and voice-friendly add flows.
 
 ## Why This Exists
-- Keep grocery workflows local in Home Assistant.
-- Make voice + typed adds land in one consistent app.
+- Keep list workflows local in Home Assistant.
+- Make voice and typed adds land in one consistent app.
 - Reduce list chaos with auto-routing and learning.
 - Keep shopping simple in-store with category-ordered lists.
 
@@ -35,13 +35,14 @@ Local List Assist is a Home Assistant custom integration that gives you a clean,
 
 ## Install
 ### HACS (recommended)
-1. Add this repository as a custom repository in HACS (`Integration`) if not in default yet.
+1. Install `Local List Assist` from HACS.
 2. Install `Local List Assist`.
 3. Restart Home Assistant.
 4. Go to `Settings -> Devices & Services`.
 5. Add `Local List Assist`.
 6. Open `Local List Assist` from the sidebar.
 7. Click `Configure` and complete setup.
+8. Set your preferred dashboard name if you want something different from `Local List Assist`.
 
 ### Manual
 1. Copy `custom_components/grocery_learning` into your HA config directory.

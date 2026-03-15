@@ -30,6 +30,7 @@ from .const import (
     CONF_AUTO_PROVISION,
     CONF_AUTO_ROUTE_INBOX,
     CONF_CATEGORIES,
+    CONF_DASHBOARD_NAME,
     CONF_DEBUG_MODE,
     CONF_DEFAULT_GROCERY_CATEGORIES,
     CONF_EXPERIMENTAL_MULTILIST,
@@ -617,6 +618,7 @@ class GroceryLearningDashboardView(HomeAssistantView):
                 "experimental_multilist": False,
                 "default_grocery_categories": True,
                 "debug_mode": False,
+                "dashboard_name": "Local List Assist",
             },
             "system": {"missing_lists": [], "runtime_ready": False},
             "activity": [],
@@ -756,6 +758,15 @@ def _friendly_source(source: str) -> str:
         "unknown": "Unknown",
     }
     return lookup.get(source, source.replace("_", " ").title())
+
+
+def _dashboard_name(entry: ConfigEntry | None) -> str:
+    value = str(_entry_value(entry, CONF_DASHBOARD_NAME, "Local List Assist")).strip()
+    return value or "Local List Assist"
+
+
+def _admin_dashboard_name(entry: ConfigEntry | None) -> str:
+    return f"{_dashboard_name(entry)} Admin"
 
 
 def _relative_time(iso_value: str) -> str:
@@ -1666,6 +1677,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "experimental_multilist": True,
                 "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
                 "debug_mode": bool(_entry_value(active_entry, CONF_DEBUG_MODE, False)),
+                "dashboard_name": _dashboard_name(active_entry),
             },
             "system": {
                 "missing_lists": [],
@@ -1764,6 +1776,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "experimental_multilist": True,
                 "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
                 "debug_mode": bool(_entry_value(active_entry, CONF_DEBUG_MODE, False)),
+                "dashboard_name": _dashboard_name(active_entry),
             },
             "system": {
                 "missing_lists": missing_lists,
@@ -2501,6 +2514,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 payload.get("default_grocery_categories", bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)))
             )
             debug_mode = bool(payload.get("debug_mode", bool(_entry_value(active_entry, CONF_DEBUG_MODE, False))))
+            dashboard_name = str(payload.get("dashboard_name", _dashboard_name(active_entry))).strip() or "Local List Assist"
             complete_setup = bool(payload.get("complete_setup", False))
 
             new_options = dict(active_entry.options)
@@ -2511,6 +2525,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             new_options[CONF_EXPERIMENTAL_MULTILIST] = experimental_multilist
             new_options[CONF_DEFAULT_GROCERY_CATEGORIES] = default_grocery_categories
             new_options[CONF_DEBUG_MODE] = debug_mode
+            new_options[CONF_DASHBOARD_NAME] = dashboard_name
             if complete_setup:
                 new_options[CONF_WIZARD_COMPLETED] = True
 
@@ -2528,6 +2543,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             await _ensure_internal_voice_bridges()
             await _sync_helpers_internal()
+            if bool(_entry_value(active_entry, CONF_AUTO_DASHBOARD, True)):
+                await _ensure_dashboards(active_entry)
             return {"ok": True, "dashboard": _dashboard_payload()}
 
         if action == "apply_review":
@@ -2981,12 +2998,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         }
 
     def _build_main_dashboard_config(entry: ConfigEntry | None) -> dict[str, Any]:
+        dashboard_name = _dashboard_name(entry)
         return {
             "config": {
-                "title": "Grocery",
+                "title": dashboard_name,
                 "views": [
                     {
-                        "title": "Grocery",
+                        "title": dashboard_name,
                         "path": "grocery",
                         "icon": "mdi:cart-variant",
                         "type": "masonry",
@@ -3003,13 +3021,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             }
         }
 
-    def _build_admin_dashboard_config() -> dict[str, Any]:
+    def _build_admin_dashboard_config(entry: ConfigEntry | None) -> dict[str, Any]:
+        dashboard_name = _admin_dashboard_name(entry)
         return {
             "config": {
-                "title": "Grocery Admin",
+                "title": dashboard_name,
                 "views": [
                     {
-                        "title": "Grocery Admin",
+                        "title": dashboard_name,
                         "path": "grocery-admin",
                         "icon": "mdi:shield-crown",
                         "type": "masonry",
@@ -3030,10 +3049,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not bool(_entry_value(entry, CONF_AUTO_DASHBOARD, True)):
             return
 
-        await _upsert_storage_dashboard_meta("grocery", "Local List Assist", "mdi:cart-variant", False, "grocery", show_in_sidebar=False)
+        dashboard_name = _dashboard_name(entry)
+        admin_dashboard_name = _admin_dashboard_name(entry)
+
+        await _upsert_storage_dashboard_meta("grocery", dashboard_name, "mdi:cart-variant", False, "grocery", show_in_sidebar=False)
         await _upsert_storage_dashboard_meta(
             "grocery_admin",
-            "Grocery Admin",
+            admin_dashboard_name,
             "mdi:shield-crown",
             True,
             "grocery-admin",
@@ -3043,7 +3065,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         main_store = Store(hass, 1, "lovelace.grocery")
         admin_store = Store(hass, 1, "lovelace.grocery_admin")
         await main_store.async_save(_build_main_dashboard_config(entry))
-        await admin_store.async_save(_build_admin_dashboard_config())
+        await admin_store.async_save(_build_admin_dashboard_config(entry))
 
     def _get_category_for_term(terms_obj: LearnedTerms, normalized: str) -> str:
         categories = _active_categories()
@@ -3559,6 +3581,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = hass.data[DOMAIN]
     data["entry"] = entry
     data["categories"] = _categories_from_entry(entry)
+    await async_register_panel(
+        hass,
+        frontend_url_path="grocery-app",
+        webcomponent_name="local-list-assist-panel",
+        sidebar_title=_dashboard_name(entry),
+        sidebar_icon="mdi:cart-variant",
+        module_url="/grocery_learning-panel/local-list-assist-panel.js",
+        require_admin=False,
+        config={"title": _dashboard_name(entry)},
+    )
 
     store: GroceryLearningStore = data["store"]
     data["terms"] = await store.load(data["categories"])
