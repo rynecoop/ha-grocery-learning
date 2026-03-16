@@ -23,6 +23,8 @@ class LocalListAssistPanel extends HTMLElement {
     this._view = "list";
     this._loading = false;
     this._error = "";
+    this._chipLongPressTimer = null;
+    this._suppressNextChipClick = "";
     this._drafts = {
       quickAdd: "",
       dashboardName: "",
@@ -319,6 +321,22 @@ class LocalListAssistPanel extends HTMLElement {
     this._listSettingsOpen = false;
     this._menuOpen = false;
     this._reorderListId = "";
+  }
+
+  clearChipLongPress() {
+    if (this._chipLongPressTimer) {
+      window.clearTimeout(this._chipLongPressTimer);
+      this._chipLongPressTimer = null;
+    }
+  }
+
+  openReorderPanel(listId) {
+    this._reorderListId = listId || "";
+    this._listSettingsOpen = false;
+    this._configOpen = false;
+    this._createListOpen = false;
+    this._menuOpen = false;
+    this.requestRender(true);
   }
 
   moveItemToCompleted(itemRef) {
@@ -913,7 +931,7 @@ class LocalListAssistPanel extends HTMLElement {
           <div class="modal-head">
             <div>
               <div class="title">List Settings</div>
-              <div class="small">Tap the active list to manage it. Right-click any list chip to open reordering.</div>
+              <div class="small">Tap the active list to manage it. Long-press on touch devices or right-click on desktop to reorder list chips.</div>
             </div>
             <button class="btn icon-btn compact" data-close-overlay="true" aria-label="Close list settings">×</button>
           </div>
@@ -963,7 +981,7 @@ class LocalListAssistPanel extends HTMLElement {
           <div class="modal-head">
             <div>
               <div class="title">Reorder ${this.esc(reorderTarget.name)}</div>
-              <div class="small">This follows the Android flow: long-press there, right-click here.</div>
+              <div class="small">This follows the Android flow: press and hold on phones and tablets, or right-click on desktop.</div>
             </div>
             <button class="btn icon-btn compact" data-close-overlay="true" aria-label="Close reorder">×</button>
           </div>
@@ -1084,7 +1102,7 @@ class LocalListAssistPanel extends HTMLElement {
               <button id="refreshBtn" class="btn icon-btn compact" aria-label="Refresh list data" title="Refresh">R</button>
             </div>
           </div>
-          ${multilist ? `<div class="list-chip-row">${listChips}</div><div class="small">Click the active list to manage it. Right-click any list chip to reorder it.</div>` : ""}
+          ${multilist ? `<div class="list-chip-row">${listChips}</div><div class="small">Tap the active list to manage it. Long-press on touch devices or right-click on desktop to reorder it.</div>` : ""}
           <div class="row">
             <input id="quickAdd" data-draft="quickAdd" class="input" placeholder="Add item" value="${this.esc(this._drafts.quickAdd || "")}" />
             <button id="addBtn" class="btn primary">Add</button>
@@ -1099,6 +1117,10 @@ class LocalListAssistPanel extends HTMLElement {
     this.shadowRoot.querySelectorAll(".list-chip").forEach((chip) => {
       chip.addEventListener("click", async () => {
         const listId = chip.dataset.listId || "";
+        if (this._suppressNextChipClick === listId) {
+          this._suppressNextChipClick = "";
+          return;
+        }
         if (listId && listId === this._state?.system?.active_list_id) {
           this._listSettingsOpen = !this._listSettingsOpen;
           this._configOpen = false;
@@ -1111,14 +1133,22 @@ class LocalListAssistPanel extends HTMLElement {
           this.switchListLocal(listId);
         });
       });
+      chip.addEventListener("pointerdown", (ev) => {
+        if (ev.pointerType === "mouse") return;
+        const listId = chip.dataset.listId || "";
+        this.clearChipLongPress();
+        this._chipLongPressTimer = window.setTimeout(() => {
+          this._suppressNextChipClick = listId;
+          this.openReorderPanel(listId);
+          this.clearChipLongPress();
+        }, 550);
+      });
+      chip.addEventListener("pointerup", () => this.clearChipLongPress());
+      chip.addEventListener("pointercancel", () => this.clearChipLongPress());
+      chip.addEventListener("pointerleave", () => this.clearChipLongPress());
       chip.addEventListener("contextmenu", (ev) => {
         ev.preventDefault();
-        this._reorderListId = chip.dataset.listId || "";
-        this._listSettingsOpen = false;
-        this._configOpen = false;
-        this._createListOpen = false;
-        this._menuOpen = false;
-        this.requestRender(true);
+        this.openReorderPanel(chip.dataset.listId || "");
       });
     });
     this.bindEvents();

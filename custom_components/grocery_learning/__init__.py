@@ -1472,6 +1472,25 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         when = _relative_time(str(meta.get("last_added_at", "")).strip())
         return f"Added by {added_by} · {when} · {source}"
 
+    def _description_with_existing_meta(list_entity: str, summary: str, fallback: str) -> str:
+        marker = "GLMETA|"
+        if marker in fallback:
+            return fallback
+        normalized_item = _normalize_term(summary)
+        if not normalized_item:
+            return fallback
+        meta = _meta_for_item(list_entity, normalized_item)
+        if not meta:
+            return fallback
+        added_at = str(meta.get("last_added_at", "")).strip()
+        added_by = str(meta.get("last_added_by_name", "")).strip() or "Unknown"
+        source_key = str(meta.get("last_source", "")).strip() or "unknown"
+        source = _friendly_source(source_key)
+        when = _relative_time(added_at)
+        safe_name = added_by.replace("|", "/")
+        safe_source = source_key.replace("|", "_")
+        return f"Added by {added_by} · {when} · {source}\nGLMETA|{added_at}|{safe_name}|{safe_source}"
+
     def _clean_helper_state_value(value: str) -> str:
         cleaned = value.strip()
         if cleaned.lower() in {"", "unknown", "unavailable", "none", "null"}:
@@ -1592,6 +1611,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not isinstance(items, list) or not items:
             return None
         return items[0] if isinstance(items[0], dict) else None
+
+    async def _find_open_item(list_entity: str, item_summary: str) -> dict[str, Any] | None:
+        normalized = _normalize_term(item_summary)
+        if not normalized:
+            return None
+        for item in await _list_items(list_entity, "needs_action"):
+            existing = _normalize_term(str(item.get("summary", "")).strip())
+            if existing == normalized:
+                return item
+        return None
 
     async def _list_items(list_entity: str, status: str) -> list[dict[str, Any]]:
         if not list_entity or hass.states.get(list_entity) is None:
@@ -1965,11 +1994,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _clear_pending_review()
             return
 
+        summary = str(item.get("summary", "")).strip()
+        source_entity = source_list
+        target_entity = _internal_list_entity(target_category)
+        item["description"] = _description_with_existing_meta(
+            source_entity,
+            summary,
+            str(item.get("description", "")).strip(),
+        )
         item["category"] = target_category
-        item["description"] = await _build_item_description(call, source_override="review_move")
-        await _record_item_meta(_internal_list_entity(target_category), str(item.get("summary", "")).strip(), call, source_override="review_move")
+        _move_item_meta_entry(source_entity, summary, target_entity, summary)
         if learn and target_category in categories:
-            norm = _normalize_term(str(item.get("summary", "")).strip())
+            norm = _normalize_term(summary)
             terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
             existing = set(terms_obj.data.get(target_category, []))
             if norm and norm not in existing:
@@ -3334,16 +3370,31 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not review_item:
             return
 
+        existing_item = await _find_open_item(source_list, review_item)
+        existing_description = (
+            str(existing_item.get("description", "")).strip()
+            if isinstance(existing_item, dict)
+            else ""
+        )
+
         if source_list != target_list:
             await _remove_from_list(source_list, review_item)
             await hass.services.async_call(
                 "todo",
                 "add_item",
-                {"item": review_item, "description": await _build_item_description(call)},
+                {
+                    "item": review_item,
+                    "description": _description_with_existing_meta(
+                        source_list,
+                        review_item,
+                        existing_description,
+                    ),
+                },
                 target={"entity_id": target_list},
                 blocking=True,
             )
-            await _record_item_meta(target_list, review_item, call, source_override="review_move")
+            _move_item_meta_entry(source_list, review_item, target_list, review_item)
+            await _save()
 
         if learn and target_category in categories:
             norm = _normalize_term(review_item)
