@@ -249,6 +249,78 @@ class LocalListAssistPanel extends HTMLElement {
     return deriveGroupTitle(this._state, category);
   }
 
+  parseCategoryDraft(key) {
+    return String(this._drafts[key] || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+  }
+
+  writeCategoryDraft(key, categories) {
+    this._drafts[key] = categories.join(", ");
+  }
+
+  addCategoryDraft(key, value) {
+    const next = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!next) return false;
+    const current = this.parseCategoryDraft(key);
+    if (current.includes(next)) return false;
+    current.push(next);
+    this.writeCategoryDraft(key, current);
+    return true;
+  }
+
+  moveCategoryDraft(key, index, direction) {
+    const current = this.parseCategoryDraft(key);
+    const target = index + direction;
+    if (target < 0 || target >= current.length) return;
+    const [entry] = current.splice(index, 1);
+    current.splice(target, 0, entry);
+    this.writeCategoryDraft(key, current);
+  }
+
+  removeCategoryDraft(key, index) {
+    const current = this.parseCategoryDraft(key);
+    current.splice(index, 1);
+    this.writeCategoryDraft(key, current);
+  }
+
+  categoryEditorMarkup(key, label, placeholder, helper = "") {
+    const values = this.parseCategoryDraft(key);
+    const chips = values.length
+      ? values
+          .map((category, index) => `
+            <div class="category-chip-card">
+              <span class="pill ghost-pill">${this.esc(this.categoryDisplay(category))}</span>
+              <div class="chip-actions">
+                <button class="chip-icon-btn" data-chip-move="${this.esc(key)}:${index}:-1" aria-label="Move category left">↑</button>
+                <button class="chip-icon-btn" data-chip-move="${this.esc(key)}:${index}:1" aria-label="Move category right">↓</button>
+                <button class="chip-icon-btn danger" data-chip-remove="${this.esc(key)}:${index}" aria-label="Remove category">×</button>
+              </div>
+            </div>
+          `)
+          .join("")
+      : `<div class="empty">${this.esc(helper || "No categories added yet.")}</div>`;
+    return `
+      <div class="category-editor">
+        <div class="label">${this.esc(label)}</div>
+        <div class="row category-add-row">
+          <input id="${this.esc(key)}Input" class="input" placeholder="${this.esc(placeholder)}" />
+          <button class="btn" data-chip-add="${this.esc(key)}">Add Category</button>
+        </div>
+        <div class="category-chip-grid">${chips}</div>
+      </div>
+    `;
+  }
+
+  closePanels() {
+    this._configOpen = false;
+    this._createListOpen = false;
+    this._listSettingsOpen = false;
+    this._menuOpen = false;
+    this._reorderListId = "";
+  }
+
   moveItemToCompleted(itemRef) {
     applyMoveItemToCompleted(this._state, itemRef);
   }
@@ -312,6 +384,48 @@ class LocalListAssistPanel extends HTMLElement {
 
   bindEvents() {
     const root = this.shadowRoot;
+    root.querySelectorAll("[data-close-overlay]").forEach((el) => {
+      el.addEventListener("click", () => {
+        this.closePanels();
+        this.requestRender(true);
+      });
+    });
+    root.querySelectorAll(".modal-card,.side-drawer").forEach((el) => {
+      el.addEventListener("click", (ev) => ev.stopPropagation());
+    });
+    root.querySelectorAll("[data-chip-add]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.chipAdd || "";
+        const input = root.querySelector(`#${key}Input`);
+        if (!input) return;
+        if (this.addCategoryDraft(key, input.value || "")) {
+          input.value = "";
+          this.requestRender(true);
+        }
+      });
+    });
+    root.querySelectorAll("[data-chip-move]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const [key, index, direction] = String(btn.dataset.chipMove || "").split(":");
+        this.moveCategoryDraft(key, Number(index), Number(direction));
+        this.requestRender(true);
+      });
+    });
+    root.querySelectorAll("[data-chip-remove]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const [key, index] = String(btn.dataset.chipRemove || "").split(":");
+        this.removeCategoryDraft(key, Number(index));
+        this.requestRender(true);
+      });
+    });
+    root.querySelectorAll(".category-editor .input").forEach((input) => {
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          root.querySelector(`[data-chip-add="${input.id.replace(/Input$/, "")}"]`)?.click();
+        }
+      });
+    });
     root.querySelector("#menuBtn")?.addEventListener("click", () => {
       this.openNavigation();
     });
@@ -354,6 +468,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._createListOpen = false;
       this._listSettingsOpen = false;
       this._menuOpen = false;
+      this._reorderListId = "";
       this.requestRender(true);
     });
     root.querySelector("#menuToggleBtn")?.addEventListener("click", () => {
@@ -365,6 +480,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._configOpen = false;
       this._listSettingsOpen = false;
       this._menuOpen = false;
+      this._reorderListId = "";
       this.requestRender(true);
     });
     root.querySelector("#refreshBtn")?.addEventListener("click", async () => {
@@ -398,8 +514,7 @@ class LocalListAssistPanel extends HTMLElement {
         };
       }
       document.title = nextDashboardName;
-      this._configOpen = false;
-      this._menuOpen = false;
+      this.closePanels();
       if (nextDashboardName !== previousDashboardName) {
         window.setTimeout(() => window.location.reload(), 450);
       }
@@ -412,7 +527,7 @@ class LocalListAssistPanel extends HTMLElement {
     });
     root.querySelector("#activityToggleBtn")?.addEventListener("click", () => {
       this._view = this._view === "activity" ? "list" : "activity";
-      this._menuOpen = false;
+      this.closePanels();
       this.requestRender(true);
     });
     root.querySelector("#activeListSettingsBtn")?.addEventListener("click", () => {
@@ -420,14 +535,15 @@ class LocalListAssistPanel extends HTMLElement {
       this._configOpen = false;
       this._createListOpen = false;
       this._menuOpen = false;
+      this._reorderListId = "";
       this.requestRender(true);
     });
     root.querySelector("#cancelCreateListBtn")?.addEventListener("click", () => {
-      this._createListOpen = false;
+      this.closePanels();
       this.requestRender(true);
     });
     root.querySelector("#closeReorderBtn")?.addEventListener("click", () => {
-      this._reorderListId = "";
+      this.closePanels();
       this.requestRender(true);
     });
     root.querySelector("#dupAddBtn")?.addEventListener("click", async () => {
@@ -472,7 +588,8 @@ class LocalListAssistPanel extends HTMLElement {
       this._drafts.newListTemplate = "flat";
       this._drafts.newListCategories = "";
       this._drafts.newListVoiceAliases = "";
-      this._createListOpen = false;
+      this.closePanels();
+      this.requestRender(true);
     });
     root.querySelector("#newListTemplate")?.addEventListener("change", (ev) => {
       const templateId = ev.target.value || "flat";
@@ -480,10 +597,7 @@ class LocalListAssistPanel extends HTMLElement {
       const presets = this._state?.settings?.template_presets || {};
       const categories = (presets[templateId] || []).join(", ");
       this.updateDraft("newListCategories", categories);
-      const input = root.querySelector("#newListCategories");
-      if (input) {
-        input.value = categories;
-      }
+      this.requestRender(true);
     });
     root.querySelector("#archiveListBtn")?.addEventListener("click", async () => {
       const listId = this._state?.system?.active_list_id || "";
@@ -530,12 +644,12 @@ class LocalListAssistPanel extends HTMLElement {
         voice_aliases: this._drafts.activeListVoiceAliases || "",
         color: this._drafts.activeListColor || "#2c78ba",
       });
-      this._listSettingsOpen = false;
+      this.closePanels();
+      this.requestRender(true);
     });
     root.querySelector("#clearListCatsBtn")?.addEventListener("click", () => {
       this.updateDraft("activeListCategories", "");
-      const input = root.querySelector("#activeListCategories");
-      if (input) input.value = "";
+      this.requestRender(true);
     });
 
     root.querySelectorAll("[data-draft]").forEach((input) => {
@@ -556,6 +670,13 @@ class LocalListAssistPanel extends HTMLElement {
           });
         }
       });
+    });
+
+    root.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && (this._configOpen || this._createListOpen || this._listSettingsOpen || this._menuOpen || this._reorderListId)) {
+        this.closePanels();
+        this.requestRender(true);
+      }
     });
 
     root.querySelectorAll(".item").forEach((row) => {
@@ -657,7 +778,8 @@ class LocalListAssistPanel extends HTMLElement {
     const active = state?.lists?.find((list) => list.active) || null;
     const activeListName = active?.name || "Grocery List";
     const activeListColor = state?.system?.active_list_color || active?.color || "#2c78ba";
-    const groups = (state?.groups || [])
+    const visibleGroups = (state?.groups || []).filter((group) => (group.items || []).length > 0);
+    const groups = visibleGroups
       .map((group) => {
         const items = group.items?.length
           ? group.items.map((item) => this.itemMarkup(item, state.categories || [])).join("")
@@ -718,19 +840,19 @@ class LocalListAssistPanel extends HTMLElement {
       : `<div class="empty">No archived lists.</div>`;
     const currentListLabel = this.esc(activeListName || "Grocery List");
     const templatePresets = state?.settings?.template_presets || {};
+    const templateIds = Array.from(new Set([...Object.keys(TEMPLATE_LABELS), ...Object.keys(templatePresets)]));
     const activeCategories = (state?.system?.active_list_categories || []).filter(Boolean);
-    const activeCategoryChips = activeCategories.length
-      ? activeCategories.map((category) => `<span class="pill ghost-pill">${this.esc(this.categoryDisplay(category))}</span>`).join("")
-      : '<div class="empty">No categories yet.</div>';
-    const draftNewCategories = (this._drafts.newListCategories || "").split(",").map((value) => value.trim()).filter(Boolean);
-    const createCategoryChips = draftNewCategories.length
-      ? draftNewCategories.map((category) => `<span class="pill ghost-pill">${this.esc(this.categoryDisplay(category))}</span>`).join("")
-      : '<div class="empty">Template defaults will be used if you leave categories blank.</div>';
     const appSettingsPanel = this._configOpen
       ? `
-        <section class="section">
-          <div class="title">Settings</div>
-          <div class="small">Local-only mode. Lists, learned terms, dashboards, and routing stay inside Home Assistant.</div>
+        <div class="overlay-shell" data-close-overlay="true">
+          <section class="modal-card" role="dialog" aria-label="App settings">
+          <div class="modal-head">
+            <div>
+              <div class="title">Settings</div>
+              <div class="small">Local-only mode. Lists, learned terms, dashboards, and routing stay inside Home Assistant.</div>
+            </div>
+            <button class="btn icon-btn compact" data-close-overlay="true" aria-label="Close settings">×</button>
+          </div>
           <div class="subsection">
             <div class="section-label">Local App</div>
             <div class="grid compact-grid">
@@ -739,14 +861,8 @@ class LocalListAssistPanel extends HTMLElement {
                 <input id="settingsDashboardName" data-draft="dashboardName" class="input" value="${this.esc(this._drafts.dashboardName || dashboardName)}" />
                 <div class="small">Used for the HA sidebar and generated dashboards. The panel refreshes after save.</div>
               </div>
-              <div>
-                <div class="label">Default list categories</div>
-                <input id="settingsCategories" data-draft="settingsCategories" class="input" value="${this.esc(this._drafts.settingsCategories || "")}" />
-              </div>
             </div>
-            <div class="toggle-grid">
-              <label class="toggle-row"><input id="settingsDefaultGroceryCategories" type="checkbox" ${state?.settings?.default_grocery_categories ? "checked" : ""}/> Use grocery defaults for new list templates</label>
-            </div>
+            ${this.categoryEditorMarkup("settingsCategories", "Default list categories", "Add a default category", "Add the categories new local lists should start with.")}
             <div class="row">
               <button id="saveSettingsBtn" class="btn primary">Save</button>
             </div>
@@ -759,53 +875,62 @@ class LocalListAssistPanel extends HTMLElement {
               </div>
             </details>
           </div>
-        </section>
+          </section>
+        </div>
       `
       : "";
     const createListPanel = this._createListOpen && multilist
       ? `
-        <section class="section">
-          <div class="title">Create List</div>
-          <div class="small">Use the plus button for a new local list, just like the Android app.</div>
+        <div class="overlay-shell" data-close-overlay="true">
+          <section class="modal-card" role="dialog" aria-label="Create list">
+          <div class="modal-head">
+            <div>
+              <div class="title">Create List</div>
+              <div class="small">Use the plus button for a new local list, just like the Android app.</div>
+            </div>
+            <button class="btn icon-btn compact" data-close-overlay="true" aria-label="Close create list">×</button>
+          </div>
           <div class="grid compact-grid">
             <input id="newListName" data-draft="newListName" class="input" placeholder="New list name" value="${this.esc(this._drafts.newListName || "")}" />
             <select id="newListTemplate" data-draft="newListTemplate" class="select">
-              ${Object.keys(templatePresets).map((templateId) => `<option value="${this.esc(templateId)}" ${this._drafts.newListTemplate === templateId ? "selected" : ""}>${this.esc(TEMPLATE_LABELS[templateId] || templateId)}</option>`).join("")}
+              ${templateIds.map((templateId) => `<option value="${this.esc(templateId)}" ${this._drafts.newListTemplate === templateId ? "selected" : ""}>${this.esc(TEMPLATE_LABELS[templateId] || templateId)}</option>`).join("")}
             </select>
-            <input id="newListCategories" data-draft="newListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.newListCategories || "")}" />
             <input id="newListVoiceAliases" data-draft="newListVoiceAliases" class="input" placeholder="Optional voice aliases (comma separated)" value="${this.esc(this._drafts.newListVoiceAliases || "")}" />
           </div>
-          <div class="chip-row">${createCategoryChips}</div>
+          ${this.categoryEditorMarkup("newListCategories", "List categories", "Add a category for this list", "Leave it empty to use the selected template defaults.")}
           <div class="row">
             <button id="createListBtn" class="btn primary">Create List</button>
             <button id="cancelCreateListBtn" class="btn">Cancel</button>
           </div>
-        </section>
+          </section>
+        </div>
       `
       : "";
     const listSettingsPanel = this._listSettingsOpen && multilist
       ? `
-        <section class="section">
-          <div class="title">List Settings</div>
-          <div class="small">Tap the active list to manage it. Right-click any list chip to open reordering.</div>
+        <div class="overlay-shell" data-close-overlay="true">
+          <section class="modal-card" role="dialog" aria-label="List settings">
+          <div class="modal-head">
+            <div>
+              <div class="title">List Settings</div>
+              <div class="small">Tap the active list to manage it. Right-click any list chip to open reordering.</div>
+            </div>
+            <button class="btn icon-btn compact" data-close-overlay="true" aria-label="Close list settings">×</button>
+          </div>
           <div class="subsection">
             <div class="section-label">Current List</div>
             <div class="small">Editing ${currentListLabel}</div>
-            <div class="chip-row">${activeCategoryChips}</div>
             <div class="grid compact-grid">
               <div>
                 <div class="label">List name</div>
                 <input id="activeListName" data-draft="activeListName" class="input" placeholder="List name" value="${this.esc(this._drafts.activeListName || activeListName)}" />
               </div>
               <div>
-                <div class="label">Categories</div>
-                <input id="activeListCategories" data-draft="activeListCategories" class="input" placeholder="Optional categories (comma separated)" value="${this.esc(this._drafts.activeListCategories || "")}" />
-              </div>
-              <div>
                 <div class="label">List color</div>
                 <input id="activeListColor" data-draft="activeListColor" class="color-input" type="color" value="${this.esc(this._drafts.activeListColor || activeListColor)}" />
               </div>
             </div>
+            ${this.categoryEditorMarkup("activeListCategories", "List categories", "Add a category for this list", activeCategories.length ? "" : "No categories yet. Add only the sections this list needs.")}
             <details class="advanced-box">
               <summary>Advanced List Tools</summary>
               <div class="grid compact-grid" style="margin-top:12px;">
@@ -826,34 +951,47 @@ class LocalListAssistPanel extends HTMLElement {
             <div class="section-label">Archived Local Lists</div>
             ${archivedLists}
           </div>
-        </section>
+          </section>
+        </div>
       `
       : "";
     const reorderTarget = (state?.lists || []).find((list) => list.id === this._reorderListId) || null;
     const reorderPanel = reorderTarget && multilist
       ? `
-        <section class="section">
-          <div class="title">Reorder ${this.esc(reorderTarget.name)}</div>
-          <div class="small">This follows the Android flow: long-press there, right-click here.</div>
+        <div class="overlay-shell" data-close-overlay="true">
+          <section class="modal-card modal-card-narrow" role="dialog" aria-label="Reorder list">
+          <div class="modal-head">
+            <div>
+              <div class="title">Reorder ${this.esc(reorderTarget.name)}</div>
+              <div class="small">This follows the Android flow: long-press there, right-click here.</div>
+            </div>
+            <button class="btn icon-btn compact" data-close-overlay="true" aria-label="Close reorder">×</button>
+          </div>
           <div class="row">
             <button id="pinListBtn" class="btn">Pin Near Front</button>
             <button id="moveListLeftBtn" class="btn">Move Left</button>
             <button id="moveListRightBtn" class="btn">Move Right</button>
             <button id="closeReorderBtn" class="btn">Done</button>
           </div>
-        </section>
+          </section>
+        </div>
       `
       : "";
     const actionMenu = this._menuOpen
       ? `
-        <section class="section action-menu">
-          <div class="section-label">Menu</div>
-          <div class="row">
+        <div class="overlay-shell overlay-drawer" data-close-overlay="true">
+        <section class="side-drawer" role="dialog" aria-label="Menu">
+          <div class="modal-head">
+            <div class="section-label">Menu</div>
+            <button class="btn icon-btn compact" data-close-overlay="true" aria-label="Close menu">×</button>
+          </div>
+          <div class="drawer-stack">
             <button id="activityToggleBtn" class="btn">${this._view === "activity" ? "Back to List" : "Activity"}</button>
             <button id="settingsBtn" class="btn">App Settings</button>
             ${multilist ? `<button id="activeListSettingsBtn" class="btn">List Settings</button>` : ""}
           </div>
         </section>
+        </div>
       `
       : "";
 
@@ -864,6 +1002,7 @@ class LocalListAssistPanel extends HTMLElement {
         .wrap { max-width: 1120px; margin: 0 auto; padding: 20px; }
         .hero, .section { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 12%, rgba(18,31,48,0.96)), rgba(18,31,48,0.92)); border:1px solid color-mix(in srgb, var(--accent) 38%, #203a57); border-radius: 24px; padding: 20px; margin-bottom: 16px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }
         .title { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+        .modal-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px; }
         .hero-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
         .hero-title { font-size: 28px; font-weight: 800; margin: 0 0 8px; }
         .sub, .small, .label, .empty { color:#9fb4ca; }
@@ -882,6 +1021,13 @@ class LocalListAssistPanel extends HTMLElement {
         .advanced-box { border:1px solid #29435f; border-radius:16px; padding:12px 14px; background:#0d1826; }
         .advanced-box summary { cursor:pointer; color:#d5e6f8; font-weight:600; }
         .advanced-row { margin-top:12px; }
+        .overlay-shell { position:fixed; inset:0; background:rgba(3,8,14,0.58); backdrop-filter:blur(4px); z-index:30; display:flex; align-items:center; justify-content:center; padding:24px; }
+        .overlay-drawer { justify-content:flex-end; padding:0; }
+        .modal-card, .side-drawer { background:linear-gradient(180deg, rgba(18,31,48,0.98), rgba(12,22,34,0.98)); border:1px solid color-mix(in srgb, var(--accent) 42%, #28405a); border-radius:24px; box-shadow:0 24px 90px rgba(0,0,0,0.44); }
+        .modal-card { width:min(760px, calc(100vw - 48px)); max-height:calc(100vh - 48px); overflow:auto; padding:20px; }
+        .modal-card-narrow { width:min(560px, calc(100vw - 48px)); }
+        .side-drawer { width:min(360px, 92vw); height:100vh; border-radius:0; padding:22px 18px; border-left:1px solid color-mix(in srgb, var(--accent) 42%, #28405a); }
+        .drawer-stack { display:flex; flex-direction:column; gap:10px; }
         .mobile-bar { display:flex; align-items:center; gap:10px; margin-bottom: 12px; }
         .mobile-title { font-size:14px; font-weight:700; color:#9fb4ca; letter-spacing:0.04em; text-transform:uppercase; }
         .icon-btn { width:44px; height:44px; display:inline-flex; align-items:center; justify-content:center; font-size:20px; padding:0; }
@@ -901,6 +1047,11 @@ class LocalListAssistPanel extends HTMLElement {
         .pill { font-size:11px; padding:4px 10px; border-radius:999px; background:color-mix(in srgb, var(--accent) 28%, #1f3a57); color:#c4e0ff; }
         .ghost-pill { background:#142538; color:#d4e6f8; }
         .chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+        .category-chip-grid { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+        .category-chip-card { display:flex; align-items:center; gap:8px; border:1px solid #29435f; background:#0d1826; border-radius:16px; padding:8px 10px; }
+        .chip-actions { display:flex; gap:6px; }
+        .chip-icon-btn { width:28px; height:28px; border-radius:999px; border:1px solid #3a597a; background:#17304a; color:#fff; cursor:pointer; }
+        .chip-icon-btn.danger { background:#5d2b2b; border-color:#a75f5f; }
         .hero-actions { display:flex; gap:8px; align-items:center; }
         .action-menu { padding-top:16px; }
         .divider { height:1px; background:#243c56; margin: 16px 0; }
@@ -915,6 +1066,8 @@ class LocalListAssistPanel extends HTMLElement {
           .meta-line { font-size: 13px; }
           .item-main { align-items:flex-start; }
           .pill { margin-top: 2px; }
+          .overlay-shell { padding:12px; }
+          .modal-card { width:100%; max-height:calc(100vh - 24px); padding:16px; }
         }
       </style>
       <div class="wrap">
@@ -940,7 +1093,7 @@ class LocalListAssistPanel extends HTMLElement {
         ${actionMenu}${appSettingsPanel}${createListPanel}${listSettingsPanel}${reorderPanel}
         ${this._error ? `<section class="section"><div class="title">Error</div><div class="error">${this.esc(this._error)}</div></section>` : ""}
         ${attention.join("")}
-        ${this._view === "list" ? `${groups || ""}<section class="section"><div class="title">Completed</div><div class="row" style="justify-content:space-between;"><div class="small">Completed history stays visible until cleared.</div><button id="clearCompletedBtn" class="btn danger">Clear Completed</button></div><div style="margin-top:10px;">${completed}</div></section>` : `<section class="section"><div class="title">Recent Activity</div>${activity}</section>`}
+        ${this._view === "list" ? `${groups || `<section class="section"><div class="title">${this.esc(activeListName)}</div><div class="empty">No items in this list yet.</div></section>`}<section class="section"><div class="title">Completed</div><div class="row" style="justify-content:space-between;"><div class="small">Completed history stays visible until cleared.</div><button id="clearCompletedBtn" class="btn danger">Clear Completed</button></div><div style="margin-top:10px;">${completed}</div></section>` : `<section class="section"><div class="title">Recent Activity</div>${activity}</section>`}
       </div>
     `;
     this.shadowRoot.querySelectorAll(".list-chip").forEach((chip) => {
@@ -974,4 +1127,3 @@ class LocalListAssistPanel extends HTMLElement {
 }
 
 customElements.define("local-list-assist-panel", LocalListAssistPanel);
-
