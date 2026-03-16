@@ -3,14 +3,11 @@
     "step": {
       "user": {
         "data": {
-          "auto_dashboard": "Auto-create/update Grocery dashboards",
           "dashboard_name": "Dashboard name",
-          "categories": "Categories (comma or newline separated)",
-          "notify_service": "Optional notify service (example: notify.mobile_app_phone)",
-          "default_grocery_categories": "Use default grocery categories for new grocery/shopping lists"
+          "categories": "Default categories (comma or newline separated)"
         },
         "title": "Local List Assist",
-        "description": "Configure your internal list defaults."
+        "description": "Set the local dashboard name and default categories for this Home Assistant workspace."
       }
     },
     "error": {},
@@ -22,14 +19,11 @@
     "step": {
       "init": {
         "data": {
-          "auto_dashboard": "Auto-create/update Grocery dashboards",
           "dashboard_name": "Dashboard name",
-          "categories": "Categories (comma or newline separated)",
-          "notify_service": "Optional notify service (example: notify.mobile_app_phone)",
-          "default_grocery_categories": "Use default grocery categories for new grocery/shopping lists"
+          "categories": "Default categories (comma or newline separated)"
         },
         "title": "Local List Assist Options",
-        "description": "Update internal list defaults."
+        "description": "Update the local dashboard name and default categories."
       }
     }
   }

@@ -769,6 +769,18 @@ def _admin_dashboard_name(entry: ConfigEntry | None) -> str:
     return f"{_dashboard_name(entry)} Admin"
 
 
+def _frontend_module_url() -> str:
+    """Return the frontend module URL with a version query for cache busting."""
+    version = "dev"
+    try:
+        manifest_path = Path(__file__).resolve().parent / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        version = str(manifest.get("version", version)).strip() or version
+    except Exception:  # pragma: no cover - defensive fallback
+        _LOGGER.debug("Could not read manifest version for frontend cache busting", exc_info=True)
+    return f"/grocery_learning-panel/local-list-assist-panel.js?v={version}"
+
+
 async def _register_sidebar_panel(hass: HomeAssistant, title: str, *, replace_existing: bool = False) -> None:
     """Register the Home Assistant sidebar panel with the requested title."""
     data = hass.data.setdefault(DOMAIN, {})
@@ -789,7 +801,7 @@ async def _register_sidebar_panel(hass: HomeAssistant, title: str, *, replace_ex
         webcomponent_name="local-list-assist-panel",
         sidebar_title=title,
         sidebar_icon="mdi:cart-variant",
-        module_url="/grocery_learning-panel/local-list-assist-panel.js",
+        module_url=_frontend_module_url(),
         require_admin=False,
         config={"title": title},
     )
