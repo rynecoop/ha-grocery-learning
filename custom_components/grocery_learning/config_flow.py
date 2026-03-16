@@ -1,4 +1,4 @@
-"""Config flow for Local Grocery Assistant."""
+"""Config flow for Local List Assist."""
 
 from __future__ import annotations
 

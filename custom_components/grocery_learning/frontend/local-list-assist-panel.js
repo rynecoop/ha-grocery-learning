@@ -25,6 +25,8 @@ class LocalListAssistPanel extends HTMLElement {
     this._error = "";
     this._chipLongPressTimer = null;
     this._suppressNextChipClick = "";
+    this._appToolsOpen = false;
+    this._listToolsOpen = false;
     this._drafts = {
       quickAdd: "",
       dashboardName: "",
@@ -172,7 +174,15 @@ class LocalListAssistPanel extends HTMLElement {
   }
 
   isInteractive() {
-    return Boolean(this._focusTarget || this._openEditorKey);
+    return Boolean(
+      this._focusTarget ||
+      this._openEditorKey ||
+      this._configOpen ||
+      this._createListOpen ||
+      this._listSettingsOpen ||
+      this._menuOpen ||
+      this._reorderListId
+    );
   }
 
   requestRender(force = false) {
@@ -321,6 +331,8 @@ class LocalListAssistPanel extends HTMLElement {
     this._listSettingsOpen = false;
     this._menuOpen = false;
     this._reorderListId = "";
+    this._appToolsOpen = false;
+    this._listToolsOpen = false;
   }
 
   clearChipLongPress() {
@@ -443,6 +455,12 @@ class LocalListAssistPanel extends HTMLElement {
           root.querySelector(`[data-chip-add="${input.id.replace(/Input$/, "")}"]`)?.click();
         }
       });
+    });
+    root.querySelector("#appToolsDetails")?.addEventListener("toggle", (ev) => {
+      this._appToolsOpen = !!ev.target.open;
+    });
+    root.querySelector("#listToolsDetails")?.addEventListener("toggle", (ev) => {
+      this._listToolsOpen = !!ev.target.open;
     });
     root.querySelector("#menuBtn")?.addEventListener("click", () => {
       this.openNavigation();
@@ -884,7 +902,7 @@ class LocalListAssistPanel extends HTMLElement {
             <div class="row">
               <button id="saveSettingsBtn" class="btn primary">Save</button>
             </div>
-            <details class="advanced-box">
+            <details id="appToolsDetails" class="advanced-box" ${this._appToolsOpen ? "open" : ""}>
               <summary>Tools</summary>
               <div class="row advanced-row">
                 <button id="installVoiceBtn" class="btn">Install Voice Phrases</button>
@@ -949,7 +967,7 @@ class LocalListAssistPanel extends HTMLElement {
               </div>
             </div>
             ${this.categoryEditorMarkup("activeListCategories", "List categories", "Add a category for this list", activeCategories.length ? "" : "No categories yet. Add only the sections this list needs.")}
-            <details class="advanced-box">
+            <details id="listToolsDetails" class="advanced-box" ${this._listToolsOpen ? "open" : ""}>
               <summary>Advanced List Tools</summary>
               <div class="grid compact-grid" style="margin-top:12px;">
                 <div>

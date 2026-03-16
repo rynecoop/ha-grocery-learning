@@ -1,4 +1,4 @@
-# Local Grocery Assistant (Custom Integration)
+# Local List Assist (Custom Integration)
 
 This folder contains the integration code for domain `grocery_learning`.
 
@@ -9,8 +9,8 @@ For full end-user documentation, use the repo root README:
 - Config entry setup via Devices & Services
 - Category routing with learning/review flow
 - Duplicate-prevention with add/skip confirmation state + metadata context
-- Auto-provision of grocery todo lists
-- Auto-generation of Grocery dashboards
+- Auto-provision of local todo lists
+- Auto-generation of Home Assistant dashboards
 
 ## Services
 - `grocery_learning.learn_term`
@@ -20,6 +20,6 @@ For full end-user documentation, use the repo root README:
 - `grocery_learning.apply_review`
 
 ## Notes
-- Integration display name: `Local Grocery Assistant`
+- Integration display name: `Local List Assist`
 - Domain/service namespace stays `grocery_learning` for compatibility
 - Branding assets guidance: `../../brands/README.md`

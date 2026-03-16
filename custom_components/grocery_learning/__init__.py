@@ -1302,19 +1302,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             REVIEW_STATUS_PENDING_ENTITY,
             "on" if pending else "off",
             icon="mdi:clipboard-text-clock-outline",
-            friendly_name="Review Pending",
+            friendly_name="Local List Review Pending",
         )
         _set_status_entity(
             REVIEW_STATUS_ITEM_ENTITY,
             item or "none",
             icon="mdi:cart-outline",
-            friendly_name="Review Item",
+            friendly_name="Local List Review Item",
         )
         _set_status_entity(
             REVIEW_STATUS_SOURCE_ENTITY,
             source_list or "none",
             icon="mdi:playlist-check",
-            friendly_name="Review Source List",
+            friendly_name="Local List Review Source List",
         )
 
     def _update_duplicate_status_entities(
@@ -1348,19 +1348,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             DUPLICATE_STATUS_BY_ENTITY,
             added_by or "unknown",
             icon="mdi:account",
-            friendly_name="Duplicate Added By",
+            friendly_name="Local List Duplicate Added By",
         )
         _set_status_entity(
             DUPLICATE_STATUS_WHEN_ENTITY,
             added_when or "unknown",
             icon="mdi:clock-outline",
-            friendly_name="Duplicate Added When",
+            friendly_name="Local List Duplicate Added When",
         )
         _set_status_entity(
             DUPLICATE_STATUS_SOURCE_ENTITY,
             source or "unknown",
             icon="mdi:source-branch",
-            friendly_name="Duplicate Source",
+            friendly_name="Local List Duplicate Source",
         )
 
     async def _remove_from_list(list_entity: str, item_summary: str) -> None:
@@ -2918,20 +2918,20 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await _ensure_helper_entity(
             "input_boolean",
             REVIEW_PENDING_HELPER,
-            "Grocery Review Pending",
-            {"name": "Grocery Review Pending", "icon": "mdi:clipboard-text-clock-outline"},
+            "Local List Review Pending",
+            {"name": "Local List Review Pending", "icon": "mdi:clipboard-text-clock-outline"},
         )
         await _ensure_helper_entity(
             "input_text",
             REVIEW_ITEM_HELPER,
-            "Grocery Review Item",
-            {"name": "Grocery Review Item", "max": 255, "icon": "mdi:cart"},
+            "Local List Review Item",
+            {"name": "Local List Review Item", "max": 255, "icon": "mdi:cart"},
         )
         await _ensure_helper_entity(
             "input_text",
             REVIEW_SOURCE_HELPER,
-            "Grocery Review Source List",
-            {"name": "Grocery Review Source List", "max": 255, "icon": "mdi:playlist-check"},
+            "Local List Review Source List",
+            {"name": "Local List Review Source List", "max": 255, "icon": "mdi:playlist-check"},
         )
         await _ensure_helper_entity(
             "input_select",
@@ -2946,51 +2946,51 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await _ensure_helper_entity(
             "input_button",
             "input_button.grocery_review_apply",
-            "Apply Grocery Review",
-            {"name": "Apply Grocery Review", "icon": "mdi:check-bold"},
+            "Apply Category Review",
+            {"name": "Apply Category Review", "icon": "mdi:check-bold"},
         )
 
         await _ensure_helper_entity(
             "input_boolean",
             DUPLICATE_PENDING_HELPER,
-            "Grocery Duplicate Pending",
-            {"name": "Grocery Duplicate Pending", "icon": "mdi:content-duplicate"},
+            "Local List Duplicate Pending",
+            {"name": "Local List Duplicate Pending", "icon": "mdi:content-duplicate"},
         )
         await _ensure_helper_entity(
             "input_text",
             DUPLICATE_PENDING_ITEM_HELPER,
-            "Grocery Duplicate Item",
-            {"name": "Grocery Duplicate Item", "max": 255, "icon": "mdi:cart-outline"},
+            "Local List Duplicate Item",
+            {"name": "Local List Duplicate Item", "max": 255, "icon": "mdi:cart-outline"},
         )
         await _ensure_helper_entity(
             "input_text",
             DUPLICATE_PENDING_TARGET_HELPER,
-            "Grocery Duplicate Target List",
-            {"name": "Grocery Duplicate Target List", "max": 255, "icon": "mdi:format-list-bulleted"},
+            "Local List Duplicate Target List",
+            {"name": "Local List Duplicate Target List", "max": 255, "icon": "mdi:format-list-bulleted"},
         )
         await _ensure_helper_entity(
             "input_text",
             DUPLICATE_PENDING_KEY_HELPER,
-            "Grocery Duplicate Key",
-            {"name": "Grocery Duplicate Key", "max": 255, "icon": "mdi:key-variant"},
+            "Local List Duplicate Key",
+            {"name": "Local List Duplicate Key", "max": 255, "icon": "mdi:key-variant"},
         )
         await _ensure_helper_entity(
             "input_text",
             DUPLICATE_PENDING_BY_HELPER,
-            "Grocery Duplicate Added By",
-            {"name": "Grocery Duplicate Added By", "max": 255, "icon": "mdi:account"},
+            "Local List Duplicate Added By",
+            {"name": "Local List Duplicate Added By", "max": 255, "icon": "mdi:account"},
         )
         await _ensure_helper_entity(
             "input_text",
             DUPLICATE_PENDING_WHEN_HELPER,
-            "Grocery Duplicate Added When",
-            {"name": "Grocery Duplicate Added When", "max": 255, "icon": "mdi:clock-outline"},
+            "Local List Duplicate Added When",
+            {"name": "Local List Duplicate Added When", "max": 255, "icon": "mdi:clock-outline"},
         )
         await _ensure_helper_entity(
             "input_text",
             DUPLICATE_PENDING_SOURCE_HELPER,
-            "Grocery Duplicate Source",
-            {"name": "Grocery Duplicate Source", "max": 255, "icon": "mdi:source-branch"},
+            "Local List Duplicate Source",
+            {"name": "Local List Duplicate Source", "max": 255, "icon": "mdi:source-branch"},
         )
 
         for category in categories:
@@ -3227,13 +3227,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "persistent_notification",
                 "create",
                 {
-                    "title": "Grocery duplicate",
+                    "title": "Local List duplicate",
                     "message": (
                         f"**{raw_item}** is already on **{target_name}**.\n\n"
                         f"- Added by: **{existing_by}**\n"
                         f"- Added: **{existing_when}**\n"
                         f"- Source: **{existing_source}**\n\n"
-                        "Use the Grocery dashboard to **Add anyway** or **Skip**."
+                        "Use the Local List Assist dashboard to **Add anyway** or **Skip**."
                     ),
                     "notification_id": "grocery_duplicate",
                 },
@@ -3264,7 +3264,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "persistent_notification",
                 "create",
                 {
-                    "title": "Grocery needs category review",
+                    "title": "Local List needs category review",
                     "message": f"'{raw_item}' was added to Other. Open Local List Assist and review.",
                     "notification_id": "grocery_uncategorized",
                 },
@@ -3277,7 +3277,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     n_domain,
                     n_service,
                     {
-                        "title": "Grocery review needed",
+                        "title": "Local List review needed",
                         "message": f"'{raw_item}' was added to Other.",
                     },
                     blocking=True,

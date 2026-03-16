@@ -1,5 +1,5 @@
 learn_term:
-  name: Learn Grocery Term
+  name: Learn Category Term
   description: Store a normalized phrase and route it to a category in future sorting.
   fields:
     category:
@@ -14,7 +14,7 @@ learn_term:
         text:
 
 forget_term:
-  name: Forget Grocery Term
+  name: Forget Category Term
   description: Remove a learned term from one category or all categories.
   fields:
     category:
@@ -33,8 +33,8 @@ sync_helpers:
   description: Push integration learned terms into helper entities used by YAML routing.
 
 route_item:
-  name: Route Grocery Item
-  description: Route an item to a grocery category list using learned terms + keyword routing.
+  name: Route Item
+  description: Route an item to a category list using learned terms and keyword routing.
   fields:
     item:
       required: true
@@ -109,7 +109,7 @@ install_voice_sentences:
         text:
 
 apply_review:
-  name: Apply Grocery Review
+  name: Apply Category Review
   description: Move pending review item to a category and optionally learn the mapping.
   fields:
     category:
