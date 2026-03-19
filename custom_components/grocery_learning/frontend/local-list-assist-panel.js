@@ -338,7 +338,7 @@ class LocalListAssistPanel extends HTMLElement {
             <div class="category-chip-card">
               <span class="pill ghost-pill">${this.esc(this.categoryDisplay(category))}</span>
               <div class="chip-actions">
-                <button class="chip-icon-btn" data-chip-edit="${this.esc(key)}:${index}" aria-label="Edit category">Edit</button>
+                <button class="chip-icon-btn edit-chip-btn" data-chip-edit="${this.esc(key)}:${index}" aria-label="Edit category" title="Edit category">&#9998;</button>
                 <button class="chip-icon-btn" data-chip-move="${this.esc(key)}:${index}:-1" aria-label="Move category left">↑</button>
                 <button class="chip-icon-btn" data-chip-move="${this.esc(key)}:${index}:1" aria-label="Move category right">↓</button>
                 <button class="chip-icon-btn danger" data-chip-remove="${this.esc(key)}:${index}" aria-label="Remove category">×</button>
@@ -1136,7 +1136,8 @@ class LocalListAssistPanel extends HTMLElement {
         .category-chip-grid { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
         .category-chip-card { display:flex; align-items:center; gap:8px; border:1px solid #29435f; background:#0d1826; border-radius:16px; padding:8px 10px; }
         .chip-actions { display:flex; gap:6px; }
-        .chip-icon-btn { width:28px; height:28px; border-radius:999px; border:1px solid #3a597a; background:#17304a; color:#fff; cursor:pointer; }
+        .chip-icon-btn { width:28px; height:28px; border-radius:999px; border:1px solid #3a597a; background:#17304a; color:#fff; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; padding:0; font-size:14px; line-height:1; }
+        .chip-icon-btn.edit-chip-btn { font-size:15px; }
         .chip-icon-btn.danger { background:#5d2b2b; border-color:#a75f5f; }
         .hero-actions { display:flex; gap:8px; align-items:center; }
         .action-menu { padding-top:16px; }
