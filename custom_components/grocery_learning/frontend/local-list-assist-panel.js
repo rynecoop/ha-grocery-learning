@@ -8,6 +8,8 @@ const TEMPLATE_LABELS = {
   travel: "Travel",
 };
 
+const LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision";
+
 class LocalListAssistPanel extends HTMLElement {
   constructor() {
     super();
@@ -46,14 +48,27 @@ class LocalListAssistPanel extends HTMLElement {
     this._focusTarget = "";
     this._openEditorKey = "";
     this._pendingRender = false;
+    this._lastSeenLiveRevision = "";
+    this._pendingLiveReload = false;
   }
 
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
     if (first) {
+      this._lastSeenLiveRevision = this.currentLiveRevision();
       this.load();
     } else {
+      const nextRevision = this.currentLiveRevision();
+      if (nextRevision && nextRevision !== this._lastSeenLiveRevision) {
+        this._lastSeenLiveRevision = nextRevision;
+        if (this.isInteractive()) {
+          this._pendingLiveReload = true;
+        } else {
+          this.load(true);
+          return;
+        }
+      }
       this.requestRender();
     }
   }
@@ -133,6 +148,8 @@ class LocalListAssistPanel extends HTMLElement {
       this._state = await this.api("dashboard");
       this.syncDrafts();
       this._error = "";
+      this._lastSeenLiveRevision = this.currentLiveRevision();
+      this._pendingLiveReload = false;
     } catch (err) {
       this._error = err.message || String(err);
     } finally {
@@ -203,6 +220,14 @@ class LocalListAssistPanel extends HTMLElement {
       this._pendingRender = false;
       this.render();
     }
+    if (this._pendingLiveReload && !this.isInteractive()) {
+      this._pendingLiveReload = false;
+      this.load(true);
+    }
+  }
+
+  currentLiveRevision() {
+    return String(this._hass?.states?.[LIVE_REVISION_ENTITY_ID]?.state || "");
   }
 
   rememberFocus(target) {
@@ -1222,6 +1247,7 @@ class LocalListAssistPanel extends HTMLElement {
     });
     this.bindEvents();
     this.restoreFocus();
+    this.flushPendingRender();
   }
 }
 

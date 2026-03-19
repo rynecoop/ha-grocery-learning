@@ -70,6 +70,7 @@ from .storage import GroceryLearningStore, LearnedTerms
 _LOGGER = logging.getLogger(__name__)
 MAX_ACTIVITY_ITEMS = 40
 INTENT_LOCAL_LIST_ASSIST_ADD_ITEM = "LocalListAssistAddItem"
+LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision"
 
 PLATFORMS: list[Platform] = []
 
@@ -908,6 +909,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     data["pending_duplicate"] = {}
     data["pending_review"] = {}
     data["categories"] = list(DEFAULT_CATEGORIES)
+    data["dashboard_revision"] = 0
+
+    def _publish_dashboard_revision() -> None:
+        revision = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0)
+        hass.states.async_set(
+            LIVE_REVISION_ENTITY_ID,
+            str(revision),
+            {
+                "friendly_name": "Local List Assist Live Revision",
+                "revision": revision,
+                "updated_at": dt_util.utcnow().isoformat(),
+            },
+        )
 
     async def _save() -> None:
         await store.save(
@@ -916,6 +930,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN].get("multilist"),
             hass.data[DOMAIN].get("activity", []),
         )
+        hass.data[DOMAIN]["dashboard_revision"] = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0) + 1
+        _publish_dashboard_revision()
+
+    _publish_dashboard_revision()
 
     async def _record_activity(title: str, detail: str, list_name: str = "", source: str = "") -> None:
         activity = hass.data[DOMAIN].setdefault("activity", [])
