@@ -4,12 +4,13 @@ Use this when replacing screenshots and videos for the Home Assistant repo.
 
 ## Screenshots
 - `docs/screenshots/main-list.png`
+- `docs/screenshots/create-list.png`
 - `docs/screenshots/app-settings.png`
 - `docs/screenshots/list-settings.png`
-- `docs/screenshots/duplicate-review.png`
 - `docs/screenshots/mobile-view.png`
 
 ## Videos
+- `docs/videos/desktop-overview.mp4`
 - `docs/videos/category-edit.mp4`
 - `docs/videos/live-refresh.mp4`
 - `docs/videos/completed-clear.mp4`
