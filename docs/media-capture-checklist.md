@@ -11,6 +11,7 @@ Use this when replacing screenshots and videos for the Home Assistant repo.
 
 ## Videos
 - `docs/videos/desktop-overview.mp4`
+- `docs/videos/mobile-overview.mp4`
 - `docs/videos/category-edit.mp4`
 - `docs/videos/live-refresh.mp4`
 - `docs/videos/completed-clear.mp4`
