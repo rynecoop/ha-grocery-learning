@@ -1,18 +1,25 @@
 # Screenshots
 
-Current screenshot inventory:
+Target screenshot inventory:
 - `main-list.png`
-- `configure.png`
+- `app-settings.png`
+- `list-settings.png`
 - `duplicate-review.png`
 - `mobile-view.png`
 
-These files are legacy examples from earlier documentation revisions.
+Recommended captures:
+1. `main-list.png`
+   - main app view with current header, list chips, category sections, and completed section
+2. `app-settings.png`
+   - `App Settings` open with tools/repair/voice controls visible
+3. `list-settings.png`
+   - `List Settings` open with category chips, edit control, reorder controls, and color options
+4. `duplicate-review.png`
+   - duplicate decision flow visible
+5. `mobile-view.png`
+   - current mobile layout showing list chips and quick add
 
-Before adding new screenshot references to the main README:
-1. confirm the image matches the current UI
-2. replace outdated captures rather than adding duplicate variants
-3. prefer screenshots showing:
-   - `App Settings`
-   - `List Settings`
-   - current list chip behavior
-   - current category editing controls
+Guidelines:
+1. replace old captures instead of adding duplicate variants
+2. keep the dashboard name neutral unless a branded example is intentional
+3. prefer screenshots that reflect the currently published HACS release

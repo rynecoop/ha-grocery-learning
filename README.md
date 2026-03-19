@@ -63,6 +63,7 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 - Troubleshooting: [docs/troubleshooting.md](docs/troubleshooting.md)
 - FAQ: [docs/faq.md](docs/faq.md)
 - Regression checklist: [docs/regression-checklist.md](docs/regression-checklist.md)
+- Media capture checklist: [docs/media-capture-checklist.md](docs/media-capture-checklist.md)
 
 ## Service APIs
 - `grocery_learning.route_item`
