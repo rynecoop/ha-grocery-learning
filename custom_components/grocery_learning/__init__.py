@@ -2174,6 +2174,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
             next_name = str(payload.get("name", "")).strip()
             next_categories = _categories_from_list_input(payload.get("categories", ""))
+            raw_renamed_categories = payload.get("renamed_categories", {})
+            renamed_categories = {
+                _normalize_category(str(source).strip()): _normalize_category(str(target).strip())
+                for source, target in raw_renamed_categories.items()
+                if _normalize_category(str(source).strip()) and _normalize_category(str(target).strip())
+            } if isinstance(raw_renamed_categories, dict) else {}
             next_aliases = _voice_aliases_from_input(payload.get("voice_aliases", ""))
             next_color = str(payload.get("color", "")).strip()
 
@@ -2193,6 +2199,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             allowed_categories = set(next_categories) | {"other"}
             items: list[dict[str, Any]] = list_obj.setdefault("items", [])
             for item in items:
+                current_category = _normalize_category(str(item.get("category", "other")).strip()) or "other"
+                if current_category in renamed_categories:
+                    item["category"] = renamed_categories[current_category]
                 if str(item.get("category", "other")).strip() not in allowed_categories:
                     item["category"] = "other"
 

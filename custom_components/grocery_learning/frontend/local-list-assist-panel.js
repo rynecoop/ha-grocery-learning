@@ -27,6 +27,9 @@ class LocalListAssistPanel extends HTMLElement {
     this._suppressNextChipClick = "";
     this._appToolsOpen = false;
     this._listToolsOpen = false;
+    this._categoryRenameDrafts = {
+      activeListCategories: {},
+    };
     this._drafts = {
       quickAdd: "",
       dashboardName: "",
@@ -75,6 +78,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._drafts.activeListCategories = (state?.system?.active_list_categories || []).join(", ");
       this._drafts.activeListVoiceAliases = (state?.system?.active_list_voice_aliases || []).join(", ");
       this._drafts.activeListColor = state?.system?.active_list_color || active?.color || "#2c78ba";
+      this._categoryRenameDrafts.activeListCategories = {};
     }
     if (!this._drafts.settingsCategories) {
       this._drafts.settingsCategories = (state?.settings?.categories || []).join(", ");
@@ -297,6 +301,35 @@ class LocalListAssistPanel extends HTMLElement {
     this.writeCategoryDraft(key, current);
   }
 
+  renameCategoryDraft(key, index, value) {
+    const next = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    if (!next) return false;
+    const current = this.parseCategoryDraft(key);
+    const previous = current[index];
+    if (!previous) return false;
+    if (current.some((category, categoryIndex) => categoryIndex !== index && category === next)) {
+      return false;
+    }
+    current[index] = next;
+    this.writeCategoryDraft(key, current);
+    if (key === "activeListCategories") {
+      const renameMap = { ...(this._categoryRenameDrafts.activeListCategories || {}) };
+      const originalCategories = new Set((this._state?.system?.active_list_categories || []).filter(Boolean));
+      let originalKey = previous;
+      Object.entries(renameMap).forEach(([source, target]) => {
+        if (target === previous) {
+          originalKey = source;
+          delete renameMap[source];
+        }
+      });
+      if (originalCategories.has(originalKey) && originalKey !== next) {
+        renameMap[originalKey] = next;
+      }
+      this._categoryRenameDrafts.activeListCategories = renameMap;
+    }
+    return true;
+  }
+
   categoryEditorMarkup(key, label, placeholder, helper = "") {
     const values = this.parseCategoryDraft(key);
     const chips = values.length
@@ -305,6 +338,7 @@ class LocalListAssistPanel extends HTMLElement {
             <div class="category-chip-card">
               <span class="pill ghost-pill">${this.esc(this.categoryDisplay(category))}</span>
               <div class="chip-actions">
+                <button class="chip-icon-btn" data-chip-edit="${this.esc(key)}:${index}" aria-label="Edit category">Edit</button>
                 <button class="chip-icon-btn" data-chip-move="${this.esc(key)}:${index}:-1" aria-label="Move category left">↑</button>
                 <button class="chip-icon-btn" data-chip-move="${this.esc(key)}:${index}:1" aria-label="Move category right">↓</button>
                 <button class="chip-icon-btn danger" data-chip-remove="${this.esc(key)}:${index}" aria-label="Remove category">×</button>
@@ -439,6 +473,19 @@ class LocalListAssistPanel extends HTMLElement {
         const [key, index, direction] = String(btn.dataset.chipMove || "").split(":");
         this.moveCategoryDraft(key, Number(index), Number(direction));
         this.requestRender(true);
+      });
+    });
+    root.querySelectorAll("[data-chip-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const [key, index] = String(btn.dataset.chipEdit || "").split(":");
+        const current = this.parseCategoryDraft(key);
+        const existing = current[Number(index)] || "";
+        if (!existing) return;
+        const nextValue = window.prompt("Edit category", existing.replace(/_/g, " "));
+        if (nextValue == null) return;
+        if (this.renameCategoryDraft(key, Number(index), nextValue)) {
+          this.requestRender(true);
+        }
       });
     });
     root.querySelectorAll("[data-chip-remove]").forEach((btn) => {
@@ -677,13 +724,16 @@ class LocalListAssistPanel extends HTMLElement {
         list_id: listId,
         name: nextName,
         categories: this._drafts.activeListCategories || "",
+        renamed_categories: this._categoryRenameDrafts.activeListCategories || {},
         voice_aliases: this._drafts.activeListVoiceAliases || "",
         color: this._drafts.activeListColor || "#2c78ba",
       });
+      this._categoryRenameDrafts.activeListCategories = {};
       this.closePanels();
       this.requestRender(true);
     });
     root.querySelector("#clearListCatsBtn")?.addEventListener("click", () => {
+      this._categoryRenameDrafts.activeListCategories = {};
       this.updateDraft("activeListCategories", "");
       this.requestRender(true);
     });
