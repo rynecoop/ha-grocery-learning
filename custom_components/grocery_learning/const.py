@@ -1,4 +1,4 @@
-"""Constants for Local Grocery Assistant."""
+"""Constants for Local List Assist."""
 
 from __future__ import annotations
 
