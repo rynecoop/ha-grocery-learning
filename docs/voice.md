@@ -1,34 +1,39 @@
 # Voice Guide
 
-## Supported Voice Intake Behavior
-- Legacy voice adds from common list names like `shopping list` and `grocery list` are still routed into Local List Assist.
-- Local List Assist now also exposes a direct internal add path: `grocery_learning.add_to_list`.
-- A first-class Assist intent handler is registered as `LocalListAssistAddItem` for direct/internal Assist flows.
-- To use the direct intent path, Assist still needs sentence mapping that targets `LocalListAssistAddItem` or a sentence-trigger automation that calls `grocery_learning.add_to_list`.
+## Supported Voice Intake
+- common list-name phrases like `shopping list` and `grocery list` can still be routed into Local List Assist
+- the integration also exposes a direct internal add path:
+  - `grocery_learning.add_to_list`
+- a first-class Assist intent handler is registered as:
+  - `LocalListAssistAddItem`
+
+## Recommended Setup
+- best compatibility: keep the legacy bridge behavior available as a fallback
+- best long-term path: route Assist directly into `LocalListAssistAddItem` or `grocery_learning.add_to_list`
+- easiest setup path in the app:
+  - `App Settings -> Install Voice Phrases`
 
 ## Recommended Phrases
-- "Add milk to shopping list"
-- "Add eggs to grocery list"
-- "Add ibuprofen to shopping list"
-- "Add batteries to Ryne list"
-- "Add paper towels to test"
-
-## Recommended Architecture
-- Best compatibility: keep the legacy bridge enabled as a fallback.
-- Best long-term path: route Assist directly into `LocalListAssistAddItem` or `grocery_learning.add_to_list` so voice no longer depends on Home Assistant `todo` bridge variability.
-- In internal multi-list mode, direct Assist routing should target logical list names like `Grocery List`, `Costco List`, or `Ryne List`.
-- The easiest setup path is now: `Configure -> Install Voice Phrases`.
+- `Add milk to shopping list`
+- `Add eggs to grocery list`
+- `Add ibuprofen to shopping list`
+- `Add batteries to Ryne list`
+- `Add paper towels to test`
 
 ## Verification Checklist
-1. Speak add command.
-2. Open `Local List Assist`.
-3. Confirm item appears in expected category (or `Other` if unknown).
-4. Confirm item is not stranded in generic todo list.
+1. speak an add command
+2. open `Local List Assist`
+3. confirm the item appears in the expected category or in `Other`
+4. confirm the item is not stranded in a generic todo list
 
 ## If Voice Items Do Not Route
-1. Open `Configure` and click `Install Voice Phrases`.
-2. Click `Repair/Provision`.
-3. Restart Home Assistant if Assist still has stale sentence data.
-4. Re-test voice add.
-5. If you are using your own custom Assist sentences, confirm they target `LocalListAssistAddItem` or `grocery_learning.add_to_list`.
-6. If you upgraded from an earlier sentence pack, click `Install Voice Phrases` again so the newer custom-list phrases are written to disk.
+1. open `App Settings`
+2. click `Install Voice Phrases`
+3. run `Repair Local Setup` if required helpers/lists are missing
+4. restart Home Assistant if Assist still has stale sentence data
+5. retest the voice add
+6. if you use custom Assist sentences, confirm they target `LocalListAssistAddItem` or `grocery_learning.add_to_list`
+
+## Notes
+- voice behavior stays fully inside Home Assistant
+- list aliases and internal list naming still matter for accurate routing in multi-list mode
