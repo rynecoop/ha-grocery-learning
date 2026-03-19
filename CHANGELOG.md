@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.18
+- Added near-real-time dashboard refresh across open Home Assistant devices by publishing a live revision signal from the integration and reloading the panel when that revision changes.
+- Deferred live reload while dialogs or editors are open so active typing and edits are not interrupted.
+
+## 0.13.17
+- Tightened the category edit control in list settings by switching it to a compact pencil-style button.
+
+## 0.13.16
+- Added in-place category editing in list settings.
+- Preserved existing item categories when a category is renamed instead of dropping those items into `other`.
+
+## 0.13.15
+- Kept advanced settings open during background updates instead of collapsing them.
+- Cleaned up user-facing wording around local-first behavior and preserved original item metadata during review.
+
 ## 0.13.7
 - Fixed the Quick Add fallback refresh path so newly added items render immediately even when the backend action returns a plain success response instead of an embedded dashboard payload.
 
@@ -466,3 +481,4 @@
   - `examples/dashboards/lovelace.grocery.json`
   - `examples/dashboards/lovelace.grocery_admin.json`
 - Added example YAML snippets for helpers, automations, and scripts.
+

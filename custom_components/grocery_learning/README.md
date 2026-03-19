@@ -11,6 +11,8 @@ For full end-user documentation, use the repo root README:
 - Duplicate-prevention with add/skip confirmation state + metadata context
 - Auto-provision of local todo lists
 - Auto-generation of Home Assistant dashboards
+- Near-real-time panel refresh across open Home Assistant devices
+- In-place category editing with item preservation on rename
 
 ## Services
 - `grocery_learning.learn_term`
@@ -22,4 +24,6 @@ For full end-user documentation, use the repo root README:
 ## Notes
 - Integration display name: `Local List Assist`
 - Domain/service namespace stays `grocery_learning` for compatibility
+- Sidebar panel and frontend remain fully inside Home Assistant
 - Branding assets guidance: `../../brands/README.md`
+

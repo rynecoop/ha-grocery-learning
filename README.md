@@ -1,62 +1,60 @@
 # Local List Assist
 
-Local List Assist is a Home Assistant custom integration that gives you a clean, local-first list app with smart category routing, duplicate handling, and voice-friendly add flows.
+Local List Assist is a Home Assistant custom integration that gives you a local-first list app with clean list management, category-based organization, duplicate handling, review-and-learn routing, and voice-friendly add flows.
 
-## Why This Exists
-- Keep list workflows local in Home Assistant.
-- Make voice and typed adds land in one consistent app.
-- Reduce list chaos with auto-routing and learning.
-- Keep shopping simple in-store with category-ordered lists.
+## What It Is
+- 100% Home Assistant hosted
+- local-first by design
+- built for household lists, errands, grocery runs, projects, camping, travel, and similar list workflows
+- no cloud sync service outside Home Assistant
 
 ## Highlights
-- Dedicated sidebar app: `Local List Assist`
-- Quick Add with per-user attribution
-- Direct internal add path: `grocery_learning.add_to_list`
-- One-click voice phrase installer from `Configure`
-- Voice/list alias intake routing (for example: shopping list, grocery list)
-- Separate Recent Activity tab inside the app
-- Per-list color theming for internal lists
-- Auto-route by learned terms + defaults
-- Duplicate decision flow (Add Anyway or Skip)
-- Review-and-learn flow for unknown items
-- Completed section with restore support + clear completed button
-- In-app Configure experience for categories/order and system repair
-- Self-provisioning for required todo lists/helpers
-
-## Screenshots
-- Main app: [docs/screenshots/main-list.png](docs/screenshots/main-list.png)
-- Configure panel: [docs/screenshots/configure.png](docs/screenshots/configure.png)
-- Duplicate flow: [docs/screenshots/duplicate-review.png](docs/screenshots/duplicate-review.png)
-- Mobile view: [docs/screenshots/mobile-view.png](docs/screenshots/mobile-view.png)
-
-## Demo Videos
-- Change category flow: [docs/videos/change-category.mp4](docs/videos/change-category.mp4)
-- Uncheck + clear completed flow: [docs/videos/completed-clear.mp4](docs/videos/completed-clear.mp4)
+- dedicated sidebar app: `Local List Assist`
+- quick add with per-user attribution where Home Assistant provides user context
+- multiple local lists with color theming
+- category sections with per-list category order
+- in-place category editing in `List Settings`
+- duplicate decision flow: `Add anyway` or `Skip`
+- review-and-learn flow for uncategorized items
+- completed section with restore and clear support
+- `App Settings` and `List Settings` inside the app
+- `Activity` moved under `App Settings -> Tools`
+- automatic provisioning/repair for required helpers and todo lists
+- near-real-time refresh across open Home Assistant devices using Home Assistant's own state updates
 
 ## Install
-### HACS (recommended)
+### HACS
 1. Install `Local List Assist` from HACS.
-2. Install `Local List Assist`.
-3. Restart Home Assistant.
-4. Go to `Settings -> Devices & Services`.
-5. Add `Local List Assist`.
-6. Open `Local List Assist` from the sidebar.
-7. Click `Configure` and complete setup.
-8. Set your preferred dashboard name if you want something different from `Local List Assist`.
+2. Restart Home Assistant.
+3. Go to `Settings -> Devices & Services`.
+4. Add `Local List Assist`.
+5. Open `Local List Assist` from the sidebar.
 
 ### Manual
-1. Copy `custom_components/grocery_learning` into your HA config directory.
+1. Copy `custom_components/grocery_learning` into your Home Assistant `custom_components` directory.
 2. Restart Home Assistant.
-3. Add integration from `Settings -> Devices & Services`.
-4. Open `Local List Assist` and complete setup.
+3. Add the integration from `Settings -> Devices & Services`.
 
 ## Quick Start
-1. Open sidebar item `Local List Assist`.
-2. Add 2-3 items with Quick Add.
-3. Open `Configure` and click `Install Voice Phrases`.
-4. Add one item by voice to your shopping/grocery list.
-5. If an item lands in `Other`, use review actions to teach the category once.
-6. Re-test the same item and verify it routes correctly.
+1. Open `Local List Assist` from the sidebar.
+2. Create your first list with the `+` button.
+3. Add a few items with Quick Add.
+4. Open `App Settings` and click `Install Voice Phrases` if you want voice adds.
+5. Open `List Settings` on the active list to edit categories, color, and voice aliases.
+6. If an item lands in `Other`, use the review actions once to teach the category.
+
+## Current UI Model
+- `+` button: create a new list
+- active list chip: open `List Settings`
+- long-press on touch or right-click on desktop: reorder lists
+- hamburger menu: open navigation drawer
+- `App Settings`: sync/repair/tools/links
+- `Activity`: available from `App Settings -> Tools`
+
+## Live Updates
+- changes made on one Home Assistant device now propagate to other open Local List Assist panels almost immediately
+- this uses a revision signal inside the integration and Home Assistant's normal pushed state updates
+- active editing is protected: the panel waits to reload until dialogs/editors close
 
 ## Documentation
 - Setup guide: [docs/setup.md](docs/setup.md)
@@ -65,7 +63,6 @@ Local List Assist is a Home Assistant custom integration that gives you a clean,
 - Troubleshooting: [docs/troubleshooting.md](docs/troubleshooting.md)
 - FAQ: [docs/faq.md](docs/faq.md)
 - Regression checklist: [docs/regression-checklist.md](docs/regression-checklist.md)
-- Multi-list roadmap: [docs/multilist-roadmap.md](docs/multilist-roadmap.md)
 
 ## Service APIs
 - `grocery_learning.route_item`
@@ -77,13 +74,11 @@ Local List Assist is a Home Assistant custom integration that gives you a clean,
 - `grocery_learning.forget_term`
 - `grocery_learning.sync_helpers`
 
-## Support
-- Issues: https://github.com/rynecoop/ha-grocery-learning/issues
-- Changelog: [CHANGELOG.md](CHANGELOG.md)
+## Compatibility Note
+- display name is `Local List Assist`
+- domain and service namespace remain `grocery_learning` for compatibility
 
-## Project Structure
-- Integration: `custom_components/grocery_learning`
-- Docs: `docs/`
-- HACS metadata: `hacs.json`
-- Branding assets: `brands/`
+## Support
+- Issues: [https://github.com/rynecoop/ha-grocery-learning/issues](https://github.com/rynecoop/ha-grocery-learning/issues)
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
 
