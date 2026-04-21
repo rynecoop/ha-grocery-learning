@@ -25,6 +25,7 @@ export function moveItemToCompleted(state, itemRef) {
       state.completed.unshift({
         item_ref: item.item_ref,
         summary: item.summary,
+        quantity: item.quantity || 1,
         description: item.description,
         list_entity: "internal:completed",
       });

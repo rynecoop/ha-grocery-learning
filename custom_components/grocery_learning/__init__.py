@@ -91,6 +91,7 @@ FORGET_SCHEMA = vol.Schema(
 ROUTE_ITEM_SCHEMA = vol.Schema(
     {
         vol.Required("item"): cv.string,
+        vol.Optional("quantity", default=1): vol.Coerce(int),
         vol.Optional("source_list", default=""): cv.string,
         vol.Optional("source_list_name", default=""): cv.string,
         vol.Optional("remove_from_source", default=False): cv.boolean,
@@ -106,6 +107,7 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
 ADD_TO_LIST_SCHEMA = vol.Schema(
     {
         vol.Required("item"): cv.string,
+        vol.Optional("quantity", default=1): vol.Coerce(int),
         vol.Optional("list_name", default=""): cv.string,
         vol.Optional("list_id", default=""): cv.string,
         vol.Optional("source", default="service_call"): cv.string,
@@ -1469,7 +1471,69 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].get("item_meta", {})
         return dict(meta_map.get(_item_meta_key(list_entity, normalized_item), {}))
 
+    def _coerce_quantity(value: Any) -> int:
+        try:
+            quantity = int(value)
+        except (TypeError, ValueError):
+            return 1
+        return max(1, quantity)
+
+    def _quantity_for_item(item: Mapping[str, Any]) -> int:
+        return _coerce_quantity(item.get("quantity", 1))
+
+    def _meta_quantity(meta: Mapping[str, str]) -> int:
+        return _coerce_quantity(meta.get("total_quantity", meta.get("add_count", "1")))
+
+    def _decode_contributors(meta: Mapping[str, str]) -> list[str]:
+        raw = str(meta.get("contributors_json", "")).strip()
+        if not raw:
+            fallback = str(meta.get("last_added_by_name", "")).strip()
+            return [fallback] if fallback else []
+        try:
+            values = json.loads(raw)
+        except json.JSONDecodeError:
+            fallback = str(meta.get("last_added_by_name", "")).strip()
+            return [fallback] if fallback else []
+        if not isinstance(values, list):
+            return []
+        seen: set[str] = set()
+        names: list[str] = []
+        for value in values:
+            name = str(value).strip()
+            if not name:
+                continue
+            lowered = name.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+            names.append(name)
+        return names
+
+    def _format_contributors(names: list[str]) -> str:
+        cleaned = [name.strip() for name in names if str(name).strip()]
+        if not cleaned:
+            return "Unknown"
+        if len(cleaned) == 1:
+            return cleaned[0]
+        if len(cleaned) == 2:
+            return f"{cleaned[0]} and {cleaned[1]}"
+        return f"{', '.join(cleaned[:-1])}, and {cleaned[-1]}"
+
+    def _build_description_from_meta(meta: Mapping[str, str], fallback: str) -> str:
+        if not meta:
+            return fallback
+        contributors = _format_contributors(_decode_contributors(meta))
+        quantity = _meta_quantity(meta)
+        source = _friendly_source(str(meta.get("last_source", "")).strip() or "unknown")
+        when = _relative_time(str(meta.get("last_added_at", "")).strip())
+        quantity_text = f" · Qty {quantity}" if quantity > 1 else ""
+        return f"Added by {contributors}{quantity_text} · {when} · {source}"
     def _display_description(list_entity: str, summary: str, fallback: str) -> str:
+        normalized_item = _normalize_term(summary)
+        if normalized_item:
+            meta = _meta_for_item(list_entity, normalized_item)
+            if meta:
+                return _build_description_from_meta(meta, fallback)
         marker = "GLMETA|"
         if marker in fallback:
             match = re.search(r"GLMETA\|([^|]+)\|([^|]*)\|([^\r\n|]+)", fallback)
@@ -1479,21 +1543,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 source = _friendly_source(source_key.strip() or "unknown")
                 when = _relative_time(added_at.strip())
                 return f"Added by {added_by} · {when} · {source}"
-        normalized_item = _normalize_term(summary)
-        if not normalized_item:
-            return fallback
-        meta = _meta_for_item(list_entity, normalized_item)
-        if not meta:
-            return fallback
-        added_by = str(meta.get("last_added_by_name", "")).strip() or "Unknown"
-        source = _friendly_source(str(meta.get("last_source", "")).strip() or "unknown")
-        when = _relative_time(str(meta.get("last_added_at", "")).strip())
-        return f"Added by {added_by} · {when} · {source}"
+        return fallback
 
     def _description_with_existing_meta(list_entity: str, summary: str, fallback: str) -> str:
-        marker = "GLMETA|"
-        if marker in fallback:
-            return fallback
         normalized_item = _normalize_term(summary)
         if not normalized_item:
             return fallback
@@ -1501,14 +1553,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not meta:
             return fallback
         added_at = str(meta.get("last_added_at", "")).strip()
-        added_by = str(meta.get("last_added_by_name", "")).strip() or "Unknown"
+        added_by = _format_contributors(_decode_contributors(meta))
         source_key = str(meta.get("last_source", "")).strip() or "unknown"
         source = _friendly_source(source_key)
         when = _relative_time(added_at)
         safe_name = added_by.replace("|", "/")
         safe_source = source_key.replace("|", "_")
-        return f"Added by {added_by} · {when} · {source}\nGLMETA|{added_at}|{safe_name}|{safe_source}"
-
+        quantity = _meta_quantity(meta)
+        quantity_text = f" · Qty {quantity}" if quantity > 1 else ""
+        return f"Added by {added_by}{quantity_text} · {when} · {source}\nGLMETA|{added_at}|{safe_name}|{safe_source}"
     def _clean_helper_state_value(value: str) -> str:
         cleaned = value.strip()
         if cleaned.lower() in {"", "unknown", "unavailable", "none", "null"}:
@@ -1541,6 +1594,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         item_summary: str,
         call: ServiceCall,
         source_override: str | None = None,
+        quantity: int = 1,
     ) -> None:
         normalized_item = _normalize_term(item_summary)
         if not normalized_item:
@@ -1564,6 +1618,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         now_iso = dt_util.utcnow().isoformat()
         previous = meta_map.get(key, {})
         count = int(previous.get("add_count", "0") or "0") + 1
+        total_quantity = _meta_quantity(previous) + _coerce_quantity(quantity)
+        contributors = _decode_contributors(previous)
+        if user_name and user_name.lower() not in {name.lower() for name in contributors}:
+            contributors.append(user_name)
         meta_map[key] = {
             "last_added_at": now_iso,
             "last_added_by_user_id": user_id,
@@ -1571,8 +1629,36 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "last_source": source,
             "last_item_text": item_summary.strip(),
             "add_count": str(count),
+            "total_quantity": str(total_quantity),
+            "contributors_json": json.dumps(contributors),
         }
         await _save()
+
+    def _merge_meta_records(existing: Mapping[str, str], incoming: Mapping[str, str]) -> dict[str, str]:
+        if not existing:
+            return dict(incoming)
+        if not incoming:
+            return dict(existing)
+        merged = dict(existing)
+        existing_qty = _meta_quantity(existing)
+        incoming_qty = _meta_quantity(incoming)
+        merged["total_quantity"] = str(existing_qty + incoming_qty)
+        merged["add_count"] = str(int(existing.get("add_count", "0") or "0") + int(incoming.get("add_count", "0") or "0"))
+        contributors = _decode_contributors(existing)
+        known = {name.lower() for name in contributors}
+        for contributor in _decode_contributors(incoming):
+            lowered = contributor.lower()
+            if lowered in known:
+                continue
+            known.add(lowered)
+            contributors.append(contributor)
+        merged["contributors_json"] = json.dumps(contributors)
+        merged["last_added_at"] = str(incoming.get("last_added_at", existing.get("last_added_at", ""))).strip()
+        merged["last_added_by_user_id"] = str(incoming.get("last_added_by_user_id", existing.get("last_added_by_user_id", ""))).strip()
+        merged["last_added_by_name"] = str(incoming.get("last_added_by_name", existing.get("last_added_by_name", ""))).strip()
+        merged["last_source"] = str(incoming.get("last_source", existing.get("last_source", ""))).strip()
+        merged["last_item_text"] = str(incoming.get("last_item_text", existing.get("last_item_text", ""))).strip()
+        return merged
 
     def _move_item_meta_entry(
         old_list_entity: str,
@@ -1591,7 +1677,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].setdefault("item_meta", {})
         existing = meta_map.pop(old_key, None)
         if existing:
-            meta_map[new_key] = existing
+            target_existing = meta_map.get(new_key, {})
+            meta_map[new_key] = _merge_meta_records(target_existing, existing)
+
 
     async def _find_open_duplicate(list_entity: str, item_summary: str) -> dict[str, Any] | None:
         if not list_entity or hass.states.get(list_entity) is None:
@@ -1707,6 +1795,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     {
                         "item_ref": str(item.get("id", "")).strip() or summary,
                         "summary": summary,
+                        "quantity": _quantity_for_item(item),
                         "description": _display_description(_internal_list_entity(category), summary, description),
                         "list_entity": _internal_list_entity(category),
                         "category": category,
@@ -1732,6 +1821,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 {
                     "item_ref": str(item.get("id", "")).strip() or summary,
                     "summary": summary,
+                    "quantity": _quantity_for_item(item),
                     "description": _display_description(_internal_list_entity(category), summary, description),
                     "list_entity": "internal:completed",
                 }
@@ -1809,6 +1899,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         {
                             "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
                             "summary": str(item.get("summary", "")).strip(),
+                            "quantity": _meta_quantity(
+                                _meta_for_item(entity_id, _normalize_term(str(item.get("summary", "")).strip()))
+                            ),
                             "description": _display_description(
                                 entity_id,
                                 str(item.get("summary", "")).strip(),
@@ -1838,6 +1931,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 {
                     "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
                     "summary": str(item.get("summary", "")).strip(),
+                    "quantity": _meta_quantity(
+                        _meta_for_item(COMPLETED_LIST_ENTITY, _normalize_term(str(item.get("summary", "")).strip()))
+                    ),
                     "description": _display_description(
                         COMPLETED_LIST_ENTITY,
                         str(item.get("summary", "")).strip(),
@@ -1893,6 +1989,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         normalized = _normalize_term(raw_item)
         if not normalized:
             return
+        quantity = _coerce_quantity(call.data.get("quantity", 1))
 
         source_target_list_id = ""
         intake_like_source = source in {"voice_assistant", "automation"}
@@ -1939,24 +2036,19 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         )
         target_entity = _internal_list_entity(category)
         if duplicate_item and not allow_duplicate:
-            if not should_prompt_duplicate:
-                if remove_from_source:
-                    await _remove_from_list(source_list, raw_item)
-                return
-            existing_description = str(duplicate_item.get("description", "")).strip()
-            existing_display = _display_description(target_entity, str(duplicate_item.get("summary", "")).strip(), existing_description)
-            parts = [p.strip() for p in existing_display.replace("Added by ", "").split("·")]
-            existing_by = parts[0] if parts else "Unknown"
-            existing_when = parts[1] if len(parts) > 1 else "Unknown"
-            existing_source = parts[2] if len(parts) > 2 else "Unknown"
-            await _set_pending_duplicate(
-                item=raw_item,
-                target_list=target_entity,
-                normalized=normalized,
-                existing_by=existing_by,
-                existing_source=existing_source,
-                existing_when=existing_when,
-                interactive=True,
+            duplicate_item["quantity"] = _quantity_for_item(duplicate_item) + quantity
+            await _record_item_meta(target_entity, raw_item, call, quantity=quantity)
+            duplicate_item["description"] = _description_with_existing_meta(
+                target_entity,
+                str(duplicate_item.get("summary", "")).strip(),
+                str(duplicate_item.get("description", "")).strip(),
+            )
+            await _save()
+            await _record_activity(
+                "Updated quantity",
+                f"{raw_item} x{duplicate_item['quantity']}",
+                str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
+                source,
             )
             if remove_from_source:
                 await _remove_from_list(source_list, raw_item)
@@ -1970,13 +2062,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "category": category,
                 "status": "needs_action",
                 "description": description,
+                "quantity": quantity,
             }
         )
-        await _record_item_meta(target_entity, raw_item, call)
+        await _record_item_meta(target_entity, raw_item, call, quantity=quantity)
         await _save()
         await _record_activity(
             "Item added",
-            raw_item,
+            f"{raw_item} x{quantity}" if quantity > 1 else raw_item,
             str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
             source,
         )
@@ -2064,6 +2157,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if action == "add_item":
             item = str(payload.get("item", "")).strip()
             if item:
+                quantity = _coerce_quantity(payload.get("quantity", 1))
                 request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
                 actor_name = str(payload.get("actor_name", "")).strip()
                 if request_user_id and not actor_name:
@@ -2079,6 +2173,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "source": "typed",
                         "interactive_duplicate": True,
                         "allow_duplicate": False,
+                        "quantity": quantity,
                         "actor_user_id": request_user_id,
                         "actor_name": actor_name,
                     },
@@ -3200,15 +3295,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _route_item_internal(call)
             return
         raw_item = call.data["item"]
+        quantity = _coerce_quantity(call.data.get("quantity", 1))
         source_list = call.data["source_list"].strip()
         remove_from_source = bool(call.data["remove_from_source"])
         review_on_other = bool(call.data["review_on_other"])
         allow_duplicate = bool(call.data["allow_duplicate"])
-        interactive_duplicate = bool(call.data.get("interactive_duplicate", False))
         source = _source_from_call(call)
-        should_prompt_duplicate = interactive_duplicate and source == "typed" and not source_list and not remove_from_source
-        if not should_prompt_duplicate:
-            await _clear_pending_duplicate()
+        await _clear_pending_duplicate()
         normalized = _normalize_term(raw_item)
         if not normalized:
             return
@@ -3226,45 +3319,35 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         duplicate_item = await _find_open_duplicate(target_list, raw_item)
         if duplicate_item and not allow_duplicate:
-            if not should_prompt_duplicate:
-                await _clear_pending_duplicate()
-                if remove_from_source:
-                    await _remove_from_list(source_list, raw_item)
-                return
             target_state = hass.states.get(target_list)
             target_name = (
                 str(target_state.attributes.get("friendly_name", "")).strip()
                 if target_state is not None
                 else target_list
             )
-            meta = _meta_for_item(target_list, normalized)
-            existing_by = meta.get("last_added_by_name", "Unknown")
-            existing_source = _friendly_source(meta.get("last_source", "unknown"))
-            existing_when = _relative_time(meta.get("last_added_at", ""))
-            await _set_pending_duplicate(
-                item=raw_item,
-                target_list=target_list,
-                normalized=normalized,
-                existing_by=existing_by,
-                existing_source=existing_source,
-                existing_when=existing_when,
-                interactive=True,
+            duplicate_ref = str(duplicate_item.get("uid", "")).strip() or str(duplicate_item.get("summary", "")).strip()
+            await _record_item_meta(target_list, raw_item, call, quantity=quantity)
+            updated_meta = _meta_for_item(target_list, normalized)
+            updated_description = _description_with_existing_meta(
+                target_list,
+                raw_item,
+                str(duplicate_item.get("description", "")).strip(),
             )
             await hass.services.async_call(
-                "persistent_notification",
-                "create",
+                "todo",
+                "update_item",
                 {
-                    "title": "Local List duplicate",
-                    "message": (
-                        f"**{raw_item}** is already on **{target_name}**.\n\n"
-                        f"- Added by: **{existing_by}**\n"
-                        f"- Added: **{existing_when}**\n"
-                        f"- Source: **{existing_source}**\n\n"
-                        "Use the Local List Assist dashboard to **Add anyway** or **Skip**."
-                    ),
-                    "notification_id": "grocery_duplicate",
+                    "item": duplicate_ref,
+                    "description": updated_description,
                 },
+                target={"entity_id": target_list},
                 blocking=True,
+            )
+            await _record_activity(
+                "Updated quantity",
+                f"{raw_item} x{_meta_quantity(updated_meta)}",
+                target_name,
+                source,
             )
             if remove_from_source:
                 await _remove_from_list(source_list, raw_item)
@@ -3277,10 +3360,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             target={"entity_id": target_list},
             blocking=True,
         )
-        await _record_item_meta(target_list, raw_item, call)
+        await _record_item_meta(target_list, raw_item, call, quantity=quantity)
         target_state = hass.states.get(target_list)
         target_name = str(target_state.attributes.get("friendly_name", "")).strip() if target_state is not None else target_list
-        await _record_activity("Item added", raw_item, target_name, source)
+        await _record_activity("Item added", f"{raw_item} x{quantity}" if quantity > 1 else raw_item, target_name, source)
 
         if remove_from_source:
             await _remove_from_list(source_list, raw_item)
@@ -3314,6 +3397,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         item = str(call.data.get("item", "")).strip()
         if not item:
             return
+        quantity = _coerce_quantity(call.data.get("quantity", 1))
         source = str(call.data.get("source", "service_call")).strip() or "service_call"
         actor_user_id = str(call.data.get("actor_user_id", "")).strip()
         actor_name = str(call.data.get("actor_name", "")).strip()
@@ -3329,6 +3413,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 SERVICE_ROUTE_ITEM,
                 {
                     "item": item,
+                    "quantity": quantity,
                     "source": source,
                     "source_list_name": resolved_list_name,
                     "allow_duplicate": bool(call.data.get("allow_duplicate", False)),
@@ -3345,6 +3430,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             SERVICE_ROUTE_ITEM,
             {
                 "item": item,
+                "quantity": quantity,
                 "source": source,
                 "allow_duplicate": bool(call.data.get("allow_duplicate", False)),
                 "actor_user_id": actor_user_id,
@@ -4028,3 +4114,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     return True
+
+
+
+
+

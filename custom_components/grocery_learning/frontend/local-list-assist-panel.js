@@ -34,6 +34,7 @@ class LocalListAssistPanel extends HTMLElement {
     };
     this._drafts = {
       quickAdd: "",
+      quickAddQty: "1",
       dashboardName: "",
       settingsCategories: "",
       newListName: "",
@@ -441,7 +442,10 @@ class LocalListAssistPanel extends HTMLElement {
             <input class="complete-toggle" type="checkbox" />
             <strong>${this.esc(item.summary)}</strong>
           </div>
-          <span class="pill">${this.esc(item.category_display)}</span>
+          <div class="item-pills">
+            ${Number(item.quantity || 1) > 1 ? `<span class="pill ghost-pill">Qty ${this.esc(String(item.quantity || 1))}</span>` : ""}
+            <span class="pill">${this.esc(item.category_display)}</span>
+          </div>
         </div>
         <div class="small">${this.esc(item.description || "")}</div>
         <div class="editor ${editorOpen ? "open" : ""}">
@@ -461,6 +465,7 @@ class LocalListAssistPanel extends HTMLElement {
       <div class="item completed-item" data-editor-key="${this.esc(editorKey)}" data-list-entity="${this.esc(item.list_entity)}" data-item-ref="${this.esc(item.item_ref)}" data-completed-item="true">
         <div class="item-main completed-main">
           <label class="completed-row"><input class="completed-toggle" data-item-ref="${this.esc(item.item_ref)}" type="checkbox" checked /> <strong>${this.esc(item.summary)}</strong></label>
+          ${Number(item.quantity || 1) > 1 ? `<span class="pill ghost-pill">Qty ${this.esc(String(item.quantity || 1))}</span>` : ""}
         </div>
         <div class="small meta-line">${this.esc(item.description || "")}</div>
         <div class="editor ${editorOpen ? "open" : ""}">
@@ -540,13 +545,18 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelector("#addBtn")?.addEventListener("click", async () => {
       const input = root.querySelector("#quickAdd");
       const item = (this._drafts.quickAdd || input?.value || "").trim();
+      const qtyInput = root.querySelector("#quickAddQty");
+      const quantity = Math.max(1, Number.parseInt(this._drafts.quickAddQty || qtyInput?.value || "1", 10) || 1);
       if (!item) return;
       this._drafts.quickAdd = "";
+      this._drafts.quickAddQty = "1";
       this._focusTarget = "quickAdd";
       if (input) input.value = "";
+      if (qtyInput) qtyInput.value = "1";
       await this.act({
         action: "add_item",
         item,
+        quantity,
         actor_user_id: this._hass?.user?.id || "",
         actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
       });
@@ -1125,6 +1135,8 @@ class LocalListAssistPanel extends HTMLElement {
         .toggle-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
         .toggle-row { display:flex; gap:8px; align-items:center; color:#d5e6f8; }
         .input, .select { width:100%; background:#08111b; color:#f3f7fb; border:1px solid #2e5276; border-radius:14px; padding: 12px 14px; }
+        .quick-add-row { align-items:stretch; }
+        .qty-input { width:96px; flex:0 0 96px; text-align:center; }
         .color-input { width:100%; min-height:48px; background:#08111b; border:1px solid #2e5276; border-radius:14px; padding: 6px; }
         .btn { border:1px solid #416588; background:#27425f; color:#fff; border-radius:14px; padding: 12px 16px; cursor:pointer; }
         .btn.primary { background:var(--accent); border-color:color-mix(in srgb, var(--accent) 60%, white); }
@@ -1152,6 +1164,7 @@ class LocalListAssistPanel extends HTMLElement {
         .completed-row { display:flex; gap:10px; align-items:flex-start; }
         .meta-line { line-height:1.45; }
         .item-main { display:flex; justify-content:space-between; gap:10px; align-items:center; cursor:pointer; }
+        .item-pills { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
         .item-summary { display:flex; align-items:center; gap:10px; min-width:0; }
         .editor { display:none; gap:10px; margin-top:10px; }
         .editor.open { display:flex; }
@@ -1174,6 +1187,7 @@ class LocalListAssistPanel extends HTMLElement {
           .hero-head { align-items:flex-start; }
           .hero-title { font-size: 24px; }
           .row { gap:8px; }
+          .qty-input { width:84px; flex-basis:84px; }
           .activity-item, .completed-item { padding: 10px; margin-bottom: 8px; }
           .meta-line { font-size: 13px; }
           .item-main { align-items:flex-start; }
@@ -1197,8 +1211,9 @@ class LocalListAssistPanel extends HTMLElement {
             </div>
           </div>
           ${multilist ? `<div class="list-chip-row">${listChips}</div><div class="small">Tap the active list to manage it. Long-press on touch devices or right-click on desktop to reorder it.</div>` : ""}
-          <div class="row">
+          <div class="row quick-add-row">
             <input id="quickAdd" data-draft="quickAdd" class="input" placeholder="Add item" value="${this.esc(this._drafts.quickAdd || "")}" />
+            <input id="quickAddQty" data-draft="quickAddQty" class="input qty-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Qty" value="${this.esc(this._drafts.quickAddQty || "1")}" />
             <button id="addBtn" class="btn primary">Add</button>
           </div>
         </section>

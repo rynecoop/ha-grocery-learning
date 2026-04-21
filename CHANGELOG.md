@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.21
+- Added quantity support to the Home Assistant panel quick-add flow and item display.
+- Merged duplicate item adds into a single line item while summing quantities instead of creating repeated rows.
+- Preserved contributor attribution across merged adds so shared items show the people who requested them.
+
 ## 0.13.18
 - Added near-real-time dashboard refresh across open Home Assistant devices by publishing a live revision signal from the integration and reloading the panel when that revision changes.
 - Deferred live reload while dialogs or editors are open so active typing and edits are not interrupted.

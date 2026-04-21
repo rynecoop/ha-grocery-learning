@@ -137,6 +137,10 @@ class GroceryLearningStore:
                         status = str(item.get("status", "needs_action")).strip().lower()
                         if status not in {"needs_action", "completed"}:
                             status = "needs_action"
+                        try:
+                            quantity = max(1, int(item.get("quantity", 1) or 1))
+                        except (TypeError, ValueError):
+                            quantity = 1
                         items_clean.append(
                             {
                                 "id": item_id,
@@ -144,6 +148,7 @@ class GroceryLearningStore:
                                 "category": category,
                                 "status": status,
                                 "description": str(item.get("description", "")).strip(),
+                                "quantity": quantity,
                             }
                         )
                 cleaned_lists[normalized_id] = {
