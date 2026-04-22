@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.23
+- Normalized voice-style item names so leading articles like `a` no longer get stored as part of the item summary.
+- Merged simple singular and plural forms like `lemon` and `lemons` into the same line item without collapsing distinct phrases like `oat milk` and `milk`.
+- Cleaned voice add responses so the spoken item name matches what lands on the list.
+
 ## 0.13.22
 - Removed quantity text from the item subtitle so the metadata no longer conflicts with the visible quantity badge.
 - Switched quantity tracking to the current line-item quantity instead of an ever-growing historical total.

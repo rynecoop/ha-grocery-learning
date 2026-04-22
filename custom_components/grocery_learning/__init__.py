@@ -706,9 +706,45 @@ class GroceryLearningActionView(HomeAssistantView):
             return self.json({"ok": False, "error": str(err)})
 
 
+def _strip_leading_item_articles(value: str) -> str:
+    words = [part for part in re.split(r"\s+", value.strip()) if part]
+    while words and words[0].lower() in {"a", "an", "the"}:
+        words.pop(0)
+    return " ".join(words).strip()
+
+
+def _singularize_token(value: str) -> str:
+    token = value.strip().lower()
+    if len(token) <= 3 or any(ch.isdigit() for ch in token):
+        return token
+    if token.endswith("ies") and len(token) > 4:
+        return f"{token[:-3]}y"
+    if token.endswith(("ches", "shes", "xes", "zes")) and len(token) > 4:
+        return token[:-2]
+    if token.endswith("oes") and len(token) > 4:
+        return token[:-2]
+    if token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
+    return token
+
+
+def _canonical_item_phrase(value: str) -> str:
+    stripped = _strip_leading_item_articles(value)
+    cleaned = re.sub(r"[^a-z0-9 ]", " ", stripped.lower())
+    parts = [part for part in re.split(r"\s+", cleaned) if part]
+    if not parts:
+        return ""
+    parts[-1] = _singularize_token(parts[-1])
+    return " ".join(parts).strip()
+
+
+def _display_item_summary(value: str) -> str:
+    stripped = _strip_leading_item_articles(value)
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
 def _normalize_term(value: str) -> str:
-    cleaned = re.sub(r"[^a-z0-9 ]", " ", value.lower())
-    return re.sub(r"\s+", " ", cleaned).strip()
+    return _canonical_item_phrase(value)
 
 
 def _normalize_category(value: str) -> str:
@@ -1994,6 +2030,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         raw_item = str(call.data.get("item", "")).strip()
         if not raw_item:
             return
+        display_item = _display_item_summary(raw_item) or raw_item
         source_list = str(call.data.get("source_list", "")).strip()
         source_list_name = str(call.data.get("source_list_name", "")).strip()
         remove_from_source = bool(call.data.get("remove_from_source", False))
@@ -2005,7 +2042,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not should_prompt_duplicate:
             await _clear_pending_duplicate()
 
-        normalized = _normalize_term(raw_item)
+        normalized = _normalize_term(display_item)
         if not normalized:
             return
         quantity = _coerce_quantity(call.data.get("quantity", 1))
@@ -2056,7 +2093,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         target_entity = _internal_list_entity(category)
         if duplicate_item and not allow_duplicate:
             duplicate_item["quantity"] = _quantity_for_item(duplicate_item) + quantity
-            await _record_item_meta(target_entity, raw_item, call, quantity=quantity)
+            await _record_item_meta(target_entity, display_item, call, quantity=quantity)
             duplicate_item["description"] = _description_with_existing_meta(
                 target_entity,
                 str(duplicate_item.get("summary", "")).strip(),
@@ -2065,7 +2102,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             await _record_activity(
                 "Updated quantity",
-                f"{raw_item} x{duplicate_item['quantity']}",
+                f"{str(duplicate_item.get('summary', '')).strip() or display_item} x{duplicate_item['quantity']}",
                 str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
                 source,
             )
@@ -2077,18 +2114,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         items.append(
             {
                 "id": uuid4().hex,
-                "summary": raw_item,
+                "summary": display_item,
                 "category": category,
                 "status": "needs_action",
                 "description": description,
                 "quantity": quantity,
             }
         )
-        await _record_item_meta(target_entity, raw_item, call, quantity=quantity)
+        await _record_item_meta(target_entity, display_item, call, quantity=quantity)
         await _save()
         await _record_activity(
             "Item added",
-            f"{raw_item} x{quantity}" if quantity > 1 else raw_item,
+            f"{display_item} x{quantity}" if quantity > 1 else display_item,
             str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
             source,
         )
@@ -3337,6 +3374,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _route_item_internal(call)
             return
         raw_item = call.data["item"]
+        display_item = _display_item_summary(raw_item) or raw_item
         quantity = _coerce_quantity(call.data.get("quantity", 1))
         source_list = call.data["source_list"].strip()
         remove_from_source = bool(call.data["remove_from_source"])
@@ -3344,7 +3382,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         allow_duplicate = bool(call.data["allow_duplicate"])
         source = _source_from_call(call)
         await _clear_pending_duplicate()
-        normalized = _normalize_term(raw_item)
+        normalized = _normalize_term(display_item)
         if not normalized:
             return
 
@@ -3359,7 +3397,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             _LOGGER.warning("Target list %s missing for category %s", target_list, category)
             target_list = _target_list_for_category("other")
 
-        duplicate_item = await _find_open_duplicate(target_list, raw_item)
+        duplicate_item = await _find_open_duplicate(target_list, display_item)
         if duplicate_item and not allow_duplicate:
             target_state = hass.states.get(target_list)
             target_name = (
@@ -3368,11 +3406,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 else target_list
             )
             duplicate_ref = str(duplicate_item.get("uid", "")).strip() or str(duplicate_item.get("summary", "")).strip()
-            await _record_item_meta(target_list, raw_item, call, quantity=quantity)
+            await _record_item_meta(target_list, display_item, call, quantity=quantity)
             updated_meta = _meta_for_item(target_list, normalized)
             updated_description = _description_with_existing_meta(
                 target_list,
-                raw_item,
+                str(duplicate_item.get("summary", "")).strip() or display_item,
                 str(duplicate_item.get("description", "")).strip(),
             )
             await hass.services.async_call(
@@ -3387,7 +3425,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             )
             await _record_activity(
                 "Updated quantity",
-                f"{raw_item} x{_meta_quantity(updated_meta)}",
+                f"{str(duplicate_item.get('summary', '')).strip() or display_item} x{_meta_quantity(updated_meta)}",
                 target_name,
                 source,
             )
@@ -3398,26 +3436,26 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await hass.services.async_call(
             "todo",
             "add_item",
-            {"item": raw_item, "description": await _build_item_description(call)},
+            {"item": display_item, "description": await _build_item_description(call)},
             target={"entity_id": target_list},
             blocking=True,
         )
-        await _record_item_meta(target_list, raw_item, call, quantity=quantity)
+        await _record_item_meta(target_list, display_item, call, quantity=quantity)
         target_state = hass.states.get(target_list)
         target_name = str(target_state.attributes.get("friendly_name", "")).strip() if target_state is not None else target_list
-        await _record_activity("Item added", f"{raw_item} x{quantity}" if quantity > 1 else raw_item, target_name, source)
+        await _record_activity("Item added", f"{display_item} x{quantity}" if quantity > 1 else display_item, target_name, source)
 
         if remove_from_source:
             await _remove_from_list(source_list, raw_item)
 
         if category == "other" and review_on_other:
-            await _set_pending_review(raw_item, target_list)
+            await _set_pending_review(display_item, target_list)
             await hass.services.async_call(
                 "persistent_notification",
                 "create",
                 {
                     "title": "Local List needs category review",
-                    "message": f"'{raw_item}' was added to Other. Open Local List Assist and review.",
+                    "message": f"'{display_item}' was added to Other. Open Local List Assist and review.",
                     "notification_id": "grocery_uncategorized",
                 },
                 blocking=True,
@@ -3678,6 +3716,7 @@ lists:
         ) -> intent_helper.IntentResponse:
             slots = self.async_validate_slots(intent_obj.slots)
             item = str(slots.get("item", {}).get("value", "")).strip()
+            spoken_item = _display_item_summary(item) or item
             requested_list_name = str(slots.get("list_name", {}).get("value", "")).strip()
             response = intent_obj.create_response()
 
@@ -3707,7 +3746,7 @@ lists:
 
                 resolved_list_id, resolved_list = _internal_list_by_id(target_list_id)
                 resolved_list_name = str(resolved_list.get("name", "Grocery List")).strip() or "Grocery List"
-                normalized_item = _normalize_term(item)
+                normalized_item = _normalize_term(spoken_item)
                 before_count = sum(
                     1
                     for existing in resolved_list.get("items", [])
@@ -3739,10 +3778,10 @@ lists:
                     and _normalize_term(str(existing.get("summary", "")).strip()) == normalized_item
                 )
                 if before_count > 0 and after_count == before_count:
-                    response.async_set_speech(f"{item} is already on {resolved_list_name}.")
+                    response.async_set_speech(f"{spoken_item} is already on {resolved_list_name}.")
                 else:
-                    response.async_set_speech(f"Added {item} to {resolved_list_name}.")
-                response.async_set_card("Local List Assist", f"{item} -> {resolved_list_name}")
+                    response.async_set_speech(f"Added {spoken_item} to {resolved_list_name}.")
+                response.async_set_card("Local List Assist", f"{spoken_item} -> {resolved_list_name}")
                 return response
 
             await hass.services.async_call(
@@ -3758,8 +3797,8 @@ lists:
                 blocking=True,
                 context=intent_obj.context,
             )
-            response.async_set_speech("Added item to Grocery List.")
-            response.async_set_card("Local List Assist", f"{item} -> Grocery List")
+            response.async_set_speech(f"Added {spoken_item} to Grocery List.")
+            response.async_set_card("Local List Assist", f"{spoken_item} -> Grocery List")
             return response
 
     hass.services.async_register(DOMAIN, SERVICE_LEARN_TERM, _learn_term, schema=LEARN_SCHEMA)
