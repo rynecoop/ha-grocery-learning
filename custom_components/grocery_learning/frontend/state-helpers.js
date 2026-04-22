@@ -64,6 +64,7 @@ export function updateItemLocal(state, itemRef, updates = {}) {
   if (!state) return false;
   const nextSummary = String(updates.summary || "").trim();
   const nextCategory = String(updates.targetCategory || "").trim();
+  const nextQuantity = Math.max(1, Number.parseInt(updates.quantity ?? 1, 10) || 1);
   let targetItem = null;
   let sourceGroup = null;
   for (const group of state.groups || []) {
@@ -80,11 +81,13 @@ export function updateItemLocal(state, itemRef, updates = {}) {
     if (nextSummary) {
       completedItem.summary = nextSummary;
     }
+    completedItem.quantity = nextQuantity;
     return true;
   }
   if (nextSummary) {
     targetItem.summary = nextSummary;
   }
+  targetItem.quantity = nextQuantity;
   if (nextCategory && nextCategory !== targetItem.category) {
     const moved = recategorizeItemLocal(state, itemRef, nextCategory);
     if (!moved) return false;

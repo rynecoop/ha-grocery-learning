@@ -1,4 +1,4 @@
-"""Local List Assist custom integration."""
+﻿"""Local List Assist custom integration."""
 
 from __future__ import annotations
 
@@ -367,7 +367,7 @@ class GroceryLearningAppView(HomeAssistantView):
           <div class="row">
             <select id="activeListSelect" class="input" style="max-width:360px; min-width:220px;">${listOptions}</select>
           </div>
-          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong> · ${esc((state.system?.active_list_categories || []).length ? 'Categorized view' : 'Flat list')}</div>`;
+          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong> Â· ${esc((state.system?.active_list_categories || []).length ? 'Categorized view' : 'Flat list')}</div>`;
       } else {
         listSwitcher.innerHTML = '';
       }
@@ -435,7 +435,7 @@ class GroceryLearningAppView(HomeAssistantView):
       byId('lists').innerHTML = groups;
 
       byId('activity').innerHTML = (state.activity || []).length
-        ? state.activity.map((entry) => `<div class="item"><div><strong>${esc(entry.title || '')}</strong></div><div class="small">${esc(entry.detail || '')}${entry.list_name ? ` · ${esc(entry.list_name)}` : ''}${entry.source ? ` · ${esc(entry.source)}` : ''}${entry.when ? ` · ${esc(entry.when)}` : ''}</div></div>`).join('')
+        ? state.activity.map((entry) => `<div class="item"><div><strong>${esc(entry.title || '')}</strong></div><div class="small">${esc(entry.detail || '')}${entry.list_name ? ` Â· ${esc(entry.list_name)}` : ''}${entry.source ? ` Â· ${esc(entry.source)}` : ''}${entry.when ? ` Â· ${esc(entry.when)}` : ''}</div></div>`).join('')
         : '<div class="empty">No recent activity.</div>';
 
       byId('completed').innerHTML = state.completed.length
@@ -1482,7 +1482,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         return _coerce_quantity(item.get("quantity", 1))
 
     def _meta_quantity(meta: Mapping[str, str]) -> int:
-        return _coerce_quantity(meta.get("total_quantity", meta.get("add_count", "1")))
+        return _coerce_quantity(meta.get("current_quantity", meta.get("total_quantity", meta.get("add_count", "1"))))
 
     def _decode_contributors(meta: Mapping[str, str]) -> list[str]:
         raw = str(meta.get("contributors_json", "")).strip()
@@ -1523,11 +1523,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not meta:
             return fallback
         contributors = _format_contributors(_decode_contributors(meta))
-        quantity = _meta_quantity(meta)
         source = _friendly_source(str(meta.get("last_source", "")).strip() or "unknown")
         when = _relative_time(str(meta.get("last_added_at", "")).strip())
-        quantity_text = f" · Qty {quantity}" if quantity > 1 else ""
-        return f"Added by {contributors}{quantity_text} · {when} · {source}"
+        return f"Added by {contributors} · {when} · {source}"
     def _display_description(list_entity: str, summary: str, fallback: str) -> str:
         normalized_item = _normalize_term(summary)
         if normalized_item:
@@ -1542,7 +1540,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 added_by = added_by.strip() or "Unknown"
                 source = _friendly_source(source_key.strip() or "unknown")
                 when = _relative_time(added_at.strip())
-                return f"Added by {added_by} · {when} · {source}"
+                return f"Added by {added_by} Â· {when} Â· {source}"
         return fallback
 
     def _description_with_existing_meta(list_entity: str, summary: str, fallback: str) -> str:
@@ -1559,9 +1557,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         when = _relative_time(added_at)
         safe_name = added_by.replace("|", "/")
         safe_source = source_key.replace("|", "_")
-        quantity = _meta_quantity(meta)
-        quantity_text = f" · Qty {quantity}" if quantity > 1 else ""
-        return f"Added by {added_by}{quantity_text} · {when} · {source}\nGLMETA|{added_at}|{safe_name}|{safe_source}"
+        return f"Added by {added_by} · {when} · {source}\nGLMETA|{added_at}|{safe_name}|{safe_source}"
     def _clean_helper_state_value(value: str) -> str:
         cleaned = value.strip()
         if cleaned.lower() in {"", "unknown", "unavailable", "none", "null"}:
@@ -1587,7 +1583,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         now_iso = dt_util.utcnow().isoformat()
         safe_name = user_name.replace("|", "/")
         safe_source = resolved_source.replace("|", "_")
-        return f"Added by {user_name} · just now · {source}\nGLMETA|{now_iso}|{safe_name}|{safe_source}"
+        return f"Added by {user_name} Â· just now Â· {source}\nGLMETA|{now_iso}|{safe_name}|{safe_source}"
 
     async def _record_item_meta(
         list_entity: str,
@@ -1618,7 +1614,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         now_iso = dt_util.utcnow().isoformat()
         previous = meta_map.get(key, {})
         count = int(previous.get("add_count", "0") or "0") + 1
-        total_quantity = _meta_quantity(previous) + _coerce_quantity(quantity)
+        current_quantity = _meta_quantity(previous) + _coerce_quantity(quantity)
         contributors = _decode_contributors(previous)
         if user_name and user_name.lower() not in {name.lower() for name in contributors}:
             contributors.append(user_name)
@@ -1629,10 +1625,33 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "last_source": source,
             "last_item_text": item_summary.strip(),
             "add_count": str(count),
-            "total_quantity": str(total_quantity),
+            "current_quantity": str(current_quantity),
             "contributors_json": json.dumps(contributors),
         }
         await _save()
+
+    async def _set_item_meta_quantity(list_entity: str, item_summary: str, quantity: int) -> None:
+        normalized_item = _normalize_term(item_summary)
+        if not normalized_item:
+            return
+        meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].setdefault("item_meta", {})
+        key = _item_meta_key(list_entity, normalized_item)
+        existing = dict(meta_map.get(key, {}))
+        if not existing:
+            return
+        existing["current_quantity"] = str(_coerce_quantity(quantity))
+        meta_map[key] = existing
+        await _save()
+
+    async def _remove_item_meta_entry(list_entity: str, item_summary: str) -> None:
+        normalized_item = _normalize_term(item_summary)
+        if not normalized_item:
+            return
+        meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].setdefault("item_meta", {})
+        key = _item_meta_key(list_entity, normalized_item)
+        if key in meta_map:
+            meta_map.pop(key, None)
+            await _save()
 
     def _merge_meta_records(existing: Mapping[str, str], incoming: Mapping[str, str]) -> dict[str, str]:
         if not existing:
@@ -1642,7 +1661,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         merged = dict(existing)
         existing_qty = _meta_quantity(existing)
         incoming_qty = _meta_quantity(incoming)
-        merged["total_quantity"] = str(existing_qty + incoming_qty)
+        merged["current_quantity"] = str(existing_qty + incoming_qty)
         merged["add_count"] = str(int(existing.get("add_count", "0") or "0") + int(incoming.get("add_count", "0") or "0"))
         contributors = _decode_contributors(existing)
         known = {name.lower() for name in contributors}
@@ -2479,6 +2498,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             list_entity = str(payload.get("list_entity", "")).strip()
             item_ref = str(payload.get("item", "")).strip()
             next_summary = str(payload.get("summary", "")).strip()
+            next_quantity = _coerce_quantity(payload.get("quantity", 1))
             target_category = _normalize_category(str(payload.get("target_category", "")).strip())
             learn = bool(payload.get("learn", True))
             categories = _active_categories()
@@ -2496,6 +2516,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 old_summary = str(found_internal.get("summary", "")).strip()
                 old_category = str(found_internal.get("category", "other")).strip() or "other"
                 found_internal["summary"] = next_summary
+                found_internal["quantity"] = next_quantity
                 if target_category:
                     found_internal["category"] = target_category
                 _move_item_meta_entry(
@@ -2503,6 +2524,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     old_summary,
                     _internal_list_entity(str(found_internal.get("category", "other")).strip() or "other"),
                     next_summary,
+                )
+                await _set_item_meta_quantity(
+                    _internal_list_entity(str(found_internal.get("category", "other")).strip() or "other"),
+                    next_summary,
+                    next_quantity,
                 )
                 if learn and target_category in categories:
                     norm = _normalize_term(next_summary)
@@ -2537,13 +2563,23 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 target={"entity_id": target_list},
                 blocking=True,
             )
+            _move_item_meta_entry(list_entity, old_summary, target_list, next_summary)
+            await _set_item_meta_quantity(target_list, next_summary, next_quantity)
             replacement = await _resolve_item_ref(target_list, next_summary)
-            if replacement is not None and status == "completed":
+            if replacement is not None:
                 replacement_id = str(replacement.get("uid", "")).strip() or next_summary
+                replacement_description = _description_with_existing_meta(
+                    target_list,
+                    next_summary,
+                    str(replacement.get("description", "")).strip() or description,
+                )
+                update_payload: dict[str, Any] = {"item": replacement_id, "description": replacement_description}
+                if status == "completed":
+                    update_payload["status"] = "completed"
                 await hass.services.async_call(
                     "todo",
                     "update_item",
-                    {"item": replacement_id, "status": "completed"},
+                    update_payload,
                     target={"entity_id": target_list},
                     blocking=True,
                 )
@@ -2555,7 +2591,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     target={"entity_id": list_entity},
                     blocking=True,
                 )
-            _move_item_meta_entry(list_entity, old_summary, target_list, next_summary)
             if learn and target_category in categories:
                 norm = _normalize_term(next_summary)
                 terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
@@ -2643,7 +2678,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if multilist_mode:
                 active_list_id, list_obj = _active_internal_list()
                 items: list[dict[str, Any]] = list_obj.setdefault("items", [])
-                removed_count = len([i for i in items if str(i.get("status", "")).strip() == "completed"])
+                removed_items = [i for i in items if str(i.get("status", "")).strip() == "completed"]
+                removed_count = len(removed_items)
+                for removed in removed_items:
+                    await _remove_item_meta_entry(
+                        _internal_list_entity(str(removed.get("category", "other")).strip() or "other"),
+                        str(removed.get("summary", "")).strip(),
+                    )
                 list_obj["items"] = [i for i in items if str(i.get("status", "")).strip() != "completed"]
                 await _save()
                 await _record_activity(
@@ -2659,6 +2700,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 remove_id = str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip()
                 if not remove_id:
                     continue
+                await _remove_item_meta_entry(COMPLETED_LIST_ENTITY, str(item.get("summary", "")).strip())
                 await hass.services.async_call(
                     "todo",
                     "remove_item",
@@ -3949,6 +3991,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             blocking=True,
             context=remove_ctx,
         )
+        _move_item_meta_entry(source_list, summary, COMPLETED_LIST_ENTITY, summary)
         source_state = hass.states.get(source_list)
         source_name = str(source_state.attributes.get("friendly_name", "")).strip() if source_state is not None else source_list
         await _record_activity("Item completed", summary, source_name, "typed")
@@ -3989,6 +4032,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             blocking=True,
             context=remove_ctx,
         )
+        _move_item_meta_entry(COMPLETED_LIST_ENTITY, summary, original_list, summary)
         restored_state = hass.states.get(original_list)
         restored_name = str(restored_state.attributes.get("friendly_name", "")).strip() if restored_state is not None else original_list
         await _record_activity("Item restored", summary, restored_name, "typed")
@@ -4114,6 +4158,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     return True
+
+
 
 
 

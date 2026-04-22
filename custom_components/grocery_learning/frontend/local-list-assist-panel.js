@@ -419,8 +419,8 @@ class LocalListAssistPanel extends HTMLElement {
     applyRecategorizeItemLocal(this._state, itemRef, targetCategory);
   }
 
-  updateItemLocal(itemRef, summary, targetCategory) {
-    applyUpdateItemLocal(this._state, itemRef, { summary, targetCategory });
+  updateItemLocal(itemRef, summary, targetCategory, quantity) {
+    applyUpdateItemLocal(this._state, itemRef, { summary, targetCategory, quantity });
   }
 
   switchListLocal(listId) {
@@ -431,12 +431,13 @@ class LocalListAssistPanel extends HTMLElement {
     const editorKey = this.editorKey(item);
     const summaryDraft = this._drafts[`summary:${editorKey}`] ?? item.summary ?? "";
     const selectedCategory = this._drafts[`category:${editorKey}`] || item.category || "";
+    const quantityDraft = this._drafts[`quantity:${editorKey}`] ?? String(item.quantity || 1);
     const editorOpen = this._openEditorKey === editorKey;
     const options = categories
       .map((cat) => `<option value="${this.esc(cat)}" ${cat === selectedCategory ? "selected" : ""}>${this.esc(cat)}</option>`)
       .join("");
     return `
-      <div class="item" data-editor-key="${this.esc(editorKey)}" data-list-entity="${this.esc(item.list_entity)}" data-item-ref="${this.esc(item.item_ref)}">
+      <div class="item" data-editor-key="${this.esc(editorKey)}" data-list-entity="${this.esc(item.list_entity)}" data-item-ref="${this.esc(item.item_ref)}" data-quantity="${this.esc(String(item.quantity || 1))}">
         <div class="item-main">
           <div class="item-summary">
             <input class="complete-toggle" type="checkbox" />
@@ -450,6 +451,7 @@ class LocalListAssistPanel extends HTMLElement {
         <div class="small">${this.esc(item.description || "")}</div>
         <div class="editor ${editorOpen ? "open" : ""}">
           <input id="summary-${this.esc(editorKey)}" class="input edit-summary" data-draft="summary:${this.esc(editorKey)}" value="${this.esc(summaryDraft)}" />
+          <input id="quantity-${this.esc(editorKey)}" class="input edit-qty" data-draft="quantity:${this.esc(editorKey)}" type="number" min="1" step="1" inputmode="numeric" value="${this.esc(quantityDraft)}" />
           <select id="editor-${this.esc(editorKey)}" class="select cat-select" data-draft="category:${this.esc(editorKey)}">${options}</select>
           <button class="btn save-item-btn">Save</button>
         </div>
@@ -460,9 +462,10 @@ class LocalListAssistPanel extends HTMLElement {
   completedItemMarkup(item) {
     const editorKey = this.editorKey(item);
     const summaryDraft = this._drafts[`summary:${editorKey}`] ?? item.summary ?? "";
+    const quantityDraft = this._drafts[`quantity:${editorKey}`] ?? String(item.quantity || 1);
     const editorOpen = this._openEditorKey === editorKey;
     return `
-      <div class="item completed-item" data-editor-key="${this.esc(editorKey)}" data-list-entity="${this.esc(item.list_entity)}" data-item-ref="${this.esc(item.item_ref)}" data-completed-item="true">
+      <div class="item completed-item" data-editor-key="${this.esc(editorKey)}" data-list-entity="${this.esc(item.list_entity)}" data-item-ref="${this.esc(item.item_ref)}" data-quantity="${this.esc(String(item.quantity || 1))}" data-completed-item="true">
         <div class="item-main completed-main">
           <label class="completed-row"><input class="completed-toggle" data-item-ref="${this.esc(item.item_ref)}" type="checkbox" checked /> <strong>${this.esc(item.summary)}</strong></label>
           ${Number(item.quantity || 1) > 1 ? `<span class="pill ghost-pill">Qty ${this.esc(String(item.quantity || 1))}</span>` : ""}
@@ -470,6 +473,7 @@ class LocalListAssistPanel extends HTMLElement {
         <div class="small meta-line">${this.esc(item.description || "")}</div>
         <div class="editor ${editorOpen ? "open" : ""}">
           <input id="summary-${this.esc(editorKey)}" class="input edit-summary" data-draft="summary:${this.esc(editorKey)}" value="${this.esc(summaryDraft)}" />
+          <input id="quantity-${this.esc(editorKey)}" class="input edit-qty" data-draft="quantity:${this.esc(editorKey)}" type="number" min="1" step="1" inputmode="numeric" value="${this.esc(quantityDraft)}" />
           <button class="btn save-completed-item-btn">Save</button>
         </div>
       </div>
@@ -811,8 +815,10 @@ class LocalListAssistPanel extends HTMLElement {
       row.querySelector(".item-main")?.addEventListener("click", () => {
         const currentSummary = row.querySelector("strong")?.textContent || "";
         const currentCategory = row.querySelector(".cat-select")?.value || "";
+        const currentQuantity = row.querySelector(".edit-qty")?.value || String(row.dataset.quantity || "1");
         this._drafts[`summary:${editorKey}`] = this._drafts[`summary:${editorKey}`] ?? currentSummary;
         this._drafts[`category:${editorKey}`] = this._drafts[`category:${editorKey}`] ?? currentCategory;
+        this._drafts[`quantity:${editorKey}`] = this._drafts[`quantity:${editorKey}`] ?? currentQuantity;
         const nextOpen = this._openEditorKey === editorKey ? "" : editorKey;
         this._openEditorKey = nextOpen;
         this._focusTarget = nextOpen ? `summary-${editorKey}` : "";
@@ -830,12 +836,13 @@ class LocalListAssistPanel extends HTMLElement {
       });
       row.querySelector(".save-item-btn")?.addEventListener("click", async () => {
         const nextSummary = (this._drafts[`summary:${editorKey}`] || row.querySelector(".edit-summary")?.value || "").trim();
+        const nextQuantity = Math.max(1, Number.parseInt(this._drafts[`quantity:${editorKey}`] || row.querySelector(".edit-qty")?.value || "1", 10) || 1);
         const target = this._drafts[`category:${editorKey}`] || row.querySelector(".cat-select")?.value || "";
         if (!target || !nextSummary) return;
         this._openEditorKey = "";
         this._focusTarget = "";
-        await this.actFast({ action: "update_item", list_entity: listEntity, item: itemRef, summary: nextSummary, target_category: target, learn: true }, () => {
-          this.updateItemLocal(itemRef, nextSummary, target);
+        await this.actFast({ action: "update_item", list_entity: listEntity, item: itemRef, summary: nextSummary, quantity: nextQuantity, target_category: target, learn: true }, () => {
+          this.updateItemLocal(itemRef, nextSummary, target, nextQuantity);
         });
       });
       row.querySelector(".edit-summary")?.addEventListener("click", (ev) => ev.stopPropagation());
@@ -865,7 +872,9 @@ class LocalListAssistPanel extends HTMLElement {
       const itemRef = row.dataset.itemRef || "";
       row.querySelector(".completed-main")?.addEventListener("click", () => {
         const currentSummary = row.querySelector("strong")?.textContent || "";
+        const currentQuantity = row.querySelector(".edit-qty")?.value || String(row.dataset.quantity || "1");
         this._drafts[`summary:${editorKey}`] = this._drafts[`summary:${editorKey}`] ?? currentSummary;
+        this._drafts[`quantity:${editorKey}`] = this._drafts[`quantity:${editorKey}`] ?? currentQuantity;
         const nextOpen = this._openEditorKey === editorKey ? "" : editorKey;
         this._openEditorKey = nextOpen;
         this._focusTarget = nextOpen ? `summary-${editorKey}` : "";
@@ -881,11 +890,12 @@ class LocalListAssistPanel extends HTMLElement {
       row.querySelector(".save-completed-item-btn")?.addEventListener("click", async (ev) => {
         ev.stopPropagation();
         const nextSummary = (this._drafts[`summary:${editorKey}`] || row.querySelector(".edit-summary")?.value || "").trim();
+        const nextQuantity = Math.max(1, Number.parseInt(this._drafts[`quantity:${editorKey}`] || row.querySelector(".edit-qty")?.value || "1", 10) || 1);
         if (!nextSummary) return;
         this._openEditorKey = "";
         this._focusTarget = "";
-        await this.actFast({ action: "update_item", list_entity: listEntity, item: itemRef, summary: nextSummary }, () => {
-          this.updateItemLocal(itemRef, nextSummary, "");
+        await this.actFast({ action: "update_item", list_entity: listEntity, item: itemRef, summary: nextSummary, quantity: nextQuantity }, () => {
+          this.updateItemLocal(itemRef, nextSummary, "", nextQuantity);
         });
       });
     });
@@ -1168,6 +1178,7 @@ class LocalListAssistPanel extends HTMLElement {
         .item-summary { display:flex; align-items:center; gap:10px; min-width:0; }
         .editor { display:none; gap:10px; margin-top:10px; }
         .editor.open { display:flex; }
+        .edit-qty { width:96px; flex:0 0 96px; text-align:center; }
         .pill { font-size:11px; padding:4px 10px; border-radius:999px; background:color-mix(in srgb, var(--accent) 28%, #1f3a57); color:#c4e0ff; }
         .ghost-pill { background:#142538; color:#d4e6f8; }
         .chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.22
+- Removed quantity text from the item subtitle so the metadata no longer conflicts with the visible quantity badge.
+- Switched quantity tracking to the current line-item quantity instead of an ever-growing historical total.
+- Added quantity editing to the inline item editor and preserved the correct quantity when completed items are restored.
+
 ## 0.13.21
 - Added quantity support to the Home Assistant panel quick-add flow and item display.
 - Merged duplicate item adds into a single line item while summing quantities instead of creating repeated rows.
