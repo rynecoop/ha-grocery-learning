@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.26
+- Fixed a Home Assistant dashboard `name '_normalize_list_id' is not defined` error introduced by the per-user list-selection update.
+- Inlined request list-id normalization in the dashboard view so the panel can load again after update.
+
 ## 0.13.25
 - Hardened the Home Assistant dashboard against stale runtime handlers during update/reload so it no longer silently falls back into the stripped-down empty state.
 - Rebound the runtime setup on config-entry setup so the dashboard/action handlers are refreshed after updates.

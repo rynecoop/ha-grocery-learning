@@ -644,7 +644,11 @@ class GroceryLearningDashboardView(HomeAssistantView):
                 if not callable(builder):
                     return web.json_response(self._empty_payload("not_ready"))
 
-            requested_list_id = _normalize_list_id(str(request.query.get("list_id", "")).strip())
+            requested_list_id = re.sub(
+                r"[^a-z0-9]+",
+                "_",
+                str(request.query.get("list_id", "")).strip().lower(),
+            ).strip("_")
             try:
                 payload = await builder(requested_list_id or None)
             except TypeError:
