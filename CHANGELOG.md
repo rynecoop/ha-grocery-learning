@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.24
+- Stopped treating the active list as shared server state for the Home Assistant panel, so one user's list switch no longer redirects other users into the wrong list.
+- Defaulted panel loads back to the Grocery List unless that browser already has its own locally remembered list selection.
+- Sent explicit list ids with panel actions like add, edit, complete, restore, and clear completed so multiple users can work in different lists at the same time without cross contamination.
+
 ## 0.13.23
 - Normalized voice-style item names so leading articles like `a` no longer get stored as part of the item summary.
 - Merged simple singular and plural forms like `lemon` and `lemons` into the same line item without collapsing distinct phrases like `oat milk` and `milk`.

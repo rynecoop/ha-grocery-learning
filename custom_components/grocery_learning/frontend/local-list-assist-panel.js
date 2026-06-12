@@ -53,6 +53,32 @@ class LocalListAssistPanel extends HTMLElement {
     this._pendingLiveReload = false;
   }
 
+  storageKey() {
+    const userId = this._hass?.user?.id || "anonymous";
+    return `lla:active-list:${userId}`;
+  }
+
+  getPreferredListId() {
+    try {
+      return window.localStorage.getItem(this.storageKey()) || "default";
+    } catch (_err) {
+      return "default";
+    }
+  }
+
+  setPreferredListId(listId) {
+    const nextListId = String(listId || "").trim() || "default";
+    try {
+      window.localStorage.setItem(this.storageKey(), nextListId);
+    } catch (_err) {
+      // Ignore storage failures and fall back to runtime state.
+    }
+  }
+
+  currentListId() {
+    return this._state?.system?.active_list_id || this.getPreferredListId() || "default";
+  }
+
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
@@ -146,7 +172,9 @@ class LocalListAssistPanel extends HTMLElement {
     }
     this._loading = true;
     try {
-      this._state = await this.api("dashboard");
+      const requestedListId = this.getPreferredListId() || "default";
+      this._state = await this.api(`dashboard?list_id=${encodeURIComponent(requestedListId)}`);
+      this.setPreferredListId(this._state?.system?.active_list_id || requestedListId);
       this.syncDrafts();
       this._error = "";
       this._lastSeenLiveRevision = this.currentLiveRevision();
@@ -163,6 +191,7 @@ class LocalListAssistPanel extends HTMLElement {
     const result = await this.api("action", "POST", payload);
     if (result?.dashboard && typeof result.dashboard === "object") {
       this._state = result.dashboard;
+      this.setPreferredListId(this._state?.system?.active_list_id || payload?.list_id || "default");
       this.syncDrafts();
       this._error = "";
       this.requestRender(true);
@@ -176,6 +205,7 @@ class LocalListAssistPanel extends HTMLElement {
     const result = await this.api("action", "POST", payload);
     if (result?.dashboard && typeof result.dashboard === "object") {
       this._state = result.dashboard;
+      this.setPreferredListId(this._state?.system?.active_list_id || payload?.list_id || "default");
       this.syncDrafts();
       this._error = "";
       this.render();
@@ -561,6 +591,7 @@ class LocalListAssistPanel extends HTMLElement {
         action: "add_item",
         item,
         quantity,
+        list_id: this.currentListId(),
         actor_user_id: this._hass?.user?.id || "",
         actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
       });
@@ -611,7 +642,7 @@ class LocalListAssistPanel extends HTMLElement {
       await this.load(true);
     });
     root.querySelector("#clearCompletedBtn")?.addEventListener("click", async () => {
-      await this.actFast({ action: "clear_completed" }, (state) => {
+      await this.actFast({ action: "clear_completed", list_id: this.currentListId() }, (state) => {
         state.completed = [];
       });
     });
@@ -722,7 +753,7 @@ class LocalListAssistPanel extends HTMLElement {
       this.requestRender(true);
     });
     root.querySelector("#archiveListBtn")?.addEventListener("click", async () => {
-      const listId = this._state?.system?.active_list_id || "";
+      const listId = this.currentListId();
       if (!listId) return;
       await this.act({ action: "archive_list", list_id: listId });
     });
@@ -732,17 +763,17 @@ class LocalListAssistPanel extends HTMLElement {
       });
     });
     root.querySelector("#pinListBtn")?.addEventListener("click", async () => {
-      const listId = this._state?.system?.active_list_id || "";
+      const listId = this.currentListId();
       if (!listId || listId === "default") return;
       await this.act({ action: "reorder_list", list_id: listId, direction: "pin" });
     });
     root.querySelector("#moveListLeftBtn")?.addEventListener("click", async () => {
-      const listId = this._state?.system?.active_list_id || "";
+      const listId = this.currentListId();
       if (!listId || listId === "default") return;
       await this.act({ action: "reorder_list", list_id: listId, direction: "left" });
     });
     root.querySelector("#moveListRightBtn")?.addEventListener("click", async () => {
-      const listId = this._state?.system?.active_list_id || "";
+      const listId = this.currentListId();
       if (!listId || listId === "default") return;
       await this.act({ action: "reorder_list", list_id: listId, direction: "right" });
     });
@@ -755,7 +786,7 @@ class LocalListAssistPanel extends HTMLElement {
       });
     });
     root.querySelector("#saveActiveListBtn")?.addEventListener("click", async () => {
-      const listId = this._state?.system?.active_list_id || "";
+      const listId = this.currentListId();
       if (!listId) return;
       const nextName = (this._drafts.activeListName || "").trim();
       await this.act({
@@ -829,7 +860,7 @@ class LocalListAssistPanel extends HTMLElement {
         if (ev.target.checked) {
           this._openEditorKey = "";
           this._focusTarget = "";
-          await this.actFast({ action: "set_status", list_entity: listEntity, item: itemRef, status: "completed" }, () => {
+          await this.actFast({ action: "set_status", list_entity: listEntity, list_id: this.currentListId(), item: itemRef, status: "completed" }, () => {
             this.moveItemToCompleted(itemRef);
           });
         }
@@ -841,7 +872,7 @@ class LocalListAssistPanel extends HTMLElement {
         if (!target || !nextSummary) return;
         this._openEditorKey = "";
         this._focusTarget = "";
-        await this.actFast({ action: "update_item", list_entity: listEntity, item: itemRef, summary: nextSummary, quantity: nextQuantity, target_category: target, learn: true }, () => {
+        await this.actFast({ action: "update_item", list_entity: listEntity, list_id: this.currentListId(), item: itemRef, summary: nextSummary, quantity: nextQuantity, target_category: target, learn: true }, () => {
           this.updateItemLocal(itemRef, nextSummary, target, nextQuantity);
         });
       });
@@ -860,7 +891,7 @@ class LocalListAssistPanel extends HTMLElement {
     root.querySelectorAll(".completed-toggle").forEach((el) => {
       el.addEventListener("change", async (ev) => {
         if (!ev.target.checked) {
-          await this.act({ action: "set_status", list_entity: "todo.grocery_completed", item: el.dataset.itemRef || "", status: "needs_action" });
+          await this.act({ action: "set_status", list_entity: "todo.grocery_completed", list_id: this.currentListId(), item: el.dataset.itemRef || "", status: "needs_action" });
         }
       });
       el.addEventListener("click", (ev) => ev.stopPropagation());
@@ -894,7 +925,7 @@ class LocalListAssistPanel extends HTMLElement {
         if (!nextSummary) return;
         this._openEditorKey = "";
         this._focusTarget = "";
-        await this.actFast({ action: "update_item", list_entity: listEntity, item: itemRef, summary: nextSummary, quantity: nextQuantity }, () => {
+        await this.actFast({ action: "update_item", list_entity: listEntity, list_id: this.currentListId(), item: itemRef, summary: nextSummary, quantity: nextQuantity }, () => {
           this.updateItemLocal(itemRef, nextSummary, "", nextQuantity);
         });
       });
@@ -1249,6 +1280,7 @@ class LocalListAssistPanel extends HTMLElement {
           this.requestRender(true);
           return;
         }
+        this.setPreferredListId(listId);
         await this.actFast({ action: "switch_list", list_id: listId }, () => {
           this.switchListLocal(listId);
         });

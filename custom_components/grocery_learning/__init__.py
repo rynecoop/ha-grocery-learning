@@ -644,7 +644,8 @@ class GroceryLearningDashboardView(HomeAssistantView):
                 if not callable(builder):
                     return web.json_response(self._empty_payload("not_ready"))
 
-            payload = await builder()
+            requested_list_id = _normalize_list_id(str(request.query.get("list_id", "")).strip())
+            payload = await builder(requested_list_id or None)
             if not isinstance(payload, dict):
                 return web.json_response(self._empty_payload("invalid_payload"))
 
@@ -1248,10 +1249,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         index = sum(ord(char) for char in list_id) % len(palette)
         return palette[index]
 
-    def _internal_list_catalog() -> list[dict[str, Any]]:
+    def _internal_list_catalog(selected_list_id: str | None = None) -> list[dict[str, Any]]:
         _ensure_multilist_model()
         model = hass.data[DOMAIN]["multilist"]
-        active_id = str(model.get("active_list_id", "default")).strip() or "default"
+        active_id = _normalize_list_id(selected_list_id or str(model.get("active_list_id", "default")).strip()) or "default"
         lists = model.get("lists", {})
         catalog: list[dict[str, Any]] = []
         for position, list_id in enumerate(_ordered_list_ids()):
@@ -1828,9 +1829,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 return item
         return None
 
-    async def _build_dashboard_payload_internal() -> dict[str, Any]:
+    async def _build_dashboard_payload_internal(selected_list_id: str | None = None) -> dict[str, Any]:
         active_entry = hass.data.get(DOMAIN, {}).get("entry")
-        list_id, list_obj = _active_internal_list()
+        list_id, list_obj = _internal_list_by_id(selected_list_id) if selected_list_id else _active_internal_list()
         categories = [c for c in list_obj.get("categories", []) if c != "other"]
         has_custom_categories = len(categories) > 0
         default_list = hass.data[DOMAIN].get("multilist", {}).get("lists", {}).get("default", {})
@@ -1892,7 +1893,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "categories": categories + ["other"],
             "groups": grouped,
             "completed": completed,
-            "lists": _internal_list_catalog(),
+            "lists": _internal_list_catalog(list_id),
             "pending_review": {
                 "pending": bool(pending_review.get("item")),
                 "item": str(pending_review.get("item", "")),
@@ -1931,9 +1932,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             },
         }
 
-    async def _build_dashboard_payload() -> dict[str, Any]:
+    async def _build_dashboard_payload(selected_list_id: str | None = None) -> dict[str, Any]:
         if _multilist_enabled():
-            return await _build_dashboard_payload_internal()
+            return await _build_dashboard_payload_internal(selected_list_id)
         categories = _active_categories()
         active_entry = hass.data.get(DOMAIN, {}).get("entry")
         inbox_entity = str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip()
@@ -2047,9 +2048,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return
         quantity = _coerce_quantity(call.data.get("quantity", 1))
 
-        source_target_list_id = ""
+        source_target_list_id = _normalize_list_id(str(call.data.get("list_id", "")).strip())
         intake_like_source = source in {"voice_assistant", "automation"}
-        if intake_like_source:
+        if not source_target_list_id and intake_like_source:
             # Prefer explicit spoken/list-name context over raw entity targets.
             if source_list_name:
                 source_target_list_id = _internal_list_id_from_voice_name(source_list_name)
@@ -2060,7 +2061,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if not source_target_list_id and source_list:
                 source_target_list_id = _internal_list_id_from_voice_entity(source_list)
             # Do not trust source_list alone for voice; when name is unavailable, route to default.
-        else:
+        elif not source_target_list_id:
             source_target_list_id = _internal_list_id_from_voice_entity(source_list) if source_list else ""
             if not source_target_list_id and source_list_name:
                 source_target_list_id = _internal_list_id_from_voice_name(source_list_name)
@@ -2214,6 +2215,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             item = str(payload.get("item", "")).strip()
             if item:
                 quantity = _coerce_quantity(payload.get("quantity", 1))
+                target_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
                 request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
                 actor_name = str(payload.get("actor_name", "")).strip()
                 if request_user_id and not actor_name:
@@ -2230,6 +2232,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "interactive_duplicate": True,
                         "allow_duplicate": False,
                         "quantity": quantity,
+                        "list_id": target_list_id,
                         "actor_user_id": request_user_id,
                         "actor_name": actor_name,
                     },
@@ -2273,7 +2276,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "categories": base_categories + ["other"],
                 "items": [],
             }
-            model["active_list_id"] = list_id
             resolved_voice = await _ensure_local_todo_list(_internal_voice_bridge_entity(list_id), name)
             if resolved_voice:
                 lists[list_id]["voice_entity"] = resolved_voice
@@ -2287,7 +2289,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 list_order.append(list_id)
             await _save()
             await _record_activity("List created", name, name, "service_call")
-            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
 
         if action == "save_list_categories":
             if not multilist_mode:
@@ -2375,7 +2377,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     item["category"] = "other"
 
             await _save()
-            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
 
         if action == "switch_list":
             if not multilist_mode:
@@ -2386,10 +2388,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             lists = model.get("lists", {})
             if list_id not in lists:
                 return {"ok": False, "error": "list_not_found"}
-            model["active_list_id"] = list_id
-            await _save()
-            await _record_activity("Switched list", str(lists[list_id].get("name", list_id)).strip(), str(lists[list_id].get("name", list_id)).strip(), "typed")
-            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
 
         if action == "reorder_list":
             if not multilist_mode:
@@ -2413,7 +2412,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 ordered[index], ordered[index + 1] = ordered[index + 1], ordered[index]
             model["list_order"] = ordered
             await _save()
-            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
 
         if action == "rename_list":
             if not multilist_mode:
@@ -2432,7 +2431,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             list_obj["name"] = new_name
             await _save()
             await _record_activity("Renamed list", f"{previous_name} -> {new_name}", new_name, "typed")
-            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
 
         if action == "set_list_color":
             if not multilist_mode:
@@ -2470,7 +2469,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             archived_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Archived list", archived_name, archived_name, "typed")
-            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal("default")}
 
         if action == "restore_archived_list":
             if not multilist_mode:
@@ -2488,7 +2487,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             restored_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Restored archived list", restored_name, restored_name, "typed")
-            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
 
         if action == "delete_archived_list":
             if not multilist_mode:
@@ -2501,15 +2500,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             archived_name = str(result.get("list_name", list_id)).strip() or list_id
             await _record_activity("Deleted archived list", archived_name, archived_name, "typed")
-            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal("default")}
 
         if action == "set_status":
             list_entity = str(payload.get("list_entity", "")).strip()
             item_ref = str(payload.get("item", "")).strip()
             status = str(payload.get("status", "")).strip().lower()
+            selected_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
             if list_entity and item_ref and status in {"completed", "needs_action"}:
                 if multilist_mode:
-                    _, list_obj = _active_internal_list()
+                    _, list_obj = _internal_list_by_id(selected_list_id) if selected_list_id else _active_internal_list()
                     items: list[dict[str, Any]] = list_obj.setdefault("items", [])
                     item = _internal_find_item(items, item_ref)
                     if item is not None:
@@ -2538,11 +2538,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             next_quantity = _coerce_quantity(payload.get("quantity", 1))
             target_category = _normalize_category(str(payload.get("target_category", "")).strip())
             learn = bool(payload.get("learn", True))
+            selected_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
             categories = _active_categories()
             if not list_entity or not item_ref or not next_summary:
                 return {"ok": False, "error": "missing_item_reference"}
             if multilist_mode:
-                _, list_obj = _active_internal_list()
+                _, list_obj = _internal_list_by_id(selected_list_id) if selected_list_id else _active_internal_list()
                 list_categories = [c for c in list_obj.get("categories", []) if c != "other"]
                 if target_category not in list_categories and target_category != "other":
                     target_category = "other"
@@ -2642,11 +2643,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             item_ref = str(payload.get("item", "")).strip()
             target_category = _normalize_category(str(payload.get("target_category", "")).strip())
             learn = bool(payload.get("learn", True))
+            selected_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
             categories = _active_categories()
             if not from_list or not item_ref:
                 return {"ok": False, "error": "missing_item_reference"}
             if multilist_mode:
-                _, list_obj = _active_internal_list()
+                _, list_obj = _internal_list_by_id(selected_list_id) if selected_list_id else _active_internal_list()
                 list_categories = [c for c in list_obj.get("categories", []) if c != "other"]
                 if target_category not in list_categories and target_category != "other":
                     target_category = "other"
@@ -2712,8 +2714,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return {"ok": False, "error": "item_not_found"}
 
         if action == "clear_completed":
+            selected_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
             if multilist_mode:
-                active_list_id, list_obj = _active_internal_list()
+                active_list_id, list_obj = _internal_list_by_id(selected_list_id) if selected_list_id else _active_internal_list()
                 items: list[dict[str, Any]] = list_obj.setdefault("items", [])
                 removed_items = [i for i in items if str(i.get("status", "")).strip() == "completed"]
                 removed_count = len(removed_items)
@@ -2730,7 +2733,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     str(list_obj.get("name", "Grocery List")).strip() or "Grocery List",
                     "typed",
                 )
-                return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+                return {"ok": True, "dashboard": await _build_dashboard_payload_internal(active_list_id)}
             completed_items = await _list_items(COMPLETED_LIST_ENTITY, "completed")
             removed_count = 0
             for item in completed_items:
