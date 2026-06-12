@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.27
+- Fixed Home Assistant panel adds failing after the per-user list update by allowing `list_id` through the `route_item` service schema.
+- Restored quick-add item creation for the list the current user actually has open.
+
 ## 0.13.26
 - Fixed a Home Assistant dashboard `name '_normalize_list_id' is not defined` error introduced by the per-user list-selection update.
 - Inlined request list-id normalization in the dashboard view so the panel can load again after update.

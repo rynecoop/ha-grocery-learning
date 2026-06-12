@@ -92,6 +92,7 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
     {
         vol.Required("item"): cv.string,
         vol.Optional("quantity", default=1): vol.Coerce(int),
+        vol.Optional("list_id", default=""): cv.string,
         vol.Optional("source_list", default=""): cv.string,
         vol.Optional("source_list_name", default=""): cv.string,
         vol.Optional("remove_from_source", default=False): cv.boolean,
