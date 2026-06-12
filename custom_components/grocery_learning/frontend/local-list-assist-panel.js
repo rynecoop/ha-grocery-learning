@@ -176,7 +176,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._state = await this.api(`dashboard?list_id=${encodeURIComponent(requestedListId)}`);
       this.setPreferredListId(this._state?.system?.active_list_id || requestedListId);
       this.syncDrafts();
-      this._error = "";
+      this._error = this._state?.error || "";
       this._lastSeenLiveRevision = this.currentLiveRevision();
       this._pendingLiveReload = false;
     } catch (err) {
@@ -193,7 +193,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._state = result.dashboard;
       this.setPreferredListId(this._state?.system?.active_list_id || payload?.list_id || "default");
       this.syncDrafts();
-      this._error = "";
+      this._error = this._state?.error || "";
       this.requestRender(true);
       return result;
     }
@@ -207,7 +207,7 @@ class LocalListAssistPanel extends HTMLElement {
       this._state = result.dashboard;
       this.setPreferredListId(this._state?.system?.active_list_id || payload?.list_id || "default");
       this.syncDrafts();
-      this._error = "";
+      this._error = this._state?.error || "";
       this.render();
       return result;
     }

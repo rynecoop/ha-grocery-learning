@@ -645,7 +645,10 @@ class GroceryLearningDashboardView(HomeAssistantView):
                     return web.json_response(self._empty_payload("not_ready"))
 
             requested_list_id = _normalize_list_id(str(request.query.get("list_id", "")).strip())
-            payload = await builder(requested_list_id or None)
+            try:
+                payload = await builder(requested_list_id or None)
+            except TypeError:
+                payload = await builder()
             if not isinstance(payload, dict):
                 return web.json_response(self._empty_payload("invalid_payload"))
 
@@ -3855,6 +3858,7 @@ lists:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Local List Assist from config entry."""
+    hass.data.setdefault(DOMAIN, {})["runtime_ready"] = False
     await _async_setup_runtime(hass)
     data = hass.data[DOMAIN]
     data["entry"] = entry

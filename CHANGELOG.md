@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.25
+- Hardened the Home Assistant dashboard against stale runtime handlers during update/reload so it no longer silently falls back into the stripped-down empty state.
+- Rebound the runtime setup on config-entry setup so the dashboard/action handlers are refreshed after updates.
+- Surfaced backend payload errors directly in the panel instead of hiding them behind an empty single-list shell.
+
 ## 0.13.24
 - Stopped treating the active list as shared server state for the Home Assistant panel, so one user's list switch no longer redirects other users into the wrong list.
 - Defaulted panel loads back to the Grocery List unless that browser already has its own locally remembered list selection.
