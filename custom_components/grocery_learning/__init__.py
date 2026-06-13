@@ -1,4 +1,4 @@
-﻿"""Local List Assist custom integration."""
+"""Local List Assist custom integration."""
 
 from __future__ import annotations
 
