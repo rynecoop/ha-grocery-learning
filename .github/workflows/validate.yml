@@ -24,6 +24,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Check for byte-order marks
+        run: |
+          python - <<'PY'
+          import pathlib, sys
+          bad = []
+          for path in pathlib.Path("custom_components").rglob("*.py"):
+              if path.read_bytes().startswith(b"\xef\xbb\xbf"):
+                  bad.append(str(path))
+          if bad:
+              print("Files start with a UTF-8 BOM:", *bad, sep="\n  ")
+              sys.exit(1)
+          print("No BOMs found.")
+          PY
+      - name: Lint (ruff)
+        run: |
+          pip install ruff==0.15.8
+          ruff check custom_components/
+      - name: Compile all sources
+        run: python -m compileall -q custom_components
       - name: Run unit tests
         run: python -m unittest discover -s tests -p "test_*.py"
       - name: Run frontend helper tests

@@ -1,0 +1,17 @@
+# Lint configuration used as a lightweight CI gate.
+#
+# The rule set is deliberately narrow: it catches the classes of failure that
+# have actually broken this integration before (undefined names / NameError in
+# code paths that are never imported, unused imports, and syntax errors) without
+# imposing a large style cleanup. Broaden this over time as the code is tidied.
+target-version = "py313"
+line-length = 200
+
+[lint]
+select = [
+    "E9",   # syntax errors
+    "F401", # unused imports
+    "F811", # redefinition of unused name
+    "F821", # undefined name
+    "F841", # unused local variable
+]
