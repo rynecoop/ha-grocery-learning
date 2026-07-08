@@ -484,46 +484,52 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     if data.get("runtime_ready"):
         return
 
+    # Created up front so the (re)load below can serialize against in-flight
+    # actions. On a config-entry reload this waits for a running action to
+    # finish and persist first, then loads the latest store snapshot instead of
+    # clobbering the action's just-committed writes.
+    action_lock = data.setdefault("_action_lock", asyncio.Lock())
     store = GroceryLearningStore(hass)
-    try:
-        terms = await store.load(list(DEFAULT_CATEGORIES))
-    except Exception as err:  # pragma: no cover
-        _LOGGER.warning("Failed loading grocery terms storage, using defaults: %s", err)
-        terms = LearnedTerms.empty(list(DEFAULT_CATEGORIES))
-    try:
-        item_meta = await store.load_item_meta()
-    except Exception as err:  # pragma: no cover
-        _LOGGER.warning("Failed loading grocery item metadata, using empty map: %s", err)
-        item_meta = {}
-    try:
-        multilist = await store.load_multilist(list(DEFAULT_CATEGORIES))
-    except Exception as err:  # pragma: no cover
-        _LOGGER.warning("Failed loading grocery multilist storage, using defaults: %s", err)
-        multilist = {
-            "active_list_id": "default",
-            "lists": {
-                "default": {
-                    "name": "Grocery List",
-                    "categories": list(DEFAULT_CATEGORIES) + ["other"],
-                    "items": [],
-                }
-            },
-        }
-    try:
-        activity = await store.load_activity()
-    except Exception as err:  # pragma: no cover
-        _LOGGER.warning("Failed loading grocery activity storage, using empty list: %s", err)
-        activity = []
+    async with action_lock:
+        try:
+            terms = await store.load(list(DEFAULT_CATEGORIES))
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed loading grocery terms storage, using defaults: %s", err)
+            terms = LearnedTerms.empty(list(DEFAULT_CATEGORIES))
+        try:
+            item_meta = await store.load_item_meta()
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed loading grocery item metadata, using empty map: %s", err)
+            item_meta = {}
+        try:
+            multilist = await store.load_multilist(list(DEFAULT_CATEGORIES))
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed loading grocery multilist storage, using defaults: %s", err)
+            multilist = {
+                "active_list_id": "default",
+                "lists": {
+                    "default": {
+                        "name": "Grocery List",
+                        "categories": list(DEFAULT_CATEGORIES) + ["other"],
+                        "items": [],
+                    }
+                },
+            }
+        try:
+            activity = await store.load_activity()
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed loading grocery activity storage, using empty list: %s", err)
+            activity = []
 
-    data["store"] = store
-    data["terms"] = terms
-    data["item_meta"] = item_meta
-    data["multilist"] = multilist
-    data["activity"] = activity
-    data["pending_duplicate"] = {}
-    data["pending_review"] = {}
-    data["categories"] = list(DEFAULT_CATEGORIES)
-    data["dashboard_revision"] = 0
+        data["store"] = store
+        data["terms"] = terms
+        data["item_meta"] = item_meta
+        data["multilist"] = multilist
+        data["activity"] = activity
+        data.setdefault("pending_duplicate", {})
+        data.setdefault("pending_review", {})
+        data["categories"] = list(DEFAULT_CATEGORIES)
+        data.setdefault("dashboard_revision", 0)
 
     def _publish_dashboard_revision() -> None:
         revision = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0)
@@ -536,8 +542,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "updated_at": dt_util.utcnow().isoformat(),
             },
         )
-
-    data.setdefault("_action_lock", asyncio.Lock())
 
     async def _flush_save() -> None:
         await store.save(
@@ -3062,28 +3066,37 @@ lists:
                 resolved_list_id, resolved_list = _internal_list_by_id(target_list_id)
                 resolved_list_name = str(resolved_list.get("name", "Grocery List")).strip() or "Grocery List"
                 normalized_item = _normalize_term(spoken_item)
-                before_count = sum(
-                    1
-                    for existing in resolved_list.get("items", [])
-                    if str(existing.get("status", "")).strip() == "needs_action"
-                    and _normalize_term(str(existing.get("summary", "")).strip()) == normalized_item
-                )
 
-                await hass.services.async_call(
-                    DOMAIN,
-                    SERVICE_ADD_TO_LIST,
-                    {
-                        "item": item,
-                        "list_id": resolved_list_id,
-                        "list_name": resolved_list_name,
-                        "source": "voice_assistant",
-                        "actor_user_id": actor_user_id,
-                        "actor_name": actor_name,
-                        "allow_duplicate": False,
-                    },
-                    blocking=True,
-                    context=intent_obj.context,
-                )
+                async def _add_and_count() -> int:
+                    # Read the pre-existing count and perform the add atomically
+                    # under the action lock so a concurrent add of the same item
+                    # cannot make the spoken confirmation wrong. The nested
+                    # service call re-enters the lock (same context) safely.
+                    _, current_list = _internal_list_by_id(resolved_list_id)
+                    prior = sum(
+                        1
+                        for existing in current_list.get("items", [])
+                        if str(existing.get("status", "")).strip() == "needs_action"
+                        and _normalize_term(str(existing.get("summary", "")).strip()) == normalized_item
+                    )
+                    await hass.services.async_call(
+                        DOMAIN,
+                        SERVICE_ADD_TO_LIST,
+                        {
+                            "item": item,
+                            "list_id": resolved_list_id,
+                            "list_name": resolved_list_name,
+                            "source": "voice_assistant",
+                            "actor_user_id": actor_user_id,
+                            "actor_name": actor_name,
+                            "allow_duplicate": False,
+                        },
+                        blocking=True,
+                        context=intent_obj.context,
+                    )
+                    return prior
+
+                before_count = await _run_locked(_add_and_count)
 
                 # add_to_list always records the add: a brand-new row adds one
                 # to the count, while an existing item merges into its quantity
