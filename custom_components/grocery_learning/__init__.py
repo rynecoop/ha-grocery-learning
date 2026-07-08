@@ -6,15 +6,15 @@ import json
 import logging
 import re
 import asyncio
-from copy import deepcopy
 from collections.abc import Mapping
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import voluptuous as vol
 from aiohttp import web
-from homeassistant.components.frontend import async_register_built_in_panel, async_remove_panel
+from homeassistant.components.frontend import async_remove_panel
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.panel_custom import async_register_panel
@@ -35,7 +35,6 @@ from .const import (
     CONF_DEFAULT_GROCERY_CATEGORIES,
     CONF_EXPERIMENTAL_MULTILIST,
     CONF_INBOX_ENTITY,
-    CONF_NOTIFY_SERVICE,
     COMPLETED_LIST_ENTITY,
     DEFAULT_CATEGORIES,
     DEFAULT_KEYWORDS_BY_CATEGORY,
@@ -71,6 +70,12 @@ _LOGGER = logging.getLogger(__name__)
 MAX_ACTIVITY_ITEMS = 40
 INTENT_LOCAL_LIST_ASSIST_ADD_ITEM = "LocalListAssistAddItem"
 LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision"
+
+# Tracks whether the current asyncio task is already running inside a locked,
+# state-mutating action. It is copied into child tasks that Home Assistant
+# creates for nested service calls, so a locked action that dispatches one of
+# our own services re-enters safely instead of deadlocking on the lock.
+_IN_LOCKED_ACTION: ContextVar[bool] = ContextVar("lla_in_locked_action", default=False)
 
 PLATFORMS: list[Platform] = []
 
@@ -150,446 +155,6 @@ DUPLICATE_STATUS_BY_ENTITY = "sensor.grocery_duplicate_added_by"
 DUPLICATE_STATUS_WHEN_ENTITY = "sensor.grocery_duplicate_added_when"
 DUPLICATE_STATUS_SOURCE_ENTITY = "sensor.grocery_duplicate_source"
 CONF_WIZARD_COMPLETED = "wizard_completed"
-
-
-class GroceryLearningAppView(HomeAssistantView):
-    """Serve a self-contained Grocery web app inside Home Assistant."""
-
-    url = "/api/grocery_learning/app"
-    name = "api:grocery_learning:app"
-    requires_auth = False
-
-    async def get(self, request):
-        html = """<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Local List Assist</title>
-  <style>
-    :root { --bg:#11161c; --panel:#1a212a; --muted:#8ea0b5; --text:#f4f7fb; --accent:#3ea6ff; --ok:#39c27f; --warn:#ffbf47; --danger:#ff6b6b; }
-    * { box-sizing:border-box; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
-    body { margin:0; background:linear-gradient(180deg,#0f141a,#0b1016); color:var(--text); }
-    .wrap { max-width:1100px; margin:0 auto; padding:16px; }
-    .header { background:var(--panel); border-radius:14px; padding:16px; margin-bottom:12px; border:1px solid #263241; }
-    .row { display:flex; gap:8px; flex-wrap:wrap; }
-    .input { flex:1; min-width:220px; background:#0f141a; color:var(--text); border:1px solid #314154; border-radius:10px; padding:10px; }
-    .btn { background:#243447; border:1px solid #3a506a; color:#eaf2fb; border-radius:10px; padding:10px 12px; cursor:pointer; }
-    .btn.primary { background:#1f4f78; border-color:#3ea6ff; }
-    .btn.warn { background:#5a4416; border-color:#ffbf47; }
-    .btn.danger { background:#5f2424; border-color:#ff6b6b; }
-    .section { background:var(--panel); border:1px solid #263241; border-radius:14px; padding:12px; margin-bottom:12px; }
-    .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-    .title { font-size:20px; font-weight:700; margin:0 0 10px 0; }
-    .sub { color:var(--muted); font-size:13px; margin-top:2px; }
-    .item { padding:10px; border:1px solid #2a3848; border-radius:10px; margin-bottom:8px; background:#121922; }
-    .item-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-    .item-main { cursor:pointer; }
-    .item-main strong { user-select:none; }
-    .editor { display:none; }
-    .editor.open { display:flex; }
-    .small { font-size:12px; color:var(--muted); }
-    .field { display:flex; flex-direction:column; gap:6px; min-width:220px; flex:1; }
-    .label { font-size:12px; color:var(--muted); }
-    .checkbox { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
-    .config-panel { margin-top:12px; }
-    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; }
-    .pill { display:inline-block; font-size:11px; padding:3px 8px; border-radius:999px; background:#203445; color:#b9dbff; margin-right:6px; }
-    select { background:#0f141a; color:var(--text); border:1px solid #314154; border-radius:8px; padding:6px; }
-    .empty { color:var(--muted); font-size:13px; padding:4px 0; }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="header">
-      <div class="title">Local List Assist</div>
-      <div class="sub">Local-first list app with smart grocery routing and flexible custom lists.</div>
-      <div id="listSwitcher" style="margin-top:10px;"></div>
-      <div class="row" style="margin-top:10px;">
-        <input id="quickAdd" class="input" placeholder="Add item" />
-        <button id="addBtn" class="btn primary">Add</button>
-        <button id="configureBtn" class="btn">Configure</button>
-      </div>
-      <div id="configPanel" class="config-panel"></div>
-    </div>
-    <div id="attention"></div>
-    <div id="lists"></div>
-    <div class="section">
-      <div class="section-head">
-        <div class="title">Recent Activity</div>
-      </div>
-      <div id="activity"></div>
-    </div>
-    <div class="section">
-      <div class="section-head">
-        <div class="title">Completed</div>
-        <button id="clearCompletedBtn" class="btn danger">Clear Completed</button>
-      </div>
-      <div id="completed"></div>
-    </div>
-  </div>
-  <script>
-    let state = null;
-    let configOpen = false;
-    let actor = { id: '__ACTOR_ID__', name: '__ACTOR_NAME__' };
-    const byId = (id) => document.getElementById(id);
-    const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-
-    function candidateWindows(){
-      const wins = [window];
-      try{ if(window.parent && window.parent !== window) wins.push(window.parent); } catch(_) {}
-      try{ if(window.top && !wins.includes(window.top)) wins.push(window.top); } catch(_) {}
-      return wins;
-    }
-
-    function readTokenFromStorage(win){
-      try{
-        const tokenRaw = win.localStorage.getItem('hassTokens');
-        if(!tokenRaw) return '';
-        const tokenObj = JSON.parse(tokenRaw);
-        return String(tokenObj?.access_token || '').trim();
-      } catch(_) {
-        return '';
-      }
-    }
-
-    function readTokenFromHass(win){
-      try{
-        const direct = String(win.hass?.auth?.data?.accessToken || '').trim();
-        if(direct) return direct;
-      } catch(_) {}
-      try{
-        const viaConn = String(win.hass?.connection?.options?.auth?.accessToken || '').trim();
-        if(viaConn) return viaConn;
-      } catch(_) {}
-      return '';
-    }
-
-    function accessToken(){
-      for(const win of candidateWindows()){
-        const stored = readTokenFromStorage(win);
-        if(stored) return stored;
-        const hassToken = readTokenFromHass(win);
-        if(hassToken) return hassToken;
-      }
-      return '';
-    }
-
-    async function api(path, method='GET', body=null){
-      const headers = {'Content-Type':'application/json'};
-      const token = accessToken();
-      if(token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch(path, {method, headers, credentials:'same-origin', body: body?JSON.stringify(body):null});
-      const text = await res.text();
-      let data = {};
-      try { data = text ? JSON.parse(text) : {}; } catch { data = { error: text || 'invalid_json_response' }; }
-      if(!res.ok){ throw new Error(data.error || text || (`HTTP ${res.status}`)); }
-      return data;
-    }
-    async function act(payload){
-      const result = await api('/api/grocery_learning/action','POST',payload);
-      if(result && result.ok === false){ throw new Error(result.error || 'action_failed'); }
-      await load();
-    }
-
-    function itemRow(item, categories){
-      const options = categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-      return `
-        <div class="item" data-list-entity="${esc(item.list_entity)}" data-item-ref="${esc(item.item_ref)}">
-          <div class="item-top item-main">
-            <label><input class="complete-toggle" type="checkbox" /> <strong>${esc(item.summary)}</strong></label>
-            <span class="pill">${esc(item.category_display)}</span>
-          </div>
-          <div class="small">${esc(item.description || '')}</div>
-          <div class="row editor" style="margin-top:8px;">
-            <select class="cat-select">${options}</select>
-            <button class="btn move-btn">Move</button>
-          </div>
-        </div>`;
-    }
-
-    function bindEvents(){
-      document.querySelectorAll('.item').forEach((row) => {
-        const itemRef = row.dataset.itemRef || '';
-        const listEntity = row.dataset.listEntity || '';
-        const main = row.querySelector('.item-main');
-        const editor = row.querySelector('.editor');
-        const complete = row.querySelector('.complete-toggle');
-        const moveBtn = row.querySelector('.move-btn');
-        const select = row.querySelector('.cat-select');
-        if(complete){
-          complete.addEventListener('change', () => window.__g.complete(listEntity, itemRef, complete.checked));
-          complete.addEventListener('click', (ev) => ev.stopPropagation());
-        }
-        if(main && editor){
-          main.addEventListener('click', () => editor.classList.toggle('open'));
-        }
-        if(moveBtn && select){
-          moveBtn.addEventListener('click', () => window.__g.move(listEntity, itemRef, select.value));
-        }
-      });
-
-      document.querySelectorAll('.completed-toggle').forEach((el) => {
-        const itemRef = el.dataset.itemRef || '';
-        el.addEventListener('change', () => window.__g.undo(itemRef, el.checked));
-      });
-    }
-
-    function render(){
-      if(!state) return;
-      const multilistEnabled = !!state.settings?.experimental_multilist;
-      const attention = [];
-      if(state.error){
-        attention.push(`<div class="section"><div class="title">App Error</div><div class="small">${esc(state.error)}</div></div>`);
-      }
-      if(!state.setup?.completed){
-        attention.push(`<div class="section"><div class="title">Setup Needed</div><div class="small">Finish initial configuration for best results.</div><div class="row" style="margin-top:8px;"><button class="btn warn" onclick="window.__g.openConfig()">Open Setup</button></div></div>`);
-      }
-      if(state.pending_duplicate?.pending){
-        attention.push(`<div class="section"><div class="title">Duplicate Needs Decision</div>
-          <div class="small">${esc(state.pending_duplicate.item)} is already in ${esc(state.pending_duplicate.target)}.</div>
-          <div class="row" style="margin-top:8px;">
-            <button class="btn warn" onclick="window.__g.confirmDup('add')">Add Anyway</button>
-            <button class="btn" onclick="window.__g.confirmDup('skip')">Skip</button>
-          </div></div>`);
-      }
-      if(state.pending_review?.pending){
-        const buttons = state.categories.map(c => `<button class="btn" onclick="window.__g.review('${esc(c)}')">${esc(c.replaceAll('_',' '))}</button>`).join('');
-        attention.push(`<div class="section"><div class="title">Review Needed</div>
-          <div class="small">Item: <strong>${esc(state.pending_review.item)}</strong> (from ${esc(state.pending_review.source_list)})</div>
-          <div class="row" style="margin-top:8px;">${buttons}<button class="btn" onclick="window.__g.review('other', false)">Keep Other</button></div></div>`);
-      }
-      byId('attention').innerHTML = attention.join('');
-      const listSwitcher = byId('listSwitcher');
-      if(multilistEnabled){
-        const listOptions = (state.lists || []).map((l) => `<option value="${esc(l.id)}" ${l.active ? 'selected' : ''}>${esc(l.name)}</option>`).join('');
-        const active = (state.lists || []).find((l) => !!l.active);
-        listSwitcher.innerHTML = `
-          <div class="row">
-            <select id="activeListSelect" class="input" style="max-width:360px; min-width:220px;">${listOptions}</select>
-          </div>
-          <div class="small" style="margin-top:6px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong> Â· ${esc((state.system?.active_list_categories || []).length ? 'Categorized view' : 'Flat list')}</div>`;
-      } else {
-        listSwitcher.innerHTML = '';
-      }
-      const configPanel = byId('configPanel');
-      if(configOpen || !state.setup?.completed){
-        const active = (state.lists || []).find((l) => !!l.active);
-        const activeCategories = (state.system?.active_list_categories || []).join(', ');
-        configPanel.innerHTML = `
-          <div class="section">
-            <div class="title">${state.setup?.completed ? 'Configure Local List Assist' : 'Setup Wizard'}</div>
-            <div class="small">Manage categories/order and repair required entities.</div>
-            <div class="row" style="margin-top:10px;">
-              <div class="field">
-                <div class="label">${multilistEnabled ? 'Default Grocery Categories (Grocery list only)' : 'Categories (order controls aisle flow)'}</div>
-                <input id="settingsCategories" class="input" value="${esc((state.settings?.categories || []).join(', '))}" />
-              </div>
-              ${multilistEnabled ? '' : `<div class="field">
-                <div class="label">Inbox Entity</div>
-                <input id="settingsInbox" class="input" value="${esc(state.settings?.inbox_entity || 'todo.grocery_inbox')}" />
-              </div>`}
-            </div>
-            <div class="row" style="margin-top:10px;">
-              <label class="checkbox"><input id="settingsExperimentalMultilist" type="checkbox" ${state.settings?.experimental_multilist ? 'checked' : ''} /> Enable experimental internal multi-list mode</label>
-              <label class="checkbox"><input id="settingsDefaultGroceryCategories" type="checkbox" ${state.settings?.default_grocery_categories ? 'checked' : ''} /> Use default shopping/grocery categories for new grocery lists</label>
-              <label class="checkbox"><input id="settingsDebugMode" type="checkbox" ${state.settings?.debug_mode ? 'checked' : ''} /> Debug mode for routing/activity logs</label>
-              ${multilistEnabled ? '' : `<label class="checkbox"><input id="settingsAutoRoute" type="checkbox" ${state.settings?.auto_route_inbox ? 'checked' : ''} /> Auto route inbox/voice intake</label>
-              <label class="checkbox"><input id="settingsAutoProvision" type="checkbox" ${state.settings?.auto_provision ? 'checked' : ''} /> Auto provision missing lists</label>`}
-            </div>
-            <div class="row" style="margin-top:10px;">
-              <button class="btn primary" onclick="window.__g.saveSettings(false)">Save</button>
-              <button class="btn" onclick="window.__g.repair()">Repair/Provision</button>
-              ${state.setup?.completed ? '<button class="btn" onclick="window.__g.closeConfig()">Done</button>' : '<button class="btn warn" onclick="window.__g.saveSettings(true)">Complete Setup</button>'}
-            </div>
-            ${multilistEnabled ? `
-            <div class="section" style="margin-top:12px;">
-              <div class="title">Manage Lists</div>
-              <div class="row" style="margin-top:8px;">
-                <input id="newListName" class="input" placeholder="New list name" style="max-width:260px;" />
-                <input id="newListCategories" class="input" placeholder="Optional categories (comma separated)" style="max-width:360px;" />
-                <button class="btn" onclick="window.__g.createList()">Create List</button>
-              </div>
-              <div class="row" style="margin-top:8px;">
-                <input id="activeListCategories" class="input" value="${esc(activeCategories)}" placeholder="Active list categories (comma separated)" style="max-width:420px;" />
-                <button class="btn" onclick="window.__g.saveListCategories()">Save Categories</button>
-                <button class="btn" onclick="window.__g.clearListCategories()">No Categories</button>
-              </div>
-              <div class="row" style="margin-top:8px;">
-                <button class="btn" onclick="window.__g.renameList()">Rename Active</button>
-                <button class="btn danger" onclick="window.__g.archiveList()">Archive Active</button>
-              </div>
-              <div class="small" style="margin-top:8px;">Active list: <strong>${esc(active?.name || 'Grocery List')}</strong>. For non-grocery lists, leave categories blank for a flat list.</div>
-            </div>` : ''}
-            <div class="small" style="margin-top:8px;">
-              Health: ${state.system?.missing_lists?.length ? ('Missing lists: ' + esc(state.system.missing_lists.join(', '))) : 'All required lists detected'}
-            </div>
-          </div>`;
-      } else {
-        configPanel.innerHTML = '';
-      }
-
-      const groups = state.groups.map(g => {
-        const items = g.items.length ? g.items.map(i => itemRow(i, state.categories)).join('') : `<div class="empty">No items.</div>`;
-        return `<div class="section"><div class="title">${esc(g.title)}</div>${items}</div>`;
-      }).join('');
-      byId('lists').innerHTML = groups;
-
-      byId('activity').innerHTML = (state.activity || []).length
-        ? state.activity.map((entry) => `<div class="item"><div><strong>${esc(entry.title || '')}</strong></div><div class="small">${esc(entry.detail || '')}${entry.list_name ? ` Â· ${esc(entry.list_name)}` : ''}${entry.source ? ` Â· ${esc(entry.source)}` : ''}${entry.when ? ` Â· ${esc(entry.when)}` : ''}</div></div>`).join('')
-        : '<div class="empty">No recent activity.</div>';
-
-      byId('completed').innerHTML = state.completed.length
-        ? state.completed.map(i => `<div class="item"><label><input class="completed-toggle" data-item-ref="${esc(i.item_ref)}" type="checkbox" checked /> <strong>${esc(i.summary)}</strong></label><div class="small">${esc(i.description || '')}</div></div>`).join('')
-        : '<div class="empty">No completed items.</div>';
-      bindEvents();
-    }
-
-    async function load(){ state = await api('/api/grocery_learning/dashboard'); render(); }
-    async function loadActor(){
-      if(actor.name) return;
-      for(const win of candidateWindows()){
-        try{
-          const hassUser = win.hass?.user;
-          if(hassUser){
-            actor.id = String(hassUser.id || '').trim();
-            actor.name = String(hassUser.display_name || hassUser.name || hassUser.username || '').trim();
-            if(actor.name) return;
-          }
-        } catch(_) {}
-      }
-      const token = accessToken();
-      if(token){
-        try{
-          const res = await fetch('/api/auth/current_user', { headers: { Authorization: `Bearer ${token}` }});
-          if(res.ok){
-            const me = await res.json();
-            actor.id = String(me?.id || '').trim();
-            actor.name = String(me?.display_name || me?.name || me?.username || '').trim();
-            if(actor.name) return;
-          }
-        } catch(_) {}
-      }
-      try{
-        const hassUser = window.hass?.user;
-        if(hassUser){
-          actor.id = String(hassUser.id || '').trim();
-          actor.name = String(hassUser.display_name || hassUser.name || hassUser.username || '').trim();
-          if(actor.name) return;
-        }
-      } catch(_) {}
-      try{
-        const me = await api('/api/auth/current_user');
-        actor.id = String(me?.id || '').trim();
-        actor.name = String(me?.display_name || me?.name || me?.username || '').trim();
-      } catch(_) {}
-    }
-
-    window.__g = {
-      async add(){ const val = byId('quickAdd').value.trim(); if(!val) return; byId('quickAdd').value=''; await act({action:'add_item', item:val, actor_user_id:actor.id, actor_name:actor.name}); },
-      async createList(){
-        const name = byId('newListName')?.value?.trim() || '';
-        if(!name) return;
-        const categories = (byId('newListCategories')?.value || '').trim();
-        await act({action:'create_list', name, categories});
-        const el = byId('newListName');
-        if(el) el.value = '';
-        const catEl = byId('newListCategories');
-        if(catEl) catEl.value = '';
-      },
-      async saveListCategories(){
-        const sel = byId('activeListSelect');
-        const listId = sel?.value || '';
-        if(!listId) return;
-        const categories = (byId('activeListCategories')?.value || '').trim();
-        await act({action:'save_list_categories', list_id:listId, categories});
-      },
-      async clearListCategories(){
-        const sel = byId('activeListSelect');
-        const listId = sel?.value || '';
-        if(!listId) return;
-        await act({action:'save_list_categories', list_id:listId, categories:''});
-      },
-      async renameList(){
-        const sel = byId('activeListSelect');
-        const listId = sel?.value || '';
-        if(!listId) return;
-        const next = window.prompt('New list name');
-        if(!next || !next.trim()) return;
-        await act({action:'rename_list', list_id:listId, name:next.trim()});
-      },
-      async archiveList(){
-        const sel = byId('activeListSelect');
-        const listId = sel?.value || '';
-        if(!listId) return;
-        if(!window.confirm('Archive this list?')) return;
-        await act({action:'archive_list', list_id:listId});
-      },
-      async switchList(){
-        const sel = byId('activeListSelect');
-        const listId = sel?.value || '';
-        if(!listId) return;
-        await act({action:'switch_list', list_id:listId});
-      },
-      async complete(listEntity,itemRef,checked){ if(checked) await act({action:'set_status', list_entity:listEntity, item:itemRef, status:'completed'}); },
-      async undo(itemRef,checked){ if(!checked) await act({action:'set_status', list_entity:'todo.grocery_completed', item:itemRef, status:'needs_action'}); },
-      async move(fromList,itemRef,targetCategory){ if(!targetCategory) return; await act({action:'recategorize', from_list:fromList, item:itemRef, target_category:targetCategory, learn:true}); },
-      async review(category, learn=true){ await act({action:'apply_review', category, learn}); },
-      async confirmDup(decision){ await act({action:'confirm_duplicate', decision, actor_user_id:actor.id, actor_name:actor.name}); },
-      async clearCompleted(){ await act({action:'clear_completed'}); },
-      async repair(){ await act({action:'repair_system'}); },
-      openConfig(){ configOpen = true; render(); },
-      closeConfig(){ configOpen = false; render(); },
-      async saveSettings(completeSetup){
-        const categories = (byId('settingsCategories')?.value || '').trim();
-        const inboxEntity = (byId('settingsInbox')?.value || '').trim();
-        const autoRoute = byId('settingsAutoRoute') ? !!byId('settingsAutoRoute')?.checked : undefined;
-        const autoProvision = byId('settingsAutoProvision') ? !!byId('settingsAutoProvision')?.checked : undefined;
-        const experimentalMultilist = !!byId('settingsExperimentalMultilist')?.checked;
-        const defaultGroceryCategories = !!byId('settingsDefaultGroceryCategories')?.checked;
-        const debugMode = !!byId('settingsDebugMode')?.checked;
-        const payload = {
-          action:'save_settings',
-          categories,
-          experimental_multilist: experimentalMultilist,
-          default_grocery_categories: defaultGroceryCategories,
-          debug_mode: debugMode,
-          complete_setup: !!completeSetup
-        };
-        if(byId('settingsInbox')) payload.inbox_entity = inboxEntity;
-        if(byId('settingsAutoRoute')) payload.auto_route_inbox = autoRoute;
-        if(byId('settingsAutoProvision')) payload.auto_provision = autoProvision;
-        await act({
-          ...payload
-        });
-        if(completeSetup){ configOpen = false; }
-      }
-    };
-
-    byId('addBtn').addEventListener('click', () => window.__g.add());
-    byId('configureBtn').addEventListener('click', () => window.__g.openConfig());
-    byId('clearCompletedBtn').addEventListener('click', () => window.__g.clearCompleted());
-    document.addEventListener('change', (e) => {
-      if(e.target && e.target.id === 'activeListSelect'){
-        window.__g.switchList();
-      }
-    });
-    byId('quickAdd').addEventListener('keydown', (e) => { if(e.key==='Enter'){ e.preventDefault(); window.__g.add(); }});
-    loadActor().finally(() => load().catch((err) => { byId('lists').innerHTML = `<div class="section"><div class="title">Error</div><div class="small">${esc(err.message)}</div></div>`; }));
-  </script>
-</body>
-"""
-        hass_user = request.get("hass_user")
-        actor_id = str(getattr(hass_user, "id", "") or "") if hass_user is not None else ""
-        actor_name = (
-            str(getattr(hass_user, "display_name", "") or getattr(hass_user, "name", "") or getattr(hass_user, "username", "") or "")
-            if hass_user is not None
-            else ""
-        )
-        actor_id_json = json.dumps(actor_id)
-        actor_name_json = json.dumps(actor_name)
-        html = html.replace("'__ACTOR_ID__'", actor_id_json).replace("'__ACTOR_NAME__'", actor_name_json)
-        return web.Response(text=html, content_type="text/html")
 
 
 class GroceryLearningDashboardView(HomeAssistantView):
@@ -843,13 +408,15 @@ async def _register_sidebar_panel(hass: HomeAssistant, title: str, *, replace_ex
         data["panel_title"] = title
         return
 
+    # Reading manifest.json touches the filesystem; keep it off the event loop.
+    module_url = await hass.async_add_executor_job(_frontend_module_url)
     await async_register_panel(
         hass,
         frontend_url_path="grocery-app",
         webcomponent_name="local-list-assist-panel",
         sidebar_title=title,
         sidebar_icon="mdi:cart-variant",
-        module_url=_frontend_module_url(),
+        module_url=module_url,
         require_admin=False,
         config={"title": title},
     )
@@ -970,7 +537,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             },
         )
 
-    async def _save() -> None:
+    data.setdefault("_action_lock", asyncio.Lock())
+
+    async def _flush_save() -> None:
         await store.save(
             hass.data[DOMAIN]["terms"],
             hass.data[DOMAIN].get("item_meta", {}),
@@ -979,6 +548,39 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         )
         hass.data[DOMAIN]["dashboard_revision"] = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0) + 1
         _publish_dashboard_revision()
+
+    async def _save() -> None:
+        # Inside a locked action, coalesce every persist into a single store
+        # write + revision bump flushed when the action finishes. One user
+        # action often touches the model, item metadata and the activity feed;
+        # without coalescing each fires a live-revision change and forces other
+        # devices to reload the dashboard several times for one logical change.
+        if _IN_LOCKED_ACTION.get():
+            hass.data[DOMAIN]["_save_dirty"] = True
+            return
+        await _flush_save()
+
+    async def _run_locked(func):
+        """Serialize state-mutating work and coalesce its saves.
+
+        A single asyncio.Lock guarantees only one action mutates the shared
+        in-memory model at a time (closing the read-modify-write races between
+        devices). The _IN_LOCKED_ACTION context var is copied into child tasks
+        that Home Assistant spawns for nested service calls, so an action that
+        dispatches one of our own services re-enters without deadlocking.
+        """
+        if _IN_LOCKED_ACTION.get():
+            return await func()
+        async with hass.data[DOMAIN]["_action_lock"]:
+            token = _IN_LOCKED_ACTION.set(True)
+            hass.data[DOMAIN]["_save_dirty"] = False
+            try:
+                return await func()
+            finally:
+                _IN_LOCKED_ACTION.reset(token)
+                if hass.data[DOMAIN].get("_save_dirty"):
+                    hass.data[DOMAIN]["_save_dirty"] = False
+                    await _flush_save()
 
     _publish_dashboard_revision()
 
@@ -1331,9 +933,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 continue
             merged = "|".join(sorted(set(terms_obj.data.get(category, []))))
             if len(merged) > 255:
+                # input_text state is capped at 255 chars, so the legacy YAML
+                # mirror can only hold a subset. Keep the most recent whole
+                # terms and note the drop instead of clipping silently.
                 clipped = merged[-255:]
                 if "|" in clipped:
                     clipped = clipped.split("|", 1)[1]
+                _LOGGER.debug(
+                    "Learned-term helper %s truncated to fit 255 chars; the internal store keeps the full set",
+                    helper,
+                )
                 merged = clipped
             await hass.services.async_call(
                 "input_text",
@@ -1585,7 +1194,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 added_by = added_by.strip() or "Unknown"
                 source = _friendly_source(source_key.strip() or "unknown")
                 when = _relative_time(added_at.strip())
-                return f"Added by {added_by} Â· {when} Â· {source}"
+                return f"Added by {added_by} · {when} · {source}"
         return fallback
 
     def _description_with_existing_meta(list_entity: str, summary: str, fallback: str) -> str:
@@ -1628,7 +1237,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         now_iso = dt_util.utcnow().isoformat()
         safe_name = user_name.replace("|", "/")
         safe_source = resolved_source.replace("|", "_")
-        return f"Added by {user_name} Â· just now Â· {source}\nGLMETA|{now_iso}|{safe_name}|{safe_source}"
+        return f"Added by {user_name} · just now · {source}\nGLMETA|{now_iso}|{safe_name}|{safe_source}"
 
     async def _record_item_meta(
         list_entity: str,
@@ -1941,99 +1550,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         }
 
     async def _build_dashboard_payload(selected_list_id: str | None = None) -> dict[str, Any]:
-        if _multilist_enabled():
-            return await _build_dashboard_payload_internal(selected_list_id)
-        categories = _active_categories()
-        active_entry = hass.data.get(DOMAIN, {}).get("entry")
-        inbox_entity = str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip()
-        required_lists = [inbox_entity] + [_target_list_for_category(c) for c in categories] + [
-            _target_list_for_category("other"),
-            COMPLETED_LIST_ENTITY,
-        ]
-        missing_lists = [entity_id for entity_id in required_lists if hass.states.get(entity_id) is None]
-        grouped: list[dict[str, Any]] = []
-        for category in categories + ["other"]:
-            entity_id = _target_list_for_category(category)
-            raw_items = await _list_items(entity_id, "needs_action")
-            grouped.append(
-                {
-                    "category": category,
-                    "title": _display_name_for_category(category),
-                    "items": [
-                        {
-                            "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
-                            "summary": str(item.get("summary", "")).strip(),
-                            "quantity": _meta_quantity(
-                                _meta_for_item(entity_id, _normalize_term(str(item.get("summary", "")).strip()))
-                            ),
-                            "description": _display_description(
-                                entity_id,
-                                str(item.get("summary", "")).strip(),
-                                str(item.get("description", "")).strip(),
-                            ),
-                            "list_entity": entity_id,
-                            "category": category,
-                            "category_display": _display_name_for_category(category),
-                        }
-                        for item in raw_items
-                    ],
-                }
-            )
-
-        completed_items = await _list_items(COMPLETED_LIST_ENTITY, "completed")
-        pending_review = dict(hass.data[DOMAIN].get("pending_review", {}))
-        pending_duplicate = dict(hass.data[DOMAIN].get("pending_duplicate", {}))
-        if pending_duplicate and not bool(pending_duplicate.get("interactive", False)):
-            await _clear_pending_duplicate()
-            pending_duplicate = {}
-
-        return {
-            "categories": categories + ["other"],
-            "groups": grouped,
-            "lists": [{"id": "default", "name": "Grocery List", "active": True}],
-            "completed": [
-                {
-                    "item_ref": str(item.get("uid", "")).strip() or str(item.get("summary", "")).strip(),
-                    "summary": str(item.get("summary", "")).strip(),
-                    "quantity": _meta_quantity(
-                        _meta_for_item(COMPLETED_LIST_ENTITY, _normalize_term(str(item.get("summary", "")).strip()))
-                    ),
-                    "description": _display_description(
-                        COMPLETED_LIST_ENTITY,
-                        str(item.get("summary", "")).strip(),
-                        str(item.get("description", "")).strip(),
-                    ),
-                    "list_entity": COMPLETED_LIST_ENTITY,
-                }
-                for item in completed_items
-            ],
-            "pending_review": {
-                "pending": bool(pending_review.get("item")),
-                "item": str(pending_review.get("item", "")),
-                "source_list": str(pending_review.get("source_list", "")),
-            },
-            "pending_duplicate": {
-                "pending": bool(pending_duplicate.get("item")),
-                "item": str(pending_duplicate.get("item", "")),
-                "target": str(pending_duplicate.get("target_list", "")),
-            },
-            "archived_lists": [],
-            "settings": {
-                "categories": categories,
-                "experimental_multilist": True,
-                "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
-                "debug_mode": bool(_entry_value(active_entry, CONF_DEBUG_MODE, False)),
-                "dashboard_name": _dashboard_name(active_entry),
-            },
-            "system": {
-                "missing_lists": missing_lists,
-                "runtime_ready": bool(hass.data.get(DOMAIN, {}).get("runtime_ready")),
-            },
-            "activity": _activity_payload(),
-            "setup": {
-                "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
-            },
-        }
+        return await _build_dashboard_payload_internal(selected_list_id)
 
     async def _route_item_internal(call: ServiceCall) -> None:
         raw_item = str(call.data.get("item", "")).strip()
@@ -2217,6 +1734,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await _clear_pending_duplicate()
 
     async def _handle_dashboard_action(payload: dict[str, Any]) -> dict[str, Any]:
+        # Every dashboard action runs under the shared action lock so concurrent
+        # requests from multiple devices/users cannot interleave and lose writes.
+        return await _run_locked(lambda: _handle_dashboard_action_impl(payload))
+
+    async def _handle_dashboard_action_impl(payload: dict[str, Any]) -> dict[str, Any]:
         action = str(payload.get("action", "")).strip()
         multilist_mode = _multilist_enabled()
         if action == "add_item":
@@ -2761,23 +2283,21 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return {"ok": True, "dashboard": await _build_dashboard_payload()}
 
         if action == "repair_system":
-            if multilist_mode:
-                return {"ok": True}
-            categories = _active_categories()
             active_entry = hass.data.get(DOMAIN, {}).get("entry")
-            inbox_entity = str(_entry_value(active_entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")).strip()
-            await _ensure_local_todo_list(inbox_entity, "Grocery Inbox")
-            for category in categories:
-                await _ensure_local_todo_list(
-                    _target_list_for_category(category),
-                    f"Grocery {_display_name_for_category(category)}",
-                )
-            await _ensure_local_todo_list(_target_list_for_category("other"), "Grocery Other")
-            await _ensure_local_todo_list(COMPLETED_LIST_ENTITY, "Grocery Completed")
+            _ensure_multilist_model()
+            await _ensure_required_lists(active_entry)
+            await _ensure_internal_voice_bridges()
             await _ensure_required_helpers()
             if active_entry is not None and bool(_entry_value(active_entry, CONF_AUTO_DASHBOARD, True)):
                 await _ensure_dashboards(active_entry)
-            return {"ok": True}
+            await _save()
+            await _record_activity(
+                "Repaired setup",
+                "Re-provisioned lists, helpers, and dashboards",
+                "Local List Assist",
+                "typed",
+            )
+            return {"ok": True, "dashboard": await _build_dashboard_payload()}
 
         if action == "install_voice_sentences":
             language = str(payload.get("language", "en")).strip() or "en"
@@ -3384,105 +2904,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if _multilist_enabled():
             await _route_item_internal(call)
             return
-        raw_item = call.data["item"]
-        display_item = _display_item_summary(raw_item) or raw_item
-        quantity = _coerce_quantity(call.data.get("quantity", 1))
-        source_list = call.data["source_list"].strip()
-        remove_from_source = bool(call.data["remove_from_source"])
-        review_on_other = bool(call.data["review_on_other"])
-        allow_duplicate = bool(call.data["allow_duplicate"])
-        source = _source_from_call(call)
-        await _clear_pending_duplicate()
-        normalized = _normalize_term(display_item)
-        if not normalized:
-            return
-
-        terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
-        category = _get_category_for_term(terms_obj, normalized)
-        target_list = _target_list_for_category(category)
-
-        entry = hass.data.get(DOMAIN, {}).get("entry")
-        await _ensure_required_lists(entry)
-
-        if hass.states.get(target_list) is None:
-            _LOGGER.warning("Target list %s missing for category %s", target_list, category)
-            target_list = _target_list_for_category("other")
-
-        duplicate_item = await _find_open_duplicate(target_list, display_item)
-        if duplicate_item and not allow_duplicate:
-            target_state = hass.states.get(target_list)
-            target_name = (
-                str(target_state.attributes.get("friendly_name", "")).strip()
-                if target_state is not None
-                else target_list
-            )
-            duplicate_ref = str(duplicate_item.get("uid", "")).strip() or str(duplicate_item.get("summary", "")).strip()
-            await _record_item_meta(target_list, display_item, call, quantity=quantity)
-            updated_meta = _meta_for_item(target_list, normalized)
-            updated_description = _description_with_existing_meta(
-                target_list,
-                str(duplicate_item.get("summary", "")).strip() or display_item,
-                str(duplicate_item.get("description", "")).strip(),
-            )
-            await hass.services.async_call(
-                "todo",
-                "update_item",
-                {
-                    "item": duplicate_ref,
-                    "description": updated_description,
-                },
-                target={"entity_id": target_list},
-                blocking=True,
-            )
-            await _record_activity(
-                "Updated quantity",
-                f"{str(duplicate_item.get('summary', '')).strip() or display_item} x{_meta_quantity(updated_meta)}",
-                target_name,
-                source,
-            )
-            if remove_from_source:
-                await _remove_from_list(source_list, raw_item)
-            return
-
-        await hass.services.async_call(
-            "todo",
-            "add_item",
-            {"item": display_item, "description": await _build_item_description(call)},
-            target={"entity_id": target_list},
-            blocking=True,
-        )
-        await _record_item_meta(target_list, display_item, call, quantity=quantity)
-        target_state = hass.states.get(target_list)
-        target_name = str(target_state.attributes.get("friendly_name", "")).strip() if target_state is not None else target_list
-        await _record_activity("Item added", f"{display_item} x{quantity}" if quantity > 1 else display_item, target_name, source)
-
-        if remove_from_source:
-            await _remove_from_list(source_list, raw_item)
-
-        if category == "other" and review_on_other:
-            await _set_pending_review(display_item, target_list)
-            await hass.services.async_call(
-                "persistent_notification",
-                "create",
-                {
-                    "title": "Local List needs category review",
-                    "message": f"'{display_item}' was added to Other. Open Local List Assist and review.",
-                    "notification_id": "grocery_uncategorized",
-                },
-                blocking=True,
-            )
-            notify_service = str(_entry_value(entry, CONF_NOTIFY_SERVICE, "")).strip()
-            if notify_service and "." in notify_service:
-                n_domain, n_service = notify_service.split(".", 1)
-                await hass.services.async_call(
-                    n_domain,
-                    n_service,
-                    {
-                        "title": "Local List review needed",
-                        "message": f"'{raw_item}' was added to Other.",
-                    },
-                    blocking=True,
-                )
 
     async def _add_to_list(call: ServiceCall) -> None:
         item = str(call.data.get("item", "")).strip()
@@ -3492,30 +2913,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         source = str(call.data.get("source", "service_call")).strip() or "service_call"
         actor_user_id = str(call.data.get("actor_user_id", "")).strip()
         actor_name = str(call.data.get("actor_name", "")).strip()
-        if _multilist_enabled():
-            list_name = str(call.data.get("list_name", "")).strip()
-            list_id = str(call.data.get("list_id", "")).strip()
-            resolved_list_name = list_name
-            if list_id and not resolved_list_name:
-                resolved_id, resolved_obj = _internal_list_by_id(list_id)
-                resolved_list_name = str(resolved_obj.get("name", resolved_id)).strip()
-            await hass.services.async_call(
-                DOMAIN,
-                SERVICE_ROUTE_ITEM,
-                {
-                    "item": item,
-                    "quantity": quantity,
-                    "source": source,
-                    "source_list_name": resolved_list_name,
-                    "allow_duplicate": bool(call.data.get("allow_duplicate", False)),
-                    "actor_user_id": actor_user_id,
-                    "actor_name": actor_name,
-                    "review_on_other": True,
-                },
-                blocking=True,
-                context=call.context,
-            )
-            return
+        list_name = str(call.data.get("list_name", "")).strip()
+        list_id = str(call.data.get("list_id", "")).strip()
+        resolved_list_name = list_name
+        if list_id and not resolved_list_name:
+            resolved_id, resolved_obj = _internal_list_by_id(list_id)
+            resolved_list_name = str(resolved_obj.get("name", resolved_id)).strip()
         await hass.services.async_call(
             DOMAIN,
             SERVICE_ROUTE_ITEM,
@@ -3523,6 +2926,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "item": item,
                 "quantity": quantity,
                 "source": source,
+                "source_list_name": resolved_list_name,
                 "allow_duplicate": bool(call.data.get("allow_duplicate", False)),
                 "actor_user_id": actor_user_id,
                 "actor_name": actor_name,
@@ -3536,123 +2940,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if _multilist_enabled():
             await _apply_review_internal(call)
             return
-        category_in = str(call.data.get("category", "")).strip().lower()
-        learn = bool(call.data.get("learn", True))
-        if not category_in and hass.states.get(REVIEW_CATEGORY_HELPER):
-            category_in = str(hass.states.get(REVIEW_CATEGORY_HELPER).state).strip().lower()
-
-        categories = _active_categories()
-        normalized_category = _normalize_category(category_in)
-        if category_in == "keep other":
-            target_category = "other"
-        elif normalized_category in categories:
-            target_category = normalized_category
-        else:
-            target_category = "other"
-
-        pending_review = dict(hass.data[DOMAIN].get("pending_review", {}))
-        review_item_state = hass.states.get(REVIEW_ITEM_HELPER)
-        source_list_state = hass.states.get(REVIEW_SOURCE_HELPER)
-        review_item = _clean_helper_state_value(str(review_item_state.state)) if review_item_state else ""
-        source_list = _clean_helper_state_value(str(source_list_state.state)) if source_list_state else ""
-        if not review_item:
-            review_item = str(pending_review.get("item", "")).strip()
-        if not source_list:
-            source_list = str(pending_review.get("source_list", "")).strip()
-        if not source_list:
-            source_list = _target_list_for_category("other")
-        if not review_item:
-            candidate = await _first_open_item(source_list)
-            if candidate:
-                review_item = str(candidate.get("summary", "")).strip()
-        if not review_item and source_list != _target_list_for_category("other"):
-            candidate = await _first_open_item(_target_list_for_category("other"))
-            if candidate:
-                review_item = str(candidate.get("summary", "")).strip()
-                source_list = _target_list_for_category("other")
-        target_list = _target_list_for_category(target_category)
-        if not review_item:
-            return
-
-        existing_item = await _find_open_item(source_list, review_item)
-        existing_description = (
-            str(existing_item.get("description", "")).strip()
-            if isinstance(existing_item, dict)
-            else ""
-        )
-
-        if source_list != target_list:
-            await _remove_from_list(source_list, review_item)
-            await hass.services.async_call(
-                "todo",
-                "add_item",
-                {
-                    "item": review_item,
-                    "description": _description_with_existing_meta(
-                        source_list,
-                        review_item,
-                        existing_description,
-                    ),
-                },
-                target={"entity_id": target_list},
-                blocking=True,
-            )
-            _move_item_meta_entry(source_list, review_item, target_list, review_item)
-            await _save()
-
-        if learn and target_category in categories:
-            norm = _normalize_term(review_item)
-            terms_obj: LearnedTerms = hass.data[DOMAIN]["terms"]
-            existing = set(terms_obj.data.get(target_category, []))
-            if norm and norm not in existing:
-                terms_obj.data.setdefault(target_category, []).append(norm)
-                await _save()
-                await _sync_helpers_internal()
-
-        await _clear_pending_review()
-        await hass.services.async_call(
-            "persistent_notification",
-            "dismiss",
-            {"notification_id": "grocery_uncategorized"},
-            blocking=True,
-        )
 
     async def _confirm_duplicate(call: ServiceCall) -> None:
         if _multilist_enabled():
             await _confirm_duplicate_internal(call)
             return
-        decision = str(call.data.get("decision", "")).strip().lower()
-        if decision not in {"add", "skip"}:
-            raise vol.Invalid("decision must be 'add' or 'skip'")
-
-        pending = dict(hass.data[DOMAIN].get("pending_duplicate", {}))
-        item = str(pending.get("item", "")).strip()
-        target_list = str(pending.get("target_list", "")).strip()
-
-        if not item:
-            item_state = hass.states.get(DUPLICATE_PENDING_ITEM_HELPER)
-            item = _clean_helper_state_value(str(item_state.state)) if item_state else ""
-        if not target_list:
-            target_state = hass.states.get(DUPLICATE_PENDING_TARGET_HELPER)
-            target_list = _clean_helper_state_value(str(target_state.state)) if target_state else ""
-
-        if decision == "add" and item and target_list and hass.states.get(target_list) is not None:
-            await hass.services.async_call(
-                "todo",
-                "add_item",
-                {"item": item, "description": await _build_item_description(call, source_override="duplicate_confirmation")},
-                target={"entity_id": target_list},
-                blocking=True,
-            )
-            await _record_item_meta(target_list, item, call, source_override="duplicate_confirmation")
-
-        await _clear_pending_duplicate()
-        await hass.services.async_call(
-            "persistent_notification",
-            "dismiss",
-            {"notification_id": "grocery_duplicate"},
-            blocking=True,
-        )
 
     def _voice_sentence_pack(language: str) -> str:
         if language != "en":
@@ -3688,9 +2980,14 @@ lists:
         normalized_language = language.strip().lower() or "en"
         content = _voice_sentence_pack(normalized_language)
         sentences_dir = Path(hass.config.path("custom_sentences", normalized_language))
-        sentences_dir.mkdir(parents=True, exist_ok=True)
         sentences_path = sentences_dir / "local_list_assist.yaml"
-        sentences_path.write_text(content, encoding="utf-8")
+
+        def _write_pack() -> None:
+            sentences_dir.mkdir(parents=True, exist_ok=True)
+            sentences_path.write_text(content, encoding="utf-8")
+
+        # Filesystem writes must not run on the event loop.
+        await hass.async_add_executor_job(_write_pack)
         try:
             await hass.services.async_call("conversation", "reload", blocking=True)
         except Exception as err:  # pragma: no cover
@@ -3781,15 +3078,12 @@ lists:
                     context=intent_obj.context,
                 )
 
-                _, refreshed_list = _internal_list_by_id(resolved_list_id)
-                after_count = sum(
-                    1
-                    for existing in refreshed_list.get("items", [])
-                    if str(existing.get("status", "")).strip() == "needs_action"
-                    and _normalize_term(str(existing.get("summary", "")).strip()) == normalized_item
-                )
-                if before_count > 0 and after_count == before_count:
-                    response.async_set_speech(f"{spoken_item} is already on {resolved_list_name}.")
+                # add_to_list always records the add: a brand-new row adds one
+                # to the count, while an existing item merges into its quantity
+                # and leaves the count unchanged. Report both honestly instead
+                # of claiming nothing happened on a merge.
+                if before_count > 0:
+                    response.async_set_speech(f"Added another {spoken_item} to {resolved_list_name}.")
                 else:
                     response.async_set_speech(f"Added {spoken_item} to {resolved_list_name}.")
                 response.async_set_card("Local List Assist", f"{spoken_item} -> {resolved_list_name}")
@@ -3812,22 +3106,30 @@ lists:
             response.async_set_card("Local List Assist", f"{spoken_item} -> Grocery List")
             return response
 
-    hass.services.async_register(DOMAIN, SERVICE_LEARN_TERM, _learn_term, schema=LEARN_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_FORGET_TERM, _forget_term, schema=FORGET_SCHEMA)
+    def _locked_service(handler):
+        """Wrap a service handler so its state mutations run under the lock."""
+
+        async def _wrapped(call: ServiceCall) -> None:
+            await _run_locked(lambda: handler(call))
+
+        return _wrapped
+
+    hass.services.async_register(DOMAIN, SERVICE_LEARN_TERM, _locked_service(_learn_term), schema=LEARN_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_FORGET_TERM, _locked_service(_forget_term), schema=FORGET_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SYNC_HELPERS, _sync_helpers)
-    hass.services.async_register(DOMAIN, SERVICE_ROUTE_ITEM, _route_item, schema=ROUTE_ITEM_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_ADD_TO_LIST, _add_to_list, schema=ADD_TO_LIST_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_ROUTE_ITEM, _locked_service(_route_item), schema=ROUTE_ITEM_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_ADD_TO_LIST, _locked_service(_add_to_list), schema=ADD_TO_LIST_SCHEMA)
     hass.services.async_register(
         DOMAIN,
         SERVICE_INSTALL_VOICE_SENTENCES,
         _install_voice_sentences_service,
         schema=INSTALL_VOICE_SENTENCES_SCHEMA,
     )
-    hass.services.async_register(DOMAIN, SERVICE_APPLY_REVIEW, _apply_review, schema=APPLY_REVIEW_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_APPLY_REVIEW, _locked_service(_apply_review), schema=APPLY_REVIEW_SCHEMA)
     hass.services.async_register(
         DOMAIN,
         SERVICE_CONFIRM_DUPLICATE,
-        _confirm_duplicate,
+        _locked_service(_confirm_duplicate),
         schema=CONFIRM_DUPLICATE_SCHEMA,
     )
     if not data.get("intent_registered"):
@@ -3838,7 +3140,6 @@ lists:
     _update_duplicate_status_entities(pending=False)
 
     if not data.get("views_registered"):
-        hass.http.register_view(GroceryLearningAppView())
         hass.http.register_view(GroceryLearningDashboardView())
         hass.http.register_view(GroceryLearningActionView())
         data["views_registered"] = True
@@ -3858,6 +3159,12 @@ lists:
     data["ensure_internal_voice_bridges"] = _ensure_internal_voice_bridges
     data["ensure_required_helpers"] = _ensure_required_helpers
     data["ensure_dashboards"] = _ensure_dashboards
+    # Expose the closures that the config-entry-scoped event handlers reach for
+    # (they live in a different function scope and would otherwise be undefined).
+    data["record_activity"] = _record_activity
+    data["move_item_meta_entry"] = _move_item_meta_entry
+    data["internal_voice_alias_entity"] = _internal_voice_alias_entity
+    data["run_locked"] = _run_locked
     data["runtime_ready"] = True
 
 
@@ -3891,6 +3198,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await ensure_dashboards(entry)
 
     internal_context_ids: set[str] = data.setdefault("internal_context_ids", set())
+
+    # Bind the runtime closures the event handlers below rely on. They are
+    # defined in _async_setup_runtime's scope and exposed via hass.data, so the
+    # local names captured by the nested handlers resolve correctly.
+    _record_activity = data["record_activity"]
+    _move_item_meta_entry = data["move_item_meta_entry"]
+    _internal_voice_alias_entity = data["internal_voice_alias_entity"]
+    _run_locked = data["run_locked"]
 
     def _extract_entity_id(event_data: dict[str, Any], service_data: dict[str, Any]) -> str:
         top_target = event_data.get("target", {})
@@ -4114,7 +3429,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         inbox_entity = _entry_value(entry, CONF_INBOX_ENTITY, "todo.grocery_inbox")
         category_lists = [_target_list_for_category(category) for category in data.get("categories", list(DEFAULT_CATEGORIES))]
         tracked_lists = category_lists + [_target_list_for_category("other")]
-        multilist_enabled = _multilist_enabled()
+        multilist_enabled = True
         internal_voice_lists: list[str] = []
         if multilist_enabled:
             model = data.get("multilist", {})
@@ -4187,11 +3502,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
 
         if list_id in tracked_lists and status == "completed":
-            await _move_checked_item_to_completed(list_id, item_ref)
+            await _run_locked(lambda: _move_checked_item_to_completed(list_id, item_ref))
             return
 
         if list_id == COMPLETED_LIST_ENTITY and status == "needs_action":
-            await _restore_unchecked_item_from_completed(item_ref)
+            await _run_locked(lambda: _restore_unchecked_item_from_completed(item_ref))
             return
 
     entry.async_on_unload(hass.bus.async_listen("call_service", _handle_call_service))
