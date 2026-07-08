@@ -1,0 +1,70 @@
+name: Release on version bump
+
+# Publishes a GitHub release automatically whenever the integration version in
+# manifest.json changes on main (HACS installs from releases). Can also be run
+# manually from the Actions tab to publish the current manifest version.
+on:
+  push:
+    branches: [main]
+    paths:
+      - custom_components/grocery_learning/manifest.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Read manifest version
+        id: ver
+        run: |
+          version=$(python -c "import json;print(json.load(open('custom_components/grocery_learning/manifest.json'))['version'])")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Manifest version: $version"
+
+      - name: Check for existing release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.ver.outputs.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release v${{ steps.ver.outputs.version }} already exists; nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release notes from CHANGELOG
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          python - <<'PY'
+          import pathlib, re
+          version = "${{ steps.ver.outputs.version }}"
+          changelog = pathlib.Path("CHANGELOG.md")
+          body = f"Release v{version}"
+          if changelog.exists():
+              text = changelog.read_text(encoding="utf-8")
+              match = re.search(r"^## +" + re.escape(version) + r"\s*\n(.*?)(?=\n## |\Z)", text, re.S | re.M)
+              if match:
+                  body = f"## {version}\n{match.group(1).strip()}"
+          pathlib.Path("release_body.md").write_text(body, encoding="utf-8")
+          print(body)
+          PY
+
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.ver.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --target main \
+            --title "v${{ steps.ver.outputs.version }}" \
+            --notes-file release_body.md
