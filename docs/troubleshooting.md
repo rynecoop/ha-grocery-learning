@@ -15,9 +15,10 @@
 ## Another Device Is Not Updating
 1. confirm both devices are on the latest integration version
 2. confirm both devices are looking at the same Home Assistant instance
-3. wait a short moment for the live revision signal to propagate
+3. wait a short moment for the update push (or its fallback signal) to propagate
 4. if one device is in an open editor or modal, close it so the deferred refresh can apply
 5. if needed, use the panel refresh button once and retest
+6. a full browser refresh re-establishes the live-update subscription if a device was offline for a while
 
 ## Category Rename Did Not Stick
 1. open `List Settings`

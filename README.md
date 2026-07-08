@@ -52,8 +52,9 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 - `Activity`: available from `App Settings -> Tools`
 
 ## Live Updates
-- changes made on one Home Assistant device now propagate to other open Local List Assist panels almost immediately
-- this uses a revision signal inside the integration and Home Assistant's normal pushed state updates
+- changes made on one Home Assistant device propagate to other open Local List Assist panels almost immediately
+- panels subscribe to a WebSocket push channel and refresh when the integration reports a change; if that subscription is unavailable the panel automatically falls back to Home Assistant's normal pushed state updates
+- a device ignores the update triggered by its own change, so only the other panels refresh
 - active editing is protected: the panel waits to reload until dialogs/editors close
 
 ## Documentation
@@ -78,6 +79,13 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 ## Compatibility Note
 - display name is `Local List Assist`
 - domain and service namespace remain `grocery_learning` for compatibility
+
+## Development
+- Pure, Home-Assistant-independent logic lives in small modules (`item_logic.py`, `matching.py`, `multilist_ops.py`, `list_templates.py`, `storage.py`, `frontend/state-helpers.js`) so it can be unit tested without a Home Assistant instance.
+- Run the Python tests: `python -m unittest discover -s tests -p "test_*.py"`
+- Run the frontend helper tests: `node --experimental-default-type=module --test tests/test_state_helpers.mjs`
+- Lint/parse gate (matches CI): `ruff check custom_components/` and `python -m compileall custom_components`
+- CI (`.github/workflows/validate.yml`) runs the tests, the lint/parse gate, a byte-order-mark check, HACS validation, and hassfest.
 
 ## Support
 - Issues: [https://github.com/rynecoop/ha-grocery-learning/issues](https://github.com/rynecoop/ha-grocery-learning/issues)
