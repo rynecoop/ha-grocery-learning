@@ -1868,6 +1868,28 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
 
+        if action == "set_list_order":
+            requested = payload.get("order", [])
+            if not isinstance(requested, list):
+                return {"ok": False, "error": "invalid_order"}
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            lists = model.get("lists", {})
+            cleaned: list[str] = []
+            for candidate in requested:
+                normalized = _normalize_list_id(str(candidate))
+                if normalized in lists and normalized not in cleaned:
+                    cleaned.append(normalized)
+            for existing_id in lists:
+                if existing_id not in cleaned:
+                    cleaned.append(existing_id)
+            model["list_order"] = cleaned
+            # Keeps "default" pinned first and drops unknown/duplicate ids.
+            _normalize_list_order(model)
+            await _save()
+            active_id = _active_internal_list()[0]
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(active_id)}
+
         if action == "rename_list":
             if not multilist_mode:
                 return {"ok": False, "error": "multilist_disabled"}

@@ -1,6 +1,10 @@
 # Changelog
 
 ## 0.14.0
+- Rebuilt the panel UI on Lit (Home Assistant's own framework): the app now follows your Home Assistant theme (light, dark, or custom) instead of always being dark.
+- Item edits and quick-add no longer lose focus or your typing when another device makes a change, because the list updates in place instead of rebuilding.
+- Added drag-and-drop reordering of list chips (the long-press / right-click controls still work too).
+- Added an "Undo" prompt after completing an item.
 - Added a WebSocket live-update channel so open panels are notified of changes by a direct push instead of polling a helper sensor; the sensor mechanism remains as an automatic fallback.
 - Scoped live updates by revision so a device no longer reloads in response to its own change, and coalesced each action into a single update instead of several.
 - Serialized all list changes behind a single lock so simultaneous edits from multiple devices can no longer lose each other's writes.
