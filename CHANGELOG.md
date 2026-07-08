@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.0
+- Added a WebSocket live-update channel so open panels are notified of changes by a direct push instead of polling a helper sensor; the sensor mechanism remains as an automatic fallback.
+- Scoped live updates by revision so a device no longer reloads in response to its own change, and coalesced each action into a single update instead of several.
+- Serialized all list changes behind a single lock so simultaneous edits from multiple devices can no longer lose each other's writes.
+- Fixed the voice response that wrongly said an item was "already on the list" when it actually increased the quantity.
+- Fixed the corrupted separator dot in item subtitles.
+- Made the "Repair Local Setup" button actually re-provision lists, helpers, and dashboards instead of doing nothing.
+- Removed a large amount of unused code and an unused unauthenticated web endpoint, and moved the fragile item/quantity/category logic into a dedicated, unit-tested module.
+- Added a lint/parse check to CI to catch undefined-name and file-encoding regressions before release.
+
 ## 0.13.27
 - Fixed Home Assistant panel adds failing after the per-user list update by allowing `list_id` through the `route_item` service schema.
 - Restored quick-add item creation for the list the current user actually has open.

@@ -51,6 +51,9 @@ class LocalListAssistPanel extends HTMLElement {
     this._pendingRender = false;
     this._lastSeenLiveRevision = "";
     this._pendingLiveReload = false;
+    this._wsUnsub = null;
+    this._wsActive = false;
+    this._wsSubscribing = false;
   }
 
   storageKey() {
@@ -84,19 +87,84 @@ class LocalListAssistPanel extends HTMLElement {
     this._hass = hass;
     if (first) {
       this._lastSeenLiveRevision = this.currentLiveRevision();
+      this.subscribeLiveUpdates();
       this.load();
     } else {
-      const nextRevision = this.currentLiveRevision();
-      if (nextRevision && nextRevision !== this._lastSeenLiveRevision) {
-        this._lastSeenLiveRevision = nextRevision;
-        if (this.isInteractive()) {
-          this._pendingLiveReload = true;
-        } else {
-          this.load(true);
-          return;
+      // WebSocket push is the primary live-update channel; only fall back to
+      // diffing the revision sensor when the subscription isn't active.
+      if (!this._wsActive) {
+        const nextRevision = this.currentLiveRevision();
+        if (nextRevision && nextRevision !== this._lastSeenLiveRevision) {
+          this._lastSeenLiveRevision = nextRevision;
+          if (this.isInteractive()) {
+            this._pendingLiveReload = true;
+          } else {
+            this.load(true);
+            return;
+          }
         }
       }
       this.requestRender();
+    }
+  }
+
+  async subscribeLiveUpdates() {
+    if (this._wsUnsub || this._wsSubscribing || !this._hass?.connection?.subscribeMessage) {
+      return;
+    }
+    this._wsSubscribing = true;
+    try {
+      const unsub = await this._hass.connection.subscribeMessage(
+        (event) => this.onLiveUpdate(event),
+        { type: "grocery_learning/subscribe_updates" }
+      );
+      if (this._disconnected) {
+        // Element was detached while subscribing; tear the subscription down.
+        try { unsub(); } catch (_e) {}
+        return;
+      }
+      this._wsUnsub = unsub;
+      this._wsActive = true;
+    } catch (_err) {
+      // Backend command unavailable — keep using the sensor-diff fallback.
+      this._wsActive = false;
+      this._wsUnsub = null;
+    } finally {
+      this._wsSubscribing = false;
+    }
+  }
+
+  onLiveUpdate(event) {
+    const revision = String(event?.revision ?? "");
+    if (!revision || revision === this._lastSeenLiveRevision) {
+      return;
+    }
+    this._lastSeenLiveRevision = revision;
+    if (this.isInteractive()) {
+      this._pendingLiveReload = true;
+    } else {
+      this.load(true);
+    }
+  }
+
+  disconnectedCallback() {
+    this._disconnected = true;
+    if (this._wsUnsub) {
+      try {
+        this._wsUnsub();
+      } catch (_err) {
+        // ignore teardown errors
+      }
+      this._wsUnsub = null;
+    }
+    this._wsActive = false;
+  }
+
+  connectedCallback() {
+    this._disconnected = false;
+    // Re-subscribe if the element was detached and re-attached.
+    if (this._hass && !this._wsUnsub) {
+      this.subscribeLiveUpdates();
     }
   }
 
@@ -177,7 +245,7 @@ class LocalListAssistPanel extends HTMLElement {
       this.setPreferredListId(this._state?.system?.active_list_id || requestedListId);
       this.syncDrafts();
       this._error = this._state?.error || "";
-      this._lastSeenLiveRevision = this.currentLiveRevision();
+      this.rememberRevisionFromState();
       this._pendingLiveReload = false;
     } catch (err) {
       this._error = err.message || String(err);
@@ -194,6 +262,7 @@ class LocalListAssistPanel extends HTMLElement {
       this.setPreferredListId(this._state?.system?.active_list_id || payload?.list_id || "default");
       this.syncDrafts();
       this._error = this._state?.error || "";
+      this.rememberRevisionFromState();
       this.requestRender(true);
       return result;
     }
@@ -208,6 +277,7 @@ class LocalListAssistPanel extends HTMLElement {
       this.setPreferredListId(this._state?.system?.active_list_id || payload?.list_id || "default");
       this.syncDrafts();
       this._error = this._state?.error || "";
+      this.rememberRevisionFromState();
       this.render();
       return result;
     }
@@ -259,6 +329,14 @@ class LocalListAssistPanel extends HTMLElement {
 
   currentLiveRevision() {
     return String(this._hass?.states?.[LIVE_REVISION_ENTITY_ID]?.state || "");
+  }
+
+  rememberRevisionFromState() {
+    // Prefer the revision carried in the dashboard payload so a device does not
+    // reload in response to the live-update push triggered by its own action.
+    const revision = this._state?.revision;
+    this._lastSeenLiveRevision =
+      revision != null ? String(revision) : this.currentLiveRevision();
   }
 
   rememberFocus(target) {
