@@ -64,6 +64,18 @@ from .const import (
 from .matching import normalize_voice_list_name, resolve_list_id_from_voice_name
 from .list_templates import categories_for_template, template_presets
 from .multilist_ops import archive_list as apply_archive_list, delete_archived_list as apply_delete_archived_list, restore_archived_list as apply_restore_archived_list
+from .item_logic import (
+    canonical_item_phrase as _canonical_item_phrase,
+    category_for_term as _category_for_term,
+    coerce_quantity as _coerce_quantity,
+    decode_contributors as _decode_contributors,
+    display_item_summary as _display_item_summary,
+    format_contributors as _format_contributors,
+    merge_meta_records as _merge_meta_records,
+    meta_quantity as _meta_quantity,
+    normalize_category as _normalize_category,
+    normalize_list_id as _normalize_list_id,
+)
 from .storage import GroceryLearningStore, LearnedTerms
 
 _LOGGER = logging.getLogger(__name__)
@@ -210,11 +222,10 @@ class GroceryLearningDashboardView(HomeAssistantView):
                 if not callable(builder):
                     return web.json_response(self._empty_payload("not_ready"))
 
-            requested_list_id = re.sub(
-                r"[^a-z0-9]+",
-                "_",
-                str(request.query.get("list_id", "")).strip().lower(),
-            ).strip("_")
+            # Use the shared slug normalizer so the dashboard and the action
+            # handlers agree on list-id canonicalization (empty stays empty here
+            # so the builder falls back to the active list).
+            requested_list_id = _normalize_category(str(request.query.get("list_id", "")))
             try:
                 payload = await builder(requested_list_id or None)
             except TypeError:
@@ -280,49 +291,8 @@ class GroceryLearningActionView(HomeAssistantView):
             return self.json({"ok": False, "error": str(err)})
 
 
-def _strip_leading_item_articles(value: str) -> str:
-    words = [part for part in re.split(r"\s+", value.strip()) if part]
-    while words and words[0].lower() in {"a", "an", "the"}:
-        words.pop(0)
-    return " ".join(words).strip()
-
-
-def _singularize_token(value: str) -> str:
-    token = value.strip().lower()
-    if len(token) <= 3 or any(ch.isdigit() for ch in token):
-        return token
-    if token.endswith("ies") and len(token) > 4:
-        return f"{token[:-3]}y"
-    if token.endswith(("ches", "shes", "xes", "zes")) and len(token) > 4:
-        return token[:-2]
-    if token.endswith("oes") and len(token) > 4:
-        return token[:-2]
-    if token.endswith("s") and not token.endswith(("ss", "us", "is")):
-        return token[:-1]
-    return token
-
-
-def _canonical_item_phrase(value: str) -> str:
-    stripped = _strip_leading_item_articles(value)
-    cleaned = re.sub(r"[^a-z0-9 ]", " ", stripped.lower())
-    parts = [part for part in re.split(r"\s+", cleaned) if part]
-    if not parts:
-        return ""
-    parts[-1] = _singularize_token(parts[-1])
-    return " ".join(parts).strip()
-
-
-def _display_item_summary(value: str) -> str:
-    stripped = _strip_leading_item_articles(value)
-    return re.sub(r"\s+", " ", stripped).strip()
-
-
 def _normalize_term(value: str) -> str:
     return _canonical_item_phrase(value)
-
-
-def _normalize_category(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
 
 
 def _display_name_for_category(category: str) -> str:
@@ -812,10 +782,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         lists = model.get("lists", {})
         return resolve_list_id_from_voice_name(list_name, lists)
 
-    def _normalize_list_id(value: str) -> str:
-        cleaned = _normalize_category(value)
-        return cleaned or "list"
-
     def _categories_from_list_input(raw: Any) -> list[str]:
         if isinstance(raw, str):
             values = [_normalize_category(v) for v in raw.replace("\n", ",").split(",")]
@@ -1136,53 +1102,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         meta_map: dict[str, dict[str, str]] = hass.data[DOMAIN].get("item_meta", {})
         return dict(meta_map.get(_item_meta_key(list_entity, normalized_item), {}))
 
-    def _coerce_quantity(value: Any) -> int:
-        try:
-            quantity = int(value)
-        except (TypeError, ValueError):
-            return 1
-        return max(1, quantity)
-
     def _quantity_for_item(item: Mapping[str, Any]) -> int:
         return _coerce_quantity(item.get("quantity", 1))
-
-    def _meta_quantity(meta: Mapping[str, str]) -> int:
-        return _coerce_quantity(meta.get("current_quantity", meta.get("total_quantity", meta.get("add_count", "1"))))
-
-    def _decode_contributors(meta: Mapping[str, str]) -> list[str]:
-        raw = str(meta.get("contributors_json", "")).strip()
-        if not raw:
-            fallback = str(meta.get("last_added_by_name", "")).strip()
-            return [fallback] if fallback else []
-        try:
-            values = json.loads(raw)
-        except json.JSONDecodeError:
-            fallback = str(meta.get("last_added_by_name", "")).strip()
-            return [fallback] if fallback else []
-        if not isinstance(values, list):
-            return []
-        seen: set[str] = set()
-        names: list[str] = []
-        for value in values:
-            name = str(value).strip()
-            if not name:
-                continue
-            lowered = name.lower()
-            if lowered in seen:
-                continue
-            seen.add(lowered)
-            names.append(name)
-        return names
-
-    def _format_contributors(names: list[str]) -> str:
-        cleaned = [name.strip() for name in names if str(name).strip()]
-        if not cleaned:
-            return "Unknown"
-        if len(cleaned) == 1:
-            return cleaned[0]
-        if len(cleaned) == 2:
-            return f"{cleaned[0]} and {cleaned[1]}"
-        return f"{', '.join(cleaned[:-1])}, and {cleaned[-1]}"
 
     def _build_description_from_meta(meta: Mapping[str, str], fallback: str) -> str:
         if not meta:
@@ -1317,32 +1238,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if key in meta_map:
             meta_map.pop(key, None)
             await _save()
-
-    def _merge_meta_records(existing: Mapping[str, str], incoming: Mapping[str, str]) -> dict[str, str]:
-        if not existing:
-            return dict(incoming)
-        if not incoming:
-            return dict(existing)
-        merged = dict(existing)
-        existing_qty = _meta_quantity(existing)
-        incoming_qty = _meta_quantity(incoming)
-        merged["current_quantity"] = str(existing_qty + incoming_qty)
-        merged["add_count"] = str(int(existing.get("add_count", "0") or "0") + int(incoming.get("add_count", "0") or "0"))
-        contributors = _decode_contributors(existing)
-        known = {name.lower() for name in contributors}
-        for contributor in _decode_contributors(incoming):
-            lowered = contributor.lower()
-            if lowered in known:
-                continue
-            known.add(lowered)
-            contributors.append(contributor)
-        merged["contributors_json"] = json.dumps(contributors)
-        merged["last_added_at"] = str(incoming.get("last_added_at", existing.get("last_added_at", ""))).strip()
-        merged["last_added_by_user_id"] = str(incoming.get("last_added_by_user_id", existing.get("last_added_by_user_id", ""))).strip()
-        merged["last_added_by_name"] = str(incoming.get("last_added_by_name", existing.get("last_added_by_name", ""))).strip()
-        merged["last_source"] = str(incoming.get("last_source", existing.get("last_source", ""))).strip()
-        merged["last_item_text"] = str(incoming.get("last_item_text", existing.get("last_item_text", ""))).strip()
-        return merged
 
     def _move_item_meta_entry(
         old_list_entity: str,
@@ -2887,29 +2782,12 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         await admin_store.async_save(_build_admin_dashboard_config(entry))
 
     def _get_category_for_term(terms_obj: LearnedTerms, normalized: str) -> str:
-        categories = _active_categories()
-        if normalized:
-            for category in categories:
-                if normalized in set(terms_obj.data.get(category, [])):
-                    return category
-
-        tokens = [t for t in normalized.split(" ") if t]
-        token_forms: set[str] = set(tokens)
-        for token in tokens:
-            if len(token) > 3 and token.endswith("s"):
-                token_forms.add(token[:-1])
-            if len(token) > 4 and token.endswith("es"):
-                token_forms.add(token[:-2])
-
-        def _keyword_match(keyword: str) -> bool:
-            parts = [p for p in keyword.split(" ") if p]
-            return bool(parts) and all(part in token_forms for part in parts)
-
-        for category in categories:
-            words = DEFAULT_KEYWORDS_BY_CATEGORY.get(category, ())
-            if any(_keyword_match(word) for word in words):
-                return category
-        return "other"
+        return _category_for_term(
+            terms_obj.data,
+            normalized,
+            _active_categories(),
+            DEFAULT_KEYWORDS_BY_CATEGORY,
+        )
 
     async def _route_item(call: ServiceCall) -> None:
         if _multilist_enabled():

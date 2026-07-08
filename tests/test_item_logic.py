@@ -1,0 +1,236 @@
+import importlib.util
+import sys
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_module(module_name: str, relative_path: str):
+    path = ROOT / relative_path
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+item_logic = _load_module(
+    "custom_components.grocery_learning.item_logic",
+    "custom_components/grocery_learning/item_logic.py",
+)
+
+
+class StripLeadingArticlesTests(unittest.TestCase):
+    def test_strips_leading_articles(self):
+        self.assertEqual(item_logic.strip_leading_item_articles("the milk"), "milk")
+        self.assertEqual(item_logic.strip_leading_item_articles("a banana"), "banana")
+        self.assertEqual(item_logic.strip_leading_item_articles("an apple"), "apple")
+
+    def test_only_strips_leading_run(self):
+        self.assertEqual(item_logic.strip_leading_item_articles("the the milk"), "milk")
+        # An article in the middle is preserved.
+        self.assertEqual(item_logic.strip_leading_item_articles("milk the good kind"), "milk the good kind")
+
+    def test_handles_empty_and_whitespace(self):
+        self.assertEqual(item_logic.strip_leading_item_articles(""), "")
+        self.assertEqual(item_logic.strip_leading_item_articles("   the   eggs  "), "eggs")
+
+
+class SingularizeTokenTests(unittest.TestCase):
+    def test_regular_plurals(self):
+        self.assertEqual(item_logic.singularize_token("apples"), "apple")
+        self.assertEqual(item_logic.singularize_token("bananas"), "banana")
+
+    def test_ies_plurals(self):
+        self.assertEqual(item_logic.singularize_token("berries"), "berry")
+        self.assertEqual(item_logic.singularize_token("cherries"), "cherry")
+
+    def test_es_family_plurals(self):
+        self.assertEqual(item_logic.singularize_token("boxes"), "box")
+        self.assertEqual(item_logic.singularize_token("dishes"), "dish")
+        self.assertEqual(item_logic.singularize_token("tomatoes"), "tomato")
+
+    def test_does_not_overstrip(self):
+        self.assertEqual(item_logic.singularize_token("glass"), "glass")  # ss
+        self.assertEqual(item_logic.singularize_token("bus"), "bus")      # short + us
+        self.assertEqual(item_logic.singularize_token("axis"), "axis")    # is
+        self.assertEqual(item_logic.singularize_token("egg"), "egg")      # <= 3 chars
+
+    def test_leaves_numeric_tokens_alone(self):
+        self.assertEqual(item_logic.singularize_token("2ss"), "2ss")
+
+
+class CanonicalItemPhraseTests(unittest.TestCase):
+    def test_articles_case_and_plural(self):
+        self.assertEqual(item_logic.canonical_item_phrase("The Apples"), "apple")
+        self.assertEqual(item_logic.canonical_item_phrase("  Bananas  "), "banana")
+
+    def test_only_last_token_singularized(self):
+        # Leading modifier keeps its form; only the final noun is singularized.
+        self.assertEqual(item_logic.canonical_item_phrase("green peppers"), "green pepper")
+
+    def test_strips_punctuation(self):
+        self.assertEqual(item_logic.canonical_item_phrase("Coke (2-liter)!"), "coke 2 liter")
+
+    def test_empty(self):
+        self.assertEqual(item_logic.canonical_item_phrase(""), "")
+        self.assertEqual(item_logic.canonical_item_phrase("!!!"), "")
+
+
+class DisplayItemSummaryTests(unittest.TestCase):
+    def test_preserves_case_strips_article_collapses_space(self):
+        self.assertEqual(item_logic.display_item_summary("the  Whole   Milk"), "Whole Milk")
+
+    def test_does_not_singularize(self):
+        self.assertEqual(item_logic.display_item_summary("Bananas"), "Bananas")
+
+
+class NormalizeCategoryAndListIdTests(unittest.TestCase):
+    def test_normalize_category_slugifies(self):
+        self.assertEqual(item_logic.normalize_category("Frozen Foods"), "frozen_foods")
+        self.assertEqual(item_logic.normalize_category("  Pharmacy!! "), "pharmacy")
+        self.assertEqual(item_logic.normalize_category("A/B & C"), "a_b_c")
+
+    def test_normalize_category_empty(self):
+        self.assertEqual(item_logic.normalize_category(""), "")
+        self.assertEqual(item_logic.normalize_category("   "), "")
+        self.assertEqual(item_logic.normalize_category("!!!"), "")
+
+    def test_normalize_list_id_falls_back_to_list(self):
+        self.assertEqual(item_logic.normalize_list_id("Costco Run"), "costco_run")
+        self.assertEqual(item_logic.normalize_list_id(""), "list")
+        self.assertEqual(item_logic.normalize_list_id("!!!"), "list")
+
+
+class CoerceQuantityTests(unittest.TestCase):
+    def test_positive_ints(self):
+        self.assertEqual(item_logic.coerce_quantity("3"), 3)
+        self.assertEqual(item_logic.coerce_quantity(5), 5)
+
+    def test_floor_of_at_least_one(self):
+        self.assertEqual(item_logic.coerce_quantity(0), 1)
+        self.assertEqual(item_logic.coerce_quantity(-4), 1)
+
+    def test_invalid_defaults_to_one(self):
+        self.assertEqual(item_logic.coerce_quantity("abc"), 1)
+        self.assertEqual(item_logic.coerce_quantity(None), 1)
+        self.assertEqual(item_logic.coerce_quantity(""), 1)
+
+
+class MetaQuantityTests(unittest.TestCase):
+    def test_prefers_current_quantity(self):
+        self.assertEqual(item_logic.meta_quantity({"current_quantity": "4", "add_count": "9"}), 4)
+
+    def test_falls_back_through_keys(self):
+        self.assertEqual(item_logic.meta_quantity({"total_quantity": "3"}), 3)
+        self.assertEqual(item_logic.meta_quantity({"add_count": "2"}), 2)
+        self.assertEqual(item_logic.meta_quantity({}), 1)
+
+
+class ContributorTests(unittest.TestCase):
+    def test_decode_from_json_dedupes_case_insensitively(self):
+        meta = {"contributors_json": '["Ryne", "ryne", "Sam"]'}
+        self.assertEqual(item_logic.decode_contributors(meta), ["Ryne", "Sam"])
+
+    def test_decode_falls_back_to_last_added_by_name(self):
+        self.assertEqual(item_logic.decode_contributors({"last_added_by_name": "Ryne"}), ["Ryne"])
+        self.assertEqual(item_logic.decode_contributors({}), [])
+
+    def test_decode_handles_invalid_json(self):
+        self.assertEqual(
+            item_logic.decode_contributors({"contributors_json": "not json", "last_added_by_name": "Sam"}),
+            ["Sam"],
+        )
+
+    def test_format(self):
+        self.assertEqual(item_logic.format_contributors([]), "Unknown")
+        self.assertEqual(item_logic.format_contributors(["Ryne"]), "Ryne")
+        self.assertEqual(item_logic.format_contributors(["Ryne", "Sam"]), "Ryne and Sam")
+        self.assertEqual(item_logic.format_contributors(["A", "B", "C"]), "A, B, and C")
+
+
+class MergeMetaRecordsTests(unittest.TestCase):
+    def test_quantities_sum_not_drift(self):
+        # Regression guard for the quantity-drift class of bugs: merging must add.
+        existing = {"current_quantity": "2", "add_count": "2"}
+        incoming = {"current_quantity": "3", "add_count": "1"}
+        merged = item_logic.merge_meta_records(existing, incoming)
+        self.assertEqual(merged["current_quantity"], "5")
+        self.assertEqual(merged["add_count"], "3")
+
+    def test_empty_sides_passthrough(self):
+        self.assertEqual(item_logic.merge_meta_records({}, {"current_quantity": "2"}), {"current_quantity": "2"})
+        self.assertEqual(item_logic.merge_meta_records({"current_quantity": "2"}, {}), {"current_quantity": "2"})
+
+    def test_contributors_unioned_and_last_fields_prefer_incoming(self):
+        existing = {
+            "current_quantity": "1",
+            "contributors_json": '["Ryne"]',
+            "last_added_by_name": "Ryne",
+            "last_source": "typed",
+        }
+        incoming = {
+            "current_quantity": "1",
+            "contributors_json": '["Sam"]',
+            "last_added_by_name": "Sam",
+            "last_source": "voice_assistant",
+        }
+        merged = item_logic.merge_meta_records(existing, incoming)
+        self.assertEqual(item_logic.decode_contributors(merged), ["Ryne", "Sam"])
+        self.assertEqual(merged["last_added_by_name"], "Sam")
+        self.assertEqual(merged["last_source"], "voice_assistant")
+        self.assertEqual(merged["current_quantity"], "2")
+
+
+class CategoryForTermTests(unittest.TestCase):
+    CATEGORIES = ["produce", "dairy", "pantry"]
+    KEYWORDS = {
+        "dairy": ("milk", "egg", "cheese"),
+        "produce": ("apple", "banana", "pepper"),
+        "pantry": ("peanut butter", "rice"),
+    }
+
+    def test_learned_term_wins_over_keywords(self):
+        terms = {"pantry": ["milk"]}  # user taught that "milk" goes to pantry
+        self.assertEqual(
+            item_logic.category_for_term(terms, "milk", self.CATEGORIES, self.KEYWORDS),
+            "pantry",
+        )
+
+    def test_keyword_match(self):
+        self.assertEqual(
+            item_logic.category_for_term({}, "cheese", self.CATEGORIES, self.KEYWORDS),
+            "dairy",
+        )
+
+    def test_keyword_match_tolerates_plurals(self):
+        # "eggs" should still route via the "egg" keyword.
+        self.assertEqual(
+            item_logic.category_for_term({}, "eggs", self.CATEGORIES, self.KEYWORDS),
+            "dairy",
+        )
+
+    def test_multiword_keyword(self):
+        self.assertEqual(
+            item_logic.category_for_term({}, "peanut butter", self.CATEGORIES, self.KEYWORDS),
+            "pantry",
+        )
+
+    def test_no_match_returns_other(self):
+        self.assertEqual(
+            item_logic.category_for_term({}, "hammer", self.CATEGORIES, self.KEYWORDS),
+            "other",
+        )
+
+    def test_empty_normalized_returns_other(self):
+        self.assertEqual(
+            item_logic.category_for_term({"dairy": [""]}, "", self.CATEGORIES, self.KEYWORDS),
+            "other",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
