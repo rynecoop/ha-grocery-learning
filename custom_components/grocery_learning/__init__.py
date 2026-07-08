@@ -14,13 +14,14 @@ from uuid import uuid4
 
 import voluptuous as vol
 from aiohttp import web
+from homeassistant.components import websocket_api
 from homeassistant.components.frontend import async_remove_panel
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.panel_custom import async_register_panel
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import Context, HomeAssistant, ServiceCall
+from homeassistant.core import callback, Context, HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv, intent as intent_helper
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -503,6 +504,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
     def _publish_dashboard_revision() -> None:
         revision = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0)
+        # Legacy live-update channel: a state entity the panel diffs. Kept as a
+        # fallback for panels whose WebSocket subscription isn't active.
         hass.states.async_set(
             LIVE_REVISION_ENTITY_ID,
             str(revision),
@@ -512,6 +515,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "updated_at": dt_util.utcnow().isoformat(),
             },
         )
+        # Primary live-update channel: push the new revision to subscribed panels.
+        _notify_update_listeners(revision)
+
+    def _notify_update_listeners(revision: int) -> None:
+        listeners = hass.data[DOMAIN].get("update_listeners")
+        if not listeners:
+            return
+        for forward in list(listeners):
+            try:
+                forward(revision)
+            except Exception:  # pragma: no cover - defensive; never let one panel break others
+                _LOGGER.debug("Live update push to a panel failed", exc_info=True)
 
     async def _flush_save() -> None:
         await store.save(
@@ -1453,6 +1468,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "setup": {
                 "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
             },
+            # Lets a panel recognize live-update pushes triggered by its own
+            # action and skip the redundant self-reload.
+            "revision": int(hass.data.get(DOMAIN, {}).get("dashboard_revision", 0) or 0),
         }
 
     async def _build_dashboard_payload(selected_list_id: str | None = None) -> dict[str, Any]:
@@ -3041,6 +3059,35 @@ lists:
         hass.http.register_view(GroceryLearningDashboardView())
         hass.http.register_view(GroceryLearningActionView())
         data["views_registered"] = True
+
+    if not data.get("ws_registered"):
+        data.setdefault("update_listeners", set())
+
+        @websocket_api.websocket_command(
+            {vol.Required("type"): "grocery_learning/subscribe_updates"}
+        )
+        @websocket_api.async_response
+        async def _ws_subscribe_updates(hass_inner, connection, msg):
+            listeners: set = hass_inner.data.setdefault(DOMAIN, {}).setdefault("update_listeners", set())
+
+            def _forward(revision: int) -> None:
+                connection.send_message(
+                    websocket_api.event_message(msg["id"], {"revision": revision})
+                )
+
+            listeners.add(_forward)
+
+            @callback
+            def _unsubscribe() -> None:
+                listeners.discard(_forward)
+
+            connection.subscriptions[msg["id"]] = _unsubscribe
+            connection.send_result(msg["id"])
+            # Send the current revision immediately so a just-opened panel syncs.
+            _forward(int(hass_inner.data.get(DOMAIN, {}).get("dashboard_revision", 0) or 0))
+
+        websocket_api.async_register_command(hass, _ws_subscribe_updates)
+        data["ws_registered"] = True
 
     if not data.get("panel_registered"):
         panel_dir = Path(__file__).resolve().parent / "frontend"
