@@ -568,6 +568,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         devices). The _IN_LOCKED_ACTION context var is copied into child tasks
         that Home Assistant spawns for nested service calls, so an action that
         dispatches one of our own services re-enters without deadlocking.
+
+        Invariant this relies on: any call from inside a locked action into one
+        of our own wrapped services must be awaited (blocking=True) so the
+        current context — and thus _IN_LOCKED_ACTION — propagates into the
+        handler. A fire-and-forget self dispatch would run with the var False
+        and block on the already-held lock. All current self dispatches are
+        blocking.
         """
         if _IN_LOCKED_ACTION.get():
             return await func()
@@ -3122,7 +3129,7 @@ lists:
     hass.services.async_register(
         DOMAIN,
         SERVICE_INSTALL_VOICE_SENTENCES,
-        _install_voice_sentences_service,
+        _locked_service(_install_voice_sentences_service),
         schema=INSTALL_VOICE_SENTENCES_SCHEMA,
     )
     hass.services.async_register(DOMAIN, SERVICE_APPLY_REVIEW, _locked_service(_apply_review), schema=APPLY_REVIEW_SCHEMA)
@@ -3404,6 +3411,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await _record_activity("Item restored", summary, restored_name, "typed")
 
     async def _handle_call_service(event) -> None:
+        # This bus listener is always a fresh top-level unit of work: any todo
+        # call it reacts to is either external (native card/voice) or one of our
+        # own tagged internal writes (filtered below). Home Assistant may create
+        # the listener task while a locked action's context is active, which
+        # would otherwise let _IN_LOCKED_ACTION leak in and make the nested
+        # _run_locked calls skip the lock. Reset it so the listener always
+        # acquires the lock on its own.
+        _IN_LOCKED_ACTION.set(False)
         if event.context and event.context.id in internal_context_ids:
             internal_context_ids.discard(event.context.id)
             return
