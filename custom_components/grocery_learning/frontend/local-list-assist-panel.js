@@ -824,6 +824,10 @@ class LocalListAssistPanel extends LitElement {
     const activeListColor = state?.system?.active_list_color || active?.color || "#2c78ba";
     const visibleGroups = (state?.groups || []).filter((group) => (group.items || []).length > 0);
 
+    if (this._view === "shopping" && state) {
+      return this._shoppingTemplate(state, activeListName, activeListColor, visibleGroups);
+    }
+
     return html`
       <div class="wrap" style=${styleMap({ "--accent": activeListColor })} @keydown=${(e) => this._onKeyDown(e)}>
         ${this._narrow
@@ -839,6 +843,7 @@ class LocalListAssistPanel extends LitElement {
               <div class="sub">Local-only Home Assistant workspace. Current list: ${activeListName}.</div>
             </div>
             <div class="hero-actions">
+              <button class="btn icon-btn compact shop-btn" aria-label="Shopping mode" title="Shopping mode" @click=${() => this.enterShopping()}>🛒</button>
               <button class="btn icon-btn compact" aria-label="Create list" title="Create list" @click=${() => this.openCreateList()}>+</button>
               <button class="btn icon-btn compact" aria-label="Open menu" title="Menu" @click=${() => { this._menuOpen = !this._menuOpen; }}>⋯</button>
               <button class="btn icon-btn compact" aria-label="Refresh list data" title="Refresh" @click=${() => this.load(true)}>⟳</button>
@@ -1118,6 +1123,65 @@ class LocalListAssistPanel extends LitElement {
     this._createListOpen = false;
     this._menuOpen = false;
     this._reorderListId = "";
+  }
+
+  enterShopping() {
+    this.closePanels();
+    this._openEditorKey = "";
+    this._view = "shopping";
+  }
+
+  exitShopping() {
+    this._view = "list";
+  }
+
+  _shoppingTemplate(state, activeListName, activeListColor, visibleGroups) {
+    const remaining = visibleGroups.reduce((sum, group) => sum + (group.items || []).length, 0);
+    const completedCount = (state?.completed || []).length;
+    const total = remaining + completedCount;
+    const pct = total ? Math.round((completedCount / total) * 100) : 0;
+    return html`
+      <div class="shopping" style=${styleMap({ "--accent": activeListColor })}>
+        <div class="shop-bar">
+          <button class="btn shop-done" aria-label="Exit shopping mode" @click=${() => this.exitShopping()}>‹ Done</button>
+          <div class="shop-heading">
+            <div class="shop-title">${activeListName}</div>
+            <div class="small">${remaining ? `${remaining} left${completedCount ? ` · ${completedCount} in cart` : ""}` : "All done"}</div>
+          </div>
+          <button class="btn icon-btn compact" aria-label="Refresh" title="Refresh" @click=${() => this.load(true)}>⟳</button>
+        </div>
+        <div class="shop-progress"><div class="shop-progress-fill" style=${styleMap({ width: pct + "%" })}></div></div>
+        <div class="shop-add">
+          <input id="shopAdd" class="input" placeholder="Add something you forgot" .value=${live(this._drafts.quickAdd || "")}
+            @input=${(e) => this.updateDraft("quickAdd", e.target.value)}
+            @keydown=${(e) => { if (e.key === "Enter") { e.preventDefault(); this.addItem(); } }} />
+          <button class="btn primary" @click=${() => this.addItem()}>Add</button>
+        </div>
+        ${remaining === 0
+          ? html`<div class="shop-empty">🎉<div>Everything's checked off.</div>
+              <button class="btn" @click=${() => this.exitShopping()}>Back to list</button></div>`
+          : visibleGroups.map((group) => html`
+              <div class="shop-section">
+                <div class="shop-cat">${group.title}</div>
+                ${repeat(group.items, (item) => item.item_ref, (item) => this._shoppingItem(item))}
+              </div>`)}
+      </div>
+      ${this._undo ? html`
+        <div class="undo-toast">
+          <span>${this._undo.label}</span>
+          <button class="btn" @click=${() => this.runUndo()}>Undo</button>
+        </div>` : nothing}
+    `;
+  }
+
+  _shoppingItem(item) {
+    const qty = Number(item.quantity || 1);
+    return html`
+      <button class="shop-item" @click=${() => this.completeItem(item)} aria-label=${"Check off " + item.summary}>
+        <span class="shop-check" aria-hidden="true"></span>
+        <span class="shop-name">${item.summary}</span>
+        ${qty > 1 ? html`<span class="pill ghost-pill">×${qty}</span>` : nothing}
+      </button>`;
   }
 
   _appSettingsTemplate(state) {
@@ -1441,6 +1505,23 @@ class LocalListAssistPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); z-index: 40;
     }
     .undo-toast .btn { padding: 6px 12px; }
+    .shop-btn { font-size: 20px; }
+    .shopping { max-width: 720px; margin: 0 auto; padding: 10px 12px 40px; min-height: 100%; --accent: #2c78ba; }
+    .shop-bar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--lla-bg-1); }
+    .shop-done { padding: 10px 14px; }
+    .shop-heading { flex: 1; text-align: center; min-width: 0; }
+    .shop-title { font-size: 18px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .shop-progress { height: 6px; border-radius: 999px; background: var(--lla-surface-2); overflow: hidden; margin: 4px 2px 14px; }
+    .shop-progress-fill { height: 100%; background: var(--accent); transition: width 220ms ease; }
+    .shop-add { display: flex; gap: 8px; margin-bottom: 16px; }
+    .shop-section { margin-bottom: 18px; }
+    .shop-cat { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--lla-text-dim); margin: 6px 4px 8px; }
+    .shop-item { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; background: var(--lla-surface-2); border: 1px solid var(--lla-border); border-radius: 16px; padding: 16px; margin-bottom: 10px; color: var(--lla-text); font: inherit; font-size: 18px; cursor: pointer; transition: transform 80ms ease, opacity 120ms ease; }
+    .shop-item:active { transform: scale(0.99); }
+    .shop-check { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 70%, var(--lla-border)); }
+    .shop-name { flex: 1; }
+    .shop-empty { text-align: center; padding: 48px 16px; font-size: 44px; color: var(--lla-text-dim); display: flex; flex-direction: column; gap: 16px; align-items: center; }
+    .shop-empty div { font-size: 16px; }
     @media (max-width: 720px) {
       .wrap { padding: 14px; }
       .hero, .section { border-radius: 20px; padding: 16px; }
