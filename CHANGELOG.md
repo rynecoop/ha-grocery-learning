@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.19.0
+- Added saved Meals: define a meal once (a name plus its ingredients), then add it to your list with a tap. Choosing "Add to list" opens a confirm checklist so you can uncheck anything you already have or grew in the garden before adding the rest. Meals are stored locally and each ingredient is auto-categorized as it goes on the list. Find Meals in the menu (⋯).
+
 ## 0.18.0
 - Added a "Frequent" quick-add row above the list: items you add often show up as one-tap chips so common staples go on the list without typing. Suggestions only appear once you've added an item a couple of times, they hide anything already on the current list, and the tally survives clearing completed items.
 

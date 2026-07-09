@@ -37,6 +37,10 @@ class LocalListAssistPanel extends LitElement {
     _reorderListId: { state: true },
     _appToolsOpen: { state: true },
     _listToolsOpen: { state: true },
+    _mealsOpen: { state: true },
+    _mealEditorId: { state: true },
+    _mealConfirmId: { state: true },
+    _mealChecked: { state: true },
     _openEditorKey: { state: true },
     _undo: { state: true },
     _dragListId: { state: true },
@@ -61,6 +65,10 @@ class LocalListAssistPanel extends LitElement {
     this._reorderListId = "";
     this._appToolsOpen = false;
     this._listToolsOpen = false;
+    this._mealsOpen = false;
+    this._mealEditorId = "";
+    this._mealConfirmId = "";
+    this._mealChecked = {};
     this._openEditorKey = "";
     this._undo = null;
     this._dragListId = "";
@@ -86,6 +94,8 @@ class LocalListAssistPanel extends LitElement {
       activeListCategories: "",
       activeListVoiceAliases: "",
       activeListColor: "",
+      mealName: "",
+      mealIngredients: "",
     };
     this._lastSeenLiveRevision = "";
     this._wsUnsub = null;
@@ -445,6 +455,9 @@ class LocalListAssistPanel extends LitElement {
     this._reorderListId = "";
     this._appToolsOpen = false;
     this._listToolsOpen = false;
+    this._mealsOpen = false;
+    this._mealEditorId = "";
+    this._mealConfirmId = "";
   }
 
   openNavigation() {
@@ -883,6 +896,8 @@ class LocalListAssistPanel extends LitElement {
         ${this._createListOpen && multilist ? this._createListTemplate(state) : nothing}
         ${this._listSettingsOpen && multilist ? this._listSettingsTemplate(state, activeListName, activeListColor) : nothing}
         ${this._reorderListId && multilist ? this._reorderTemplate(state) : nothing}
+        ${this._mealsOpen ? this._mealsTemplate(state) : nothing}
+        ${this._mealConfirmId ? this._mealConfirmTemplate(state) : nothing}
 
         ${this._error ? html`<section class="section"><div class="title">Error</div><div class="error">${this._error}</div></section>` : nothing}
         ${this._attentionTemplates(state)}
@@ -964,8 +979,11 @@ class LocalListAssistPanel extends LitElement {
   }
 
   _onKeyDown(ev) {
-    if (ev.key === "Escape" && (this._configOpen || this._createListOpen || this._listSettingsOpen || this._menuOpen || this._reorderListId)) {
-      this.closePanels();
+    if (ev.key === "Escape") {
+      if (this._mealConfirmId) { this.closeMealConfirm(); return; }
+      if (this._configOpen || this._createListOpen || this._listSettingsOpen || this._menuOpen || this._reorderListId || this._mealsOpen) {
+        this.closePanels();
+      }
     }
   }
 
@@ -1119,6 +1137,104 @@ class LocalListAssistPanel extends LitElement {
     await this.act({ action: "apply_review", category, learn });
   }
 
+  _mealsTemplate(state) {
+    const meals = state?.meals || [];
+    const editing = !!this._mealEditorId;
+    return html`
+      <div class="overlay-shell" @click=${() => this.closePanels()}>
+        <section class="modal-card" role="dialog" aria-label="Meals" @click=${(e) => e.stopPropagation()}>
+          <div class="modal-head">
+            <div>
+              <div class="title">Meals</div>
+              <div class="small">Save a meal once, then add its ingredients with a tap.</div>
+            </div>
+            <button class="btn icon-btn compact" aria-label="Close meals" @click=${() => this.closePanels()}>×</button>
+          </div>
+          ${editing ? this._mealEditorTemplate() : this._mealListTemplate(meals)}
+        </section>
+      </div>`;
+  }
+
+  _mealListTemplate(meals) {
+    return html`
+      <div class="meal-list">
+        ${meals.length
+          ? repeat(meals, (m) => m.id, (m) => html`
+            <div class="meal-row">
+              <div class="meal-row-main">
+                <strong>${m.name}</strong>
+                <div class="small">${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}</div>
+              </div>
+              <div class="meal-row-actions">
+                <button class="btn primary" @click=${() => this.openMealConfirm(m.id)}>Add to list</button>
+                <button class="btn" @click=${() => this.openMealEditor(m.id)}>Edit</button>
+                <button class="btn danger" @click=${() => this.deleteMeal(m.id)}>Delete</button>
+              </div>
+            </div>`)
+          : html`<div class="empty">No saved meals yet. Create one to add its ingredients with a tap.</div>`}
+      </div>
+      <div class="row"><button class="btn primary" @click=${() => this.openMealEditor("new")}>New Meal</button></div>`;
+  }
+
+  _mealEditorTemplate() {
+    const isNew = this._mealEditorId === "new";
+    return html`
+      <div class="grid compact-grid">
+        <input class="input" placeholder="Meal name (e.g. Taco Night)" .value=${live(this._drafts.mealName || "")}
+          @input=${(e) => this.updateDraft("mealName", e.target.value)} />
+      </div>
+      <div class="label">Ingredients (one per line)</div>
+      <textarea class="input meal-textarea" rows="8" placeholder="ground beef&#10;taco shells&#10;shredded cheese&#10;lettuce"
+        .value=${live(this._drafts.mealIngredients || "")}
+        @input=${(e) => this.updateDraft("mealIngredients", e.target.value)}></textarea>
+      <div class="row">
+        <button class="btn primary" @click=${() => this.saveMeal()}>${isNew ? "Create Meal" : "Save Meal"}</button>
+        <button class="btn" @click=${() => this.closeMealEditor()}>Cancel</button>
+      </div>`;
+  }
+
+  _mealConfirmTemplate(state) {
+    const meal = (state?.meals || []).find((m) => m.id === this._mealConfirmId) || null;
+    if (!meal) return nothing;
+    const ingredients = meal.ingredients || [];
+    const selectedCount = ingredients.filter((ing, idx) => this._mealChecked[this.mealIngKey(idx, ing.item)]).length;
+    return html`
+      <div class="overlay-shell" @click=${() => this.closeMealConfirm()}>
+        <section class="modal-card" role="dialog" aria-label="Confirm meal ingredients" @click=${(e) => e.stopPropagation()}>
+          <div class="modal-head">
+            <div>
+              <div class="title">${meal.name}</div>
+              <div class="small">Uncheck anything you already have (or grew), then add the rest.</div>
+            </div>
+            <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closeMealConfirm()}>×</button>
+          </div>
+          <div class="row" style="justify-content:space-between; align-items:center;">
+            <div class="small">${selectedCount} of ${ingredients.length} selected</div>
+            <div class="row">
+              <button class="btn compact" @click=${() => this.setAllMealIngredients(meal, true)}>All</button>
+              <button class="btn compact" @click=${() => this.setAllMealIngredients(meal, false)}>None</button>
+            </div>
+          </div>
+          <div class="meal-ingredients">
+            ${ingredients.map((ing, idx) => {
+              const key = this.mealIngKey(idx, ing.item);
+              const checked = !!this._mealChecked[key];
+              return html`
+                <label class=${"meal-ingredient" + (checked ? "" : " unchecked")}>
+                  <input type="checkbox" .checked=${live(checked)} @change=${() => this.toggleMealIngredient(key)} />
+                  <span class="meal-ingredient-name">${ing.item}</span>
+                  <span class="pill">${ing.category_display}</span>
+                </label>`;
+            })}
+          </div>
+          <div class="row">
+            <button class="btn primary" ?disabled=${selectedCount === 0} @click=${() => this.confirmAddMeal()}>Add ${selectedCount} to list</button>
+            <button class="btn" @click=${() => this.closeMealConfirm()}>Cancel</button>
+          </div>
+        </section>
+      </div>`;
+  }
+
   _menuTemplate(multilist) {
     return html`
       <div class="overlay-shell overlay-drawer" @click=${() => this.closePanels()}>
@@ -1128,6 +1244,7 @@ class LocalListAssistPanel extends LitElement {
             <button class="btn icon-btn compact" aria-label="Close menu" @click=${() => this.closePanels()}>×</button>
           </div>
           <div class="drawer-stack">
+            <button class="btn" @click=${() => this.openMeals()}>🍽 Meals</button>
             <button class="btn" @click=${() => { this._view = this._view === "activity" ? "list" : "activity"; this.closePanels(); }}>${this._view === "activity" ? "Back to List" : "Activity"}</button>
             <button class="btn" @click=${() => this.openAppSettings()}>App Settings</button>
             ${multilist ? html`<button class="btn" @click=${() => this.openListSettings()}>List Settings</button>` : nothing}
@@ -1150,6 +1267,94 @@ class LocalListAssistPanel extends LitElement {
     this._createListOpen = false;
     this._menuOpen = false;
     this._reorderListId = "";
+  }
+
+  openMeals() {
+    this.closePanels();
+    this._mealsOpen = true;
+    this._mealEditorId = "";
+  }
+
+  openMealEditor(mealId) {
+    const meal = (this._state?.meals || []).find((m) => m.id === mealId) || null;
+    this._mealEditorId = mealId || "new";
+    this._drafts.mealName = meal?.name || "";
+    this._drafts.mealIngredients = (meal?.ingredients || []).map((i) => i.item).join("\n");
+    this._mealsOpen = true;
+    this.requestUpdate();
+  }
+
+  closeMealEditor() {
+    this._mealEditorId = "";
+    this._drafts.mealName = "";
+    this._drafts.mealIngredients = "";
+    this.requestUpdate();
+  }
+
+  async saveMeal() {
+    const name = (this._drafts.mealName || "").trim();
+    if (!name) return;
+    const ingredients = (this._drafts.mealIngredients || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((item) => ({ item }));
+    const payload = { action: "save_meal", name, ingredients };
+    if (this._mealEditorId && this._mealEditorId !== "new") payload.meal_id = this._mealEditorId;
+    await this.act(payload);
+    this.closeMealEditor();
+  }
+
+  async deleteMeal(mealId) {
+    await this.act({ action: "delete_meal", meal_id: mealId });
+  }
+
+  mealIngKey(index, item) {
+    return `${index}:${item}`;
+  }
+
+  openMealConfirm(mealId) {
+    const meal = (this._state?.meals || []).find((m) => m.id === mealId) || null;
+    if (!meal) return;
+    const checked = {};
+    (meal.ingredients || []).forEach((ing, idx) => { checked[this.mealIngKey(idx, ing.item)] = true; });
+    this._mealChecked = checked;
+    this._mealConfirmId = mealId;
+    this._mealsOpen = false;
+    this._mealEditorId = "";
+  }
+
+  closeMealConfirm() {
+    this._mealConfirmId = "";
+  }
+
+  toggleMealIngredient(key) {
+    this._mealChecked = { ...this._mealChecked, [key]: !this._mealChecked[key] };
+  }
+
+  setAllMealIngredients(meal, value) {
+    const checked = {};
+    (meal.ingredients || []).forEach((ing, idx) => { checked[this.mealIngKey(idx, ing.item)] = value; });
+    this._mealChecked = checked;
+  }
+
+  async confirmAddMeal() {
+    const meal = (this._state?.meals || []).find((m) => m.id === this._mealConfirmId) || null;
+    if (!meal) { this._mealConfirmId = ""; return; }
+    const items = (meal.ingredients || [])
+      .filter((ing, idx) => this._mealChecked[this.mealIngKey(idx, ing.item)])
+      .map((ing) => ({ item: ing.item }));
+    this._mealConfirmId = "";
+    if (!items.length) return;
+    await this.act({
+      action: "add_meal_to_list",
+      meal_id: meal.id,
+      meal_name: meal.name,
+      list_id: this.currentListId(),
+      items,
+      actor_user_id: this._hass?.user?.id || "",
+      actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
+    });
   }
 
   enterShopping() {
@@ -1472,6 +1677,19 @@ class LocalListAssistPanel extends LitElement {
     }
     .frequent-chip:hover { background: color-mix(in srgb, var(--accent) 22%, var(--lla-surface-2)); }
     .frequent-plus { font-weight: 700; color: var(--accent); }
+    .meal-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; max-height: 52vh; overflow-y: auto; }
+    .meal-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; background: var(--lla-surface-2); }
+    .meal-row-main { min-width: 120px; }
+    .meal-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .meal-textarea { min-height: 168px; resize: vertical; font: inherit; line-height: 1.5; }
+    .meal-ingredients { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; max-height: 46vh; overflow-y: auto; }
+    .meal-ingredient { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px;
+      border: 1px solid var(--lla-border); background: var(--lla-surface-2); cursor: pointer; }
+    .meal-ingredient input[type="checkbox"] { width: 22px; height: 22px; flex: 0 0 auto; accent-color: var(--accent); }
+    .meal-ingredient-name { flex: 1; font-weight: 600; }
+    .meal-ingredient.unchecked { opacity: 0.5; }
+    .meal-ingredient.unchecked .meal-ingredient-name { text-decoration: line-through; }
     .color-input { width: 100%; min-height: 48px; background: var(--lla-input-bg); border: 1px solid var(--lla-border); border-radius: 14px; padding: 6px; }
     .btn {
       border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--lla-border));
@@ -1499,6 +1717,7 @@ class LocalListAssistPanel extends LitElement {
     .mobile-title { font-size: 14px; font-weight: 700; color: var(--lla-text-dim); letter-spacing: 0.04em; text-transform: uppercase; }
     .icon-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; font-size: 20px; padding: 0; }
     .icon-btn.compact { width: 42px; height: 42px; font-size: 18px; flex: 0 0 auto; }
+    .btn.compact { padding: 6px 12px; font-size: 13px; }
     .list-chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .list-chip {
       border: 1px solid color-mix(in srgb, var(--chip-color) 55%, var(--lla-border));
