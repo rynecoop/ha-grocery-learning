@@ -1,6 +1,8 @@
 # Local List Assist
 
-Local List Assist is a Home Assistant custom integration that gives you a local-first list app with clean list management, category-based organization, duplicate handling, review-and-learn routing, and voice-friendly add flows.
+Local List Assist is a Home Assistant custom integration that gives you a local-first list app with clean list management, category-based organization, a phone-friendly Shopping Mode, one-tap frequent items, duplicate handling, review-and-learn routing, and voice-friendly add flows.
+
+![Local List Assist main list](docs/screenshots/main-list.png)
 
 ## What It Is
 - 100% Home Assistant hosted
@@ -10,17 +12,40 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 
 ## Highlights
 - dedicated sidebar app: `Local List Assist`
+- **Shopping Mode**: a focused, big-tap-target screen for when you are at the store
+- **Frequent quick-add**: one-tap chips for the items you add most often
+- **smarter automatic categories** so far fewer items land in `Other`
 - quick add with per-user attribution where Home Assistant provides user context
 - multiple local lists with color theming
-- category sections with per-list category order
+- category sections with per-list category order (your store walk order)
 - in-place category editing in `List Settings`
+- drag-and-drop reordering of items and lists
 - duplicate decision flow: `Add anyway` or `Skip`
 - review-and-learn flow for uncategorized items
 - completed section with restore and clear support
+- follows your Home Assistant theme (light, dark, or custom)
 - `App Settings` and `List Settings` inside the app
 - `Activity` moved under `App Settings -> Tools`
 - automatic provisioning/repair for required helpers and todo lists
 - near-real-time refresh across open Home Assistant devices using Home Assistant's own state updates
+
+## Key Features
+
+### Shopping Mode
+Tap the cart button (🛒) to switch into Shopping Mode: a stripped-down, phone-first view that shows only the unchecked items, grouped in your list's category (store) order, with large tap targets, a progress bar, and a quick add for anything you forgot. Check items off as you move through the store; tap `Done` to return to the full list.
+
+![Shopping Mode](docs/screenshots/shopping-mode.png)
+
+### Frequent Quick-Add
+The `FREQUENT` row above the list shows the staples you add most often as one-tap chips, so common items go on the list without typing. Suggestions appear once you have added an item a couple of times, hide anything already on the current list, and the tally survives clearing completed items.
+
+### Smarter Automatic Categories
+Items are sorted into category sections automatically using an expanded built-in knowledge of common grocery items, with matching that prefers the most specific match (for example `tomato sauce` routes to `Pantry`, not `Produce`). When something still lands in `Other`, the review-and-learn flow lets you teach the correct category once and it sticks.
+
+### Theme-Aware UI
+The panel follows your Home Assistant theme, so it looks at home in light, dark, or a custom theme.
+
+![Dark theme](docs/screenshots/main-list-dark.png)
 
 ## Install
 ### HACS
@@ -56,6 +81,13 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 - panels subscribe to a WebSocket push channel and refresh when the integration reports a change; if that subscription is unavailable the panel automatically falls back to Home Assistant's normal pushed state updates
 - a device ignores the update triggered by its own change, so only the other panels refresh
 - active editing is protected: the panel waits to reload until dialogs/editors close
+
+## Screenshots
+| Main list | Mobile | Shopping Mode |
+| --- | --- | --- |
+| [![Main list](docs/screenshots/main-list.png)](docs/screenshots/main-list.png) | [![Mobile view](docs/screenshots/mobile-view.png)](docs/screenshots/mobile-view.png) | [![Shopping Mode](docs/screenshots/shopping-mode.png)](docs/screenshots/shopping-mode.png) |
+
+More captures live in [docs/screenshots](docs/screenshots).
 
 ## Documentation
 - Setup guide: [docs/setup.md](docs/setup.md)

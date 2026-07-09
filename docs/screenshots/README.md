@@ -1,23 +1,18 @@
 # Screenshots
 
-Target screenshot inventory:
+Current captures used in the README and docs:
 - `main-list.png`
-- `create-list.png`
-- `app-settings.png`
-- `list-settings.png`
+  - main app view (light theme): header, list chips, quick add, `FREQUENT` chips, category sections, and completed section
+- `main-list-dark.png`
+  - the same main view in a dark Home Assistant theme
 - `mobile-view.png`
-
-Recommended captures:
-1. `main-list.png`
-   - main app view with current header, list chips, category sections, and completed section
-2. `create-list.png`
-   - create-list modal open with template selector and category entry visible
-3. `app-settings.png`
-   - `App Settings` open with tools/repair/voice controls visible
-4. `list-settings.png`
-   - `List Settings` open with category chips, edit control, reorder controls, and color options
-5. `mobile-view.png`
-   - current mobile layout showing list chips and quick add
+  - the phone-sized layout with the mobile header bar, chips, quick add, and `FREQUENT` row
+- `shopping-mode.png`
+  - Shopping Mode: unchecked items in store order, progress bar, big tap targets, and quick add
+- `duplicate-review.png`
+  - the duplicate decision card (`Add anyway` / `Skip`)
+- `configure.png`
+  - the integration config/setup flow
 
 Guidelines:
 1. replace old captures instead of adding duplicate variants
