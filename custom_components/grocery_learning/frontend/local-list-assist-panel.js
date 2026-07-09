@@ -754,6 +754,57 @@ class LocalListAssistPanel extends LitElement {
     }
   }
 
+  async exportData() {
+    try {
+      const result = await this.api("action", "POST", { action: "export_data" });
+      const backup = result?.export;
+      if (!backup) {
+        this._error = "Export failed.";
+        this.requestUpdate();
+        return;
+      }
+      const stamp = (backup.exported_at || "").replace(/[:.]/g, "-").slice(0, 19) || "backup";
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `local-list-assist-${stamp}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      this._error = err.message || String(err);
+      this.requestUpdate();
+    }
+  }
+
+  async onImportFileChosen(ev) {
+    const input = ev.target;
+    const file = input?.files?.[0];
+    input.value = "";
+    if (!file) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch (_err) {
+      this._error = "That file is not a valid Local List Assist backup.";
+      this.requestUpdate();
+      return;
+    }
+    const data = parsed && typeof parsed.data === "object" ? parsed.data : parsed;
+    if (!data || typeof data !== "object") {
+      this._error = "That file is not a valid Local List Assist backup.";
+      this.requestUpdate();
+      return;
+    }
+    if (!window.confirm("Import will replace your current lists, meals, and learned data with this backup. Continue?")) {
+      return;
+    }
+    await this.act({ action: "import_data", data });
+    this.closePanels();
+  }
+
   async reorderList(direction) {
     const listId = this.currentListId();
     if (!listId || listId === "default") return;
@@ -1559,6 +1610,14 @@ class LocalListAssistPanel extends LitElement {
                 <button class="btn" @click=${() => this.act({ action: "install_voice_sentences", language: "en" })}>Install Voice Phrases</button>
                 <button class="btn" @click=${() => this.act({ action: "repair_system" })}>Repair Local Setup</button>
                 <label class="toggle-row"><input id="settingsDebugMode" type="checkbox" ?checked=${state?.settings?.debug_mode} /> Debug mode</label>
+              </div>
+              <div class="label" style="margin-top:14px;">Backup</div>
+              <div class="small">Export a local JSON backup of your lists, meals, and learned data — or restore one. Import replaces your current data; run Repair Local Setup afterwards if you use voice.</div>
+              <div class="row advanced-row">
+                <button class="btn" @click=${() => this.exportData()}>Export backup</button>
+                <button class="btn" @click=${() => this.renderRoot?.getElementById("importFileInput")?.click()}>Import backup</button>
+                <input id="importFileInput" type="file" accept="application/json,.json" style="display:none"
+                  @change=${(e) => this.onImportFileChosen(e)} />
               </div>
             </details>
           </div>

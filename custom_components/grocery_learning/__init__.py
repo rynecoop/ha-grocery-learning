@@ -73,10 +73,13 @@ from .item_logic import (
     display_item_summary as _display_item_summary,
     format_contributors as _format_contributors,
     merge_meta_records as _merge_meta_records,
+    merge_meal_ingredients as _merge_meal_ingredients,
     meta_quantity as _meta_quantity,
     normalize_category as _normalize_category,
     normalize_list_id as _normalize_list_id,
     reorder_category_items as _reorder_category_items,
+    select_frequent as _select_frequent,
+    unique_meal_id as _unique_meal_id,
 )
 from .storage import GroceryLearningStore, LearnedTerms
 
@@ -655,19 +658,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         frequent = hass.data[DOMAIN].get("frequent", {})
         if not isinstance(frequent, dict):
             return []
-        rows = [
-            (key, value)
-            for key, value in frequent.items()
-            if isinstance(value, dict)
-            and int(value.get("count", 0) or 0) >= 2
-            and not value.get("dismissed")
-            and key not in exclude_normalized
-        ]
-        rows.sort(key=lambda kv: (int(kv[1].get("count", 0) or 0), kv[1].get("last", "")), reverse=True)
-        return [
-            {"item": str(value.get("display", key)).strip() or key, "count": int(value.get("count", 0) or 0)}
-            for key, value in rows[:limit]
-        ]
+        return _select_frequent(frequent, exclude_normalized, limit)
 
     def _meals_payload() -> list[dict[str, Any]]:
         # Saved meals with each ingredient's guessed category for the confirm
@@ -2508,19 +2499,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if not name:
                 return {"ok": False, "error": "missing_name"}
             ingredients_raw = payload.get("ingredients", [])
-            ingredients: list[dict[str, str]] = []
-            seen: set[str] = set()
-            if isinstance(ingredients_raw, list):
-                for entry in ingredients_raw:
-                    raw = entry.get("item", "") if isinstance(entry, dict) else entry
-                    item = _display_item_summary(str(raw).strip()) or str(raw).strip()
-                    if not item:
-                        continue
-                    key = item.lower()
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    ingredients.append({"item": item})
+            ingredients = _merge_meal_ingredients(ingredients_raw if isinstance(ingredients_raw, list) else [])
             meals = hass.data[DOMAIN].setdefault("meals", {})
             if not isinstance(meals, dict):
                 meals = {}
@@ -2528,12 +2507,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             now = dt_util.utcnow().isoformat()
             meal_id = _normalize_list_id(str(payload.get("meal_id", "")).strip()) if str(payload.get("meal_id", "")).strip() else ""
             if not meal_id:
-                base = _normalize_list_id(name)
-                meal_id = base
-                suffix = 2
-                while meal_id in meals:
-                    meal_id = f"{base}_{suffix}"
-                    suffix += 1
+                meal_id = _unique_meal_id(name, list(meals.keys()))
             created = str(meals.get(meal_id, {}).get("created", "")).strip() or now
             meals[meal_id] = {
                 "id": meal_id,
@@ -2609,6 +2583,51 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 meal_name = str(payload.get("meal_name", "")).strip() or "Meal"
                 await _record_activity("Meal added", f"{meal_name} · {added} items", list_name, "meal")
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal(target_list_id)}
+
+        if action == "export_data":
+            terms_obj = hass.data[DOMAIN].get("terms")
+            export = {
+                "app": "local_list_assist",
+                "schema": 1,
+                "exported_at": dt_util.utcnow().isoformat(),
+                "data": {
+                    "terms": terms_obj.data if terms_obj is not None else {},
+                    "item_meta": hass.data[DOMAIN].get("item_meta", {}),
+                    "multilist": hass.data[DOMAIN].get("multilist", {}),
+                    "frequent": hass.data[DOMAIN].get("frequent", {}),
+                    "meals": hass.data[DOMAIN].get("meals", {}),
+                },
+            }
+            return {"ok": True, "export": export}
+
+        if action == "import_data":
+            incoming = payload.get("data")
+            if not isinstance(incoming, dict):
+                full = payload.get("export")
+                if isinstance(full, dict) and isinstance(full.get("data"), dict):
+                    incoming = full["data"]
+            if not isinstance(incoming, dict):
+                return {"ok": False, "error": "invalid_backup"}
+            raw = await store.load_raw()
+            if not isinstance(raw, dict):
+                raw = {}
+            for key in ("terms", "item_meta", "multilist", "frequent", "meals", "activity"):
+                if isinstance(incoming.get(key), (dict, list)):
+                    raw[key] = incoming[key]
+            await store.save_raw(raw)
+            # Re-load through the storage validators so imported data is cleaned
+            # and coerced exactly like a normal boot, then persist the canonical
+            # form and refresh every open panel.
+            hass.data[DOMAIN]["terms"] = await store.load(list(DEFAULT_CATEGORIES))
+            hass.data[DOMAIN]["item_meta"] = await store.load_item_meta()
+            hass.data[DOMAIN]["multilist"] = await store.load_multilist(list(DEFAULT_CATEGORIES))
+            hass.data[DOMAIN]["frequent"] = await store.load_frequent()
+            hass.data[DOMAIN]["meals"] = await store.load_meals()
+            hass.data[DOMAIN]["activity"] = await store.load_activity()
+            _mark_changed_list("*")
+            await _save()
+            await _record_activity("Data imported", "Restored lists, meals, and learned data from a backup", "", "panel")
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         return {"ok": False, "error": "unknown_action"}
 

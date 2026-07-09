@@ -200,6 +200,67 @@ def reorder_category_items(
     return items
 
 
+# --- saved meals & frequent suggestions -------------------------------------
+
+def merge_meal_ingredients(entries: Sequence[Any]) -> list[dict[str, str]]:
+    """Normalize a meal's ingredient input into a de-duplicated ``[{item}]`` list.
+
+    Accepts a sequence of plain strings or ``{"item": ...}`` mappings, tidies each
+    with :func:`display_item_summary`, drops blanks, and de-duplicates
+    case-insensitively while preserving first-seen order.
+    """
+    ingredients: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for entry in entries or ():
+        raw = entry.get("item", "") if isinstance(entry, Mapping) else entry
+        item = display_item_summary(str(raw).strip())
+        if not item:
+            continue
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ingredients.append({"item": item})
+    return ingredients
+
+
+def unique_meal_id(name: str, existing_ids: Sequence[str]) -> str:
+    """Derive a stable, collision-free meal id from ``name``."""
+    existing = set(existing_ids or ())
+    base = normalize_list_id(name)
+    meal_id = base
+    suffix = 2
+    while meal_id in existing:
+        meal_id = f"{base}_{suffix}"
+        suffix += 1
+    return meal_id
+
+
+def select_frequent(
+    frequent: Mapping[str, Mapping[str, Any]],
+    exclude_normalized: set[str],
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    """Pick the top frequent-item suggestions to offer as quick-add chips.
+
+    Keeps entries added at least twice that are not dismissed and not already on
+    the active list, ranked by count then recency, capped at ``limit``.
+    """
+    rows = [
+        (key, value)
+        for key, value in (frequent or {}).items()
+        if isinstance(value, Mapping)
+        and int(value.get("count", 0) or 0) >= 2
+        and not value.get("dismissed")
+        and key not in exclude_normalized
+    ]
+    rows.sort(key=lambda kv: (int(kv[1].get("count", 0) or 0), str(kv[1].get("last", ""))), reverse=True)
+    return [
+        {"item": str(value.get("display", key)).strip() or key, "count": int(value.get("count", 0) or 0)}
+        for key, value in rows[:limit]
+    ]
+
+
 def category_for_term(
     terms_data: Mapping[str, Sequence[str]],
     normalized: str,

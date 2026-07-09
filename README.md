@@ -24,6 +24,7 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 - duplicate decision flow: `Add anyway` or `Skip`
 - review-and-learn flow for uncategorized items
 - completed section with restore and clear support
+- backup & restore: export/import all your data as a local JSON file
 - follows your Home Assistant theme (light, dark, or custom)
 - `App Settings` and `List Settings` inside the app
 - `Activity` moved under `App Settings -> Tools`
@@ -47,6 +48,9 @@ Open `Meals` from the menu (⋯) to define a meal once — a name plus its ingre
 
 ### Smarter Automatic Categories
 Items are sorted into category sections automatically using an expanded built-in knowledge of common grocery items, with matching that prefers the most specific match (for example `tomato sauce` routes to `Pantry`, not `Produce`). When something still lands in `Other`, the review-and-learn flow lets you teach the correct category once and it sticks.
+
+### Backup & Restore
+From `App Settings -> Tools`, `Export backup` downloads a single JSON file with all your lists, saved meals, item history, and learned categories; `Import backup` restores it. Handy for moving to a new Home Assistant install or keeping a safety copy. Import replaces your current data, so run `Repair Local Setup` afterwards if you use voice.
 
 ### Theme-Aware UI
 The panel follows your Home Assistant theme, so it looks at home in light, dark, or a custom theme.

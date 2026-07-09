@@ -78,6 +78,12 @@
 - restore by unchecking them
 - use `Clear Completed` to purge completed history quickly
 
+## Backup & Restore
+- open `App Settings` from the menu (⋯), then expand `Tools`
+- `Export backup` downloads a single JSON file containing all your lists, saved meals, item history, and learned categories
+- `Import backup` restores from a file you previously exported — useful for moving to a new Home Assistant install or keeping a safety copy
+- importing replaces your current data (you are asked to confirm first); if you use voice, run `Repair Local Setup` afterwards so the voice todo lists are re-provisioned
+
 ## Multi-Device Behavior
 - open Local List Assist on two Home Assistant devices
 - adding or completing an item on one device should appear on the other shortly after
