@@ -43,6 +43,8 @@ class LocalListAssistPanel extends LitElement {
     _mealChecked: { state: true },
     _mealConfirmEdits: { state: true },
     _mealEditingKey: { state: true },
+    _mealTab: { state: true },
+    _stepsChecked: { state: true },
     _openEditorKey: { state: true },
     _undo: { state: true },
     _dragListId: { state: true },
@@ -73,6 +75,8 @@ class LocalListAssistPanel extends LitElement {
     this._mealChecked = {};
     this._mealConfirmEdits = {};
     this._mealEditingKey = "";
+    this._mealTab = "add";
+    this._stepsChecked = {};
     this._frequentLongPressTimer = null;
     this._suppressNextFrequentClick = "";
     this._openEditorKey = "";
@@ -102,6 +106,7 @@ class LocalListAssistPanel extends LitElement {
       activeListColor: "",
       mealName: "",
       mealIngredients: "",
+      mealDirections: "",
     };
     this._lastSeenLiveRevision = "";
     this._wsUnsub = null;
@@ -985,7 +990,7 @@ class LocalListAssistPanel extends LitElement {
         ${this._listSettingsOpen && multilist ? this._listSettingsTemplate(state, activeListName, activeListColor) : nothing}
         ${this._reorderListId && multilist ? this._reorderTemplate(state) : nothing}
         ${this._mealsOpen ? this._mealsTemplate(state) : nothing}
-        ${this._mealConfirmId ? this._mealConfirmTemplate(state) : nothing}
+        ${this._mealConfirmId ? this._mealDetailTemplate(state) : nothing}
 
         ${this._error ? html`<section class="section"><div class="title">Error</div><div class="error">${this._error}</div></section>` : nothing}
         ${this._attentionTemplates(state)}
@@ -1068,7 +1073,7 @@ class LocalListAssistPanel extends LitElement {
 
   _onKeyDown(ev) {
     if (ev.key === "Escape") {
-      if (this._mealConfirmId) { this.closeMealConfirm(); return; }
+      if (this._mealConfirmId) { this.closeMealDetail(); return; }
       if (this._configOpen || this._createListOpen || this._listSettingsOpen || this._menuOpen || this._reorderListId || this._mealsOpen) {
         this.closePanels();
       }
@@ -1253,18 +1258,14 @@ class LocalListAssistPanel extends LitElement {
       <div class="meal-list">
         ${meals.length
           ? repeat(meals, (m) => m.id, (m) => html`
-            <div class="meal-row">
+            <button class="meal-row meal-row-button" @click=${() => this.openMealDetail(m.id, "add")}>
               <div class="meal-row-main">
                 <strong>${m.name}</strong>
-                <div class="small">${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}</div>
+                <div class="small">${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}${m.direction_count ? ` · ${m.direction_count} ${m.direction_count === 1 ? "step" : "steps"}` : ""}</div>
               </div>
-              <div class="meal-row-actions">
-                <button class="btn primary" @click=${() => this.openMealConfirm(m.id)}>Add to list</button>
-                <button class="btn" @click=${() => this.openMealEditor(m.id)}>Edit</button>
-                <button class="btn danger" @click=${() => this.deleteMeal(m.id)}>Delete</button>
-              </div>
-            </div>`)
-          : html`<div class="empty">No saved meals yet. Create one to add its ingredients with a tap.</div>`}
+              <span class="meal-row-open">Open ›</span>
+            </button>`)
+          : html`<div class="empty">No saved meals yet. Create one with ingredients and directions, then add it to your list with a tap.</div>`}
       </div>
       <div class="row">
         <button class="btn primary" @click=${() => this.openMealEditor("new")}>New Meal</button>
@@ -1280,66 +1281,104 @@ class LocalListAssistPanel extends LitElement {
           @input=${(e) => this.updateDraft("mealName", e.target.value)} />
       </div>
       <div class="label">Ingredients (one per line)</div>
-      <textarea class="input meal-textarea" rows="8" placeholder="ground beef&#10;taco shells&#10;shredded cheese&#10;lettuce"
+      <textarea class="input meal-textarea" rows="7" placeholder="ground beef&#10;taco shells&#10;shredded cheese&#10;lettuce"
         .value=${live(this._drafts.mealIngredients || "")}
         @input=${(e) => this.updateDraft("mealIngredients", e.target.value)}></textarea>
+      <div class="label">Directions (one step per line)</div>
+      <textarea class="input meal-textarea" rows="7" placeholder="Brown the beef over medium heat&#10;Warm the shells&#10;Assemble with cheese and lettuce"
+        .value=${live(this._drafts.mealDirections || "")}
+        @input=${(e) => this.updateDraft("mealDirections", e.target.value)}></textarea>
       <div class="row">
         <button class="btn primary" @click=${() => this.saveMeal()}>${isNew ? "Create Meal" : "Save Meal"}</button>
         <button class="btn" @click=${() => this.closeMealEditor()}>Cancel</button>
       </div>`;
   }
 
-  _mealConfirmTemplate(state) {
+  _mealDetailTemplate(state) {
     const meal = (state?.meals || []).find((m) => m.id === this._mealConfirmId) || null;
     if (!meal) return nothing;
     const ingredients = meal.ingredients || [];
+    const directions = meal.directions || [];
+    const tab = this._mealTab === "directions" ? "directions" : "add";
+    return html`
+      <div class="overlay-shell" @click=${() => this.closeMealDetail()}>
+        <section class="modal-card" role="dialog" aria-label=${meal.name} @click=${(e) => e.stopPropagation()}>
+          <div class="modal-head">
+            <div class="meal-detail-head">
+              <button class="btn compact" @click=${() => this.backToMeals()}>‹ Meals</button>
+              <div class="title">${meal.name}</div>
+            </div>
+            <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closeMealDetail()}>×</button>
+          </div>
+          <div class="meal-tabs">
+            <button class=${"meal-tab" + (tab === "add" ? " active" : "")} @click=${() => { this._mealTab = "add"; }}>Add to list</button>
+            <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions${directions.length ? ` (${directions.length})` : ""}</button>
+            <span class="meal-tab-spacer"></span>
+            <button class="btn compact" @click=${() => this.openMealEditor(meal.id)}>Edit</button>
+            <button class="btn compact danger" @click=${() => this.deleteMeal(meal.id)}>Delete</button>
+          </div>
+          ${tab === "add" ? this._mealAddTab(meal, ingredients) : this._mealDirectionsTab(directions)}
+        </section>
+      </div>`;
+  }
+
+  _mealAddTab(meal, ingredients) {
+    if (!ingredients.length) {
+      return html`<div class="empty">No ingredients on this meal yet. Use Edit to add some.</div>`;
+    }
     const selectedCount = ingredients.filter((ing, idx) => {
       const key = this.mealIngKey(idx, ing.item);
       return this._mealChecked[key] && String(this.ingredientValue(key, ing.item)).trim();
     }).length;
     return html`
-      <div class="overlay-shell" @click=${() => this.closeMealConfirm()}>
-        <section class="modal-card" role="dialog" aria-label="Confirm meal ingredients" @click=${(e) => e.stopPropagation()}>
-          <div class="modal-head">
-            <div>
-              <div class="title">${meal.name}</div>
-              <div class="small">Uncheck anything you already have (or grew), then add the rest.</div>
-            </div>
-            <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closeMealConfirm()}>×</button>
-          </div>
-          <div class="row" style="justify-content:space-between; align-items:center;">
-            <div class="small">${selectedCount} of ${ingredients.length} selected</div>
-            <div class="row">
-              <button class="btn compact" @click=${() => this.setAllMealIngredients(meal, true)}>All</button>
-              <button class="btn compact" @click=${() => this.setAllMealIngredients(meal, false)}>None</button>
-            </div>
-          </div>
-          <div class="meal-ingredients">
-            ${ingredients.map((ing, idx) => {
-              const key = this.mealIngKey(idx, ing.item);
-              const checked = !!this._mealChecked[key];
-              const editing = this._mealEditingKey === key;
-              const value = this.ingredientValue(key, ing.item);
-              return html`
-                <div class=${"meal-ingredient" + (checked ? "" : " unchecked")}>
-                  <input type="checkbox" .checked=${live(checked)} @change=${() => this.toggleMealIngredient(key)} />
-                  ${editing
-                    ? html`<input id=${`meal-ing-${key}`} class="input meal-ing-input" .value=${live(value)}
-                        @input=${(e) => this.updateIngredientEdit(key, e.target.value)}
-                        @keydown=${(e) => { if (e.key === "Enter") { e.preventDefault(); this.stopEditIngredient(); } }}
-                        @blur=${() => this.stopEditIngredient()} />`
-                    : html`<span class="meal-ingredient-name" @click=${() => this.toggleMealIngredient(key)}>${value}</span>`}
-                  <button class="meal-ing-edit" aria-label="Edit ingredient" title="Edit" @click=${() => this.startEditIngredient(key, value)}>✎</button>
-                  ${editing ? nothing : html`<span class="pill">${ing.category_display}</span>`}
-                </div>`;
-            })}
-          </div>
-          <div class="row">
-            <button class="btn primary" ?disabled=${selectedCount === 0} @click=${() => this.confirmAddMeal()}>Add ${selectedCount} to list</button>
-            <button class="btn" @click=${() => this.closeMealConfirm()}>Cancel</button>
-          </div>
-        </section>
+      <div class="small">Uncheck anything you already have (or grew), then add the rest.</div>
+      <div class="row" style="justify-content:space-between; align-items:center;">
+        <div class="small">${selectedCount} of ${ingredients.length} selected</div>
+        <div class="row">
+          <button class="btn compact" @click=${() => this.setAllMealIngredients(meal, true)}>All</button>
+          <button class="btn compact" @click=${() => this.setAllMealIngredients(meal, false)}>None</button>
+        </div>
+      </div>
+      <div class="meal-ingredients">
+        ${ingredients.map((ing, idx) => {
+          const key = this.mealIngKey(idx, ing.item);
+          const checked = !!this._mealChecked[key];
+          const editing = this._mealEditingKey === key;
+          const value = this.ingredientValue(key, ing.item);
+          return html`
+            <div class=${"meal-ingredient" + (checked ? "" : " unchecked")}>
+              <input type="checkbox" .checked=${live(checked)} @change=${() => this.toggleMealIngredient(key)} />
+              ${editing
+                ? html`<input id=${`meal-ing-${key}`} class="input meal-ing-input" .value=${live(value)}
+                    @input=${(e) => this.updateIngredientEdit(key, e.target.value)}
+                    @keydown=${(e) => { if (e.key === "Enter") { e.preventDefault(); this.stopEditIngredient(); } }}
+                    @blur=${() => this.stopEditIngredient()} />`
+                : html`<span class="meal-ingredient-name" @click=${() => this.toggleMealIngredient(key)}>${value}</span>`}
+              <button class="meal-ing-edit" aria-label="Edit ingredient" title="Edit" @click=${() => this.startEditIngredient(key, value)}>✎</button>
+              ${editing ? nothing : html`<span class="pill">${ing.category_display}</span>`}
+            </div>`;
+        })}
+      </div>
+      <div class="row">
+        <button class="btn primary" ?disabled=${selectedCount === 0} @click=${() => this.confirmAddMeal()}>Add ${selectedCount} to list</button>
+        <button class="btn" @click=${() => this.closeMealDetail()}>Cancel</button>
       </div>`;
+  }
+
+  _mealDirectionsTab(directions) {
+    if (!directions.length) {
+      return html`<div class="empty">No directions yet. Use Edit to add the steps, one per line.</div>`;
+    }
+    const done = directions.filter((_step, idx) => this._stepsChecked[idx]).length;
+    return html`
+      <div class="small">Tap a step to check it off as you cook. ${done} of ${directions.length} done.</div>
+      <ol class="meal-steps">
+        ${directions.map((step, idx) => html`
+          <li class=${"meal-step" + (this._stepsChecked[idx] ? " done" : "")} @click=${() => this.toggleStep(idx)}>
+            <span class="meal-step-num">${idx + 1}</span>
+            <span class="meal-step-text">${step}</span>
+          </li>`)}
+      </ol>`;
   }
 
   _menuTemplate(multilist) {
@@ -1387,6 +1426,8 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditorId = mealId || "new";
     this._drafts.mealName = meal?.name || "";
     this._drafts.mealIngredients = (meal?.ingredients || []).map((i) => i.item).join("\n");
+    this._drafts.mealDirections = (meal?.directions || []).join("\n");
+    this._mealConfirmId = "";
     this._mealsOpen = true;
     this.requestUpdate();
   }
@@ -1408,6 +1449,8 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditorId = "new";
     this._drafts.mealName = "";
     this._drafts.mealIngredients = items.join("\n");
+    this._drafts.mealDirections = "";
+    this._mealConfirmId = "";
     this._mealsOpen = true;
     this.requestUpdate();
     this.updateComplete.then(() => {
@@ -1420,6 +1463,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditorId = "";
     this._drafts.mealName = "";
     this._drafts.mealIngredients = "";
+    this._drafts.mealDirections = "";
     this.requestUpdate();
   }
 
@@ -1431,7 +1475,11 @@ class LocalListAssistPanel extends LitElement {
       .map((line) => line.trim())
       .filter(Boolean)
       .map((item) => ({ item }));
-    const payload = { action: "save_meal", name, ingredients };
+    const directions = (this._drafts.mealDirections || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const payload = { action: "save_meal", name, ingredients, directions };
     if (this._mealEditorId && this._mealEditorId !== "new") payload.meal_id = this._mealEditorId;
     await this.act(payload);
     this.closeMealEditor();
@@ -1445,7 +1493,7 @@ class LocalListAssistPanel extends LitElement {
     return `${index}:${item}`;
   }
 
-  openMealConfirm(mealId) {
+  openMealDetail(mealId, tab = "add") {
     const meal = (this._state?.meals || []).find((m) => m.id === mealId) || null;
     if (!meal) return;
     const checked = {};
@@ -1453,14 +1501,31 @@ class LocalListAssistPanel extends LitElement {
     this._mealChecked = checked;
     this._mealConfirmEdits = {};
     this._mealEditingKey = "";
+    this._stepsChecked = {};
+    const hasIngredients = (meal.ingredients || []).length > 0;
+    const hasDirections = (meal.directions || []).length > 0;
+    let nextTab = tab;
+    if (nextTab === "add" && !hasIngredients && hasDirections) nextTab = "directions";
+    if (nextTab === "directions" && !hasDirections) nextTab = "add";
+    this._mealTab = nextTab;
     this._mealConfirmId = mealId;
     this._mealsOpen = false;
     this._mealEditorId = "";
   }
 
-  closeMealConfirm() {
+  closeMealDetail() {
     this._mealConfirmId = "";
     this._mealEditingKey = "";
+  }
+
+  backToMeals() {
+    this._mealConfirmId = "";
+    this._mealEditingKey = "";
+    this._mealsOpen = true;
+  }
+
+  toggleStep(index) {
+    this._stepsChecked = { ...this._stepsChecked, [index]: !this._stepsChecked[index] };
   }
 
   ingredientValue(key, fallback) {
@@ -1870,6 +1935,23 @@ class LocalListAssistPanel extends LitElement {
       cursor: pointer; font: inherit; font-size: 16px; padding: 4px 6px; border-radius: 8px;
     }
     .meal-ing-edit:hover { color: var(--lla-text); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    .meal-row-button { width: 100%; text-align: left; font: inherit; color: var(--lla-text); cursor: pointer; }
+    .meal-row-button:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--lla-border)); }
+    .meal-row-open { flex: 0 0 auto; color: var(--lla-text-dim); font-weight: 600; }
+    .meal-detail-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .meal-tabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--lla-border); padding-bottom: 10px; margin-bottom: 12px; }
+    .meal-tab { border: none; background: transparent; color: var(--lla-text-dim); font: inherit; font-weight: 600; cursor: pointer; padding: 8px 12px; border-radius: 10px; }
+    .meal-tab.active { color: var(--lla-text); background: color-mix(in srgb, var(--accent) 16%, var(--lla-surface-2)); }
+    .meal-tab-spacer { flex: 1; }
+    .meal-steps { list-style: none; margin: 12px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; }
+    .meal-step { display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border-radius: 12px;
+      border: 1px solid var(--lla-border); background: var(--lla-surface-2); cursor: pointer; line-height: 1.45; }
+    .meal-step-num { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: var(--accent); border: 2px solid color-mix(in srgb, var(--accent) 55%, var(--lla-border)); }
+    .meal-step-text { flex: 1; padding-top: 2px; }
+    .meal-step.done { opacity: 0.55; }
+    .meal-step.done .meal-step-text { text-decoration: line-through; }
+    .meal-step.done .meal-step-num { color: #fff; background: var(--accent); border-color: var(--accent); }
     .color-input { width: 100%; min-height: 48px; background: var(--lla-input-bg); border: 1px solid var(--lla-border); border-radius: 14px; padding: 6px; }
     .btn {
       border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--lla-border));

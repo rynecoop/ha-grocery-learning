@@ -30,15 +30,18 @@
 
 ## Saved Meals
 - open `Meals` from the menu (⋯)
-- tap `New Meal`, give it a name, and enter its ingredients one per line, then `Create Meal`
+- tap `New Meal`, give it a name, enter its ingredients one per line and (optionally) its directions one step per line, then `Create Meal`
 - or tap `From current list` to turn whatever is on the active list into a new meal, then just name it
-- tap `Add to list` on a meal to open a confirm checklist
-- every ingredient starts checked; uncheck anything you already have or grew, then tap `Add N to list`
-- tap the pencil (✎) on an ingredient to tweak its text before adding, without editing the whole meal
-- use `All` / `None` to toggle every ingredient at once
-- each added ingredient is auto-categorized on the current list, just like a normal add
-- `Edit` changes a meal's name or ingredients; `Delete` removes it
+- tap a meal to open its detail view, which has two tabs:
+  - `Add to list`: the ingredient checklist — every ingredient starts checked, so uncheck anything you already have or grew, then tap `Add N to list`
+    - tap the pencil (✎) on an ingredient to tweak its text before adding, without editing the whole meal
+    - use `All` / `None` to toggle every ingredient at once
+    - each added ingredient is auto-categorized on the current list, just like a normal add
+  - `Directions`: a numbered step list — tap a step to check it off as you cook
+- `Edit` (in the detail view) changes a meal's name, ingredients, or directions; `Delete` removes it
 - meals are stored locally and shared across your Home Assistant devices
+
+![Meal directions cook mode](screenshots/meal-directions.png)
 
 ![Saved Meals confirm checklist](screenshots/meals.png)
 
