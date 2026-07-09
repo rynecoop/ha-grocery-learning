@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.19.1
+- Hardened the header layout on very narrow phones: the action buttons (cart, add, menu, refresh) now wrap onto a second line instead of being clipped at the edge on small screens, and a long dashboard name wraps instead of pushing the buttons off-screen.
+
 ## 0.19.0
 - Added saved Meals: define a meal once (a name plus its ingredients), then add it to your list with a tap. Choosing "Add to list" opens a confirm checklist so you can uncheck anything you already have or grew in the garden before adding the rest. Meals are stored locally and each ingredient is auto-categorized as it goes on the list. Find Meals in the menu (⋯).
 
