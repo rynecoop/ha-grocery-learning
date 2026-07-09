@@ -40,6 +40,9 @@ class LocalListAssistPanel extends LitElement {
     _openEditorKey: { state: true },
     _undo: { state: true },
     _dragListId: { state: true },
+    _dragOverListId: { state: true },
+    _draggingItemRef: { state: true },
+    _dragOverItemRef: { state: true },
   };
 
   constructor() {
@@ -61,8 +64,11 @@ class LocalListAssistPanel extends LitElement {
     this._openEditorKey = "";
     this._undo = null;
     this._dragListId = "";
+    this._dragOverListId = "";
     this._dragItemRef = "";
     this._dragItemCategory = "";
+    this._draggingItemRef = "";
+    this._dragOverItemRef = "";
     this._undoTimer = null;
     this._chipLongPressTimer = null;
     this._suppressNextChipClick = "";
@@ -697,13 +703,26 @@ class LocalListAssistPanel extends LitElement {
     if (ev.dataTransfer) {
       ev.dataTransfer.effectAllowed = "move";
       try { ev.dataTransfer.setData("text/plain", listId); } catch (_e) {}
+      const chip = ev.currentTarget;
+      if (chip && typeof ev.dataTransfer.setDragImage === "function") {
+        const rect = chip.getBoundingClientRect();
+        try { ev.dataTransfer.setDragImage(chip, ev.clientX - rect.left, ev.clientY - rect.top); } catch (_e) {}
+      }
     }
   }
 
-  onChipDragOver(ev) {
+  onChipDragEnd() {
+    this._dragListId = "";
+    this._dragOverListId = "";
+  }
+
+  onChipDragOver(listId, ev) {
     if (this._dragListId) {
       ev.preventDefault();
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+      if (listId !== this._dragListId && this._dragOverListId !== listId) {
+        this._dragOverListId = listId;
+      }
     }
   }
 
@@ -711,6 +730,7 @@ class LocalListAssistPanel extends LitElement {
     ev.preventDefault();
     const dragged = this._dragListId;
     this._dragListId = "";
+    this._dragOverListId = "";
     if (!dragged || dragged === targetListId) return;
     const order = (this._state?.lists || []).map((list) => list.id);
     const from = order.indexOf(dragged);
@@ -729,10 +749,25 @@ class LocalListAssistPanel extends LitElement {
   onItemDragStart(item, ev) {
     this._dragItemRef = item.item_ref;
     this._dragItemCategory = item.category;
+    this._draggingItemRef = item.item_ref;
     if (ev.dataTransfer) {
       ev.dataTransfer.effectAllowed = "move";
       try { ev.dataTransfer.setData("text/plain", item.item_ref); } catch (_e) {}
+      // Float the whole row under the cursor instead of just the grab handle,
+      // so the drag is clearly visible.
+      const row = ev.currentTarget?.closest?.(".item");
+      if (row && typeof ev.dataTransfer.setDragImage === "function") {
+        const rect = row.getBoundingClientRect();
+        try { ev.dataTransfer.setDragImage(row, ev.clientX - rect.left, ev.clientY - rect.top); } catch (_e) {}
+      }
     }
+  }
+
+  onItemDragEnd() {
+    this._dragItemRef = "";
+    this._dragItemCategory = "";
+    this._draggingItemRef = "";
+    this._dragOverItemRef = "";
   }
 
   onItemDragOver(item, ev) {
@@ -740,6 +775,9 @@ class LocalListAssistPanel extends LitElement {
     if (this._dragItemRef && this._dragItemCategory === item.category) {
       ev.preventDefault();
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+      if (item.item_ref !== this._dragItemRef && this._dragOverItemRef !== item.item_ref) {
+        this._dragOverItemRef = item.item_ref;
+      }
     }
   }
 
@@ -749,6 +787,8 @@ class LocalListAssistPanel extends LitElement {
     const category = this._dragItemCategory;
     this._dragItemRef = "";
     this._dragItemCategory = "";
+    this._draggingItemRef = "";
+    this._dragOverItemRef = "";
     if (!draggedRef || draggedRef === targetItem.item_ref || category !== targetItem.category) {
       return;
     }
@@ -862,11 +902,13 @@ class LocalListAssistPanel extends LitElement {
   _listChips(state) {
     return (state?.lists || []).map((list) => html`
       <button
-        class=${"list-chip" + (list.active ? " active" : "")}
+        class=${"list-chip" + (list.active ? " active" : "") + (this._dragListId === list.id ? " dragging" : "") + (this._dragOverListId === list.id ? " drag-over" : "")}
         style=${styleMap({ "--chip-color": list.color || "#2c78ba" })}
         draggable="true"
         @dragstart=${(e) => this.onChipDragStart(list.id, e)}
-        @dragover=${(e) => this.onChipDragOver(e)}
+        @dragover=${(e) => this.onChipDragOver(list.id, e)}
+        @dragleave=${() => { if (this._dragOverListId === list.id) this._dragOverListId = ""; }}
+        @dragend=${() => this.onChipDragEnd()}
         @drop=${(e) => this.onChipDrop(list.id, e)}
         @click=${() => this.onChipClick(list.id)}
         @pointerdown=${(e) => this.onChipPointerDown(list.id, e)}
@@ -920,14 +962,20 @@ class LocalListAssistPanel extends LitElement {
     const key = this.editorKey(item);
     const editorOpen = this._openEditorKey === key;
     const qty = Number(item.quantity || 1);
+    const dragClasses =
+      (this._draggingItemRef === item.item_ref ? " dragging" : "") +
+      (this._dragOverItemRef === item.item_ref ? " drag-over" : "");
     return html`
-      <div class="item" @dragover=${(e) => this.onItemDragOver(item, e)} @drop=${(e) => this.onItemDrop(item, e)}>
+      <div class=${"item" + dragClasses}
+        @dragover=${(e) => this.onItemDragOver(item, e)}
+        @dragleave=${() => { if (this._dragOverItemRef === item.item_ref) this._dragOverItemRef = ""; }}
+        @drop=${(e) => this.onItemDrop(item, e)}>
         <div class="item-main" @click=${() => this.toggleEditor(item)}>
           <div class="item-summary">
             <span class="drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag to reorder"
               @click=${(e) => e.stopPropagation()}
               @dragstart=${(e) => this.onItemDragStart(item, e)}
-              @dragend=${() => { this._dragItemRef = ""; this._dragItemCategory = ""; }}>⠿</span>
+              @dragend=${() => this.onItemDragEnd()}>⠿</span>
             <input class="complete-toggle" type="checkbox" aria-label="Complete item"
               @click=${(e) => e.stopPropagation()}
               @change=${(e) => { if (e.target.checked) this.completeItem(item); }} />
@@ -1368,6 +1416,10 @@ class LocalListAssistPanel extends LitElement {
     .item-summary { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .drag-handle { cursor: grab; color: var(--lla-text-dim); font-size: 16px; line-height: 1; user-select: none; touch-action: none; padding: 0 2px; }
     .drag-handle:active { cursor: grabbing; }
+    .item.dragging { opacity: 0.4; }
+    .item.drag-over { box-shadow: inset 0 3px 0 -1px var(--accent); }
+    .list-chip.dragging { opacity: 0.4; }
+    .list-chip.drag-over { box-shadow: inset 3px 0 0 -1px var(--accent); }
     .editor { display: none; gap: 10px; margin-top: 10px; }
     .editor.open { display: flex; flex-wrap: wrap; }
     .edit-qty { width: 96px; flex: 0 0 96px; text-align: center; }
