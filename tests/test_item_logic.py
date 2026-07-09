@@ -348,5 +348,77 @@ class RealKeywordRoutingTests(unittest.TestCase):
         self.assertEqual(self.route("garden hose"), "other")
 
 
+class MergeMealIngredientsTests(unittest.TestCase):
+    def test_accepts_strings_and_mappings(self):
+        result = item_logic.merge_meal_ingredients(["eggs", {"item": "milk"}])
+        self.assertEqual(result, [{"item": "eggs"}, {"item": "milk"}])
+
+    def test_tidies_and_drops_blanks(self):
+        result = item_logic.merge_meal_ingredients(["  the bread  ", "", "   ", {"item": ""}])
+        # leading article stripped, whitespace collapsed, blanks removed
+        self.assertEqual(result, [{"item": "bread"}])
+
+    def test_dedupes_case_insensitively_preserving_order(self):
+        result = item_logic.merge_meal_ingredients(["Salsa", "salsa", "SALSA", "chips"])
+        self.assertEqual(result, [{"item": "Salsa"}, {"item": "chips"}])
+
+    def test_empty_input(self):
+        self.assertEqual(item_logic.merge_meal_ingredients([]), [])
+        self.assertEqual(item_logic.merge_meal_ingredients(None), [])
+
+
+class UniqueMealIdTests(unittest.TestCase):
+    def test_slugifies_name(self):
+        self.assertEqual(item_logic.unique_meal_id("Taco Night", []), "taco_night")
+
+    def test_avoids_collisions(self):
+        self.assertEqual(item_logic.unique_meal_id("Taco Night", ["taco_night"]), "taco_night_2")
+        self.assertEqual(
+            item_logic.unique_meal_id("Taco Night", ["taco_night", "taco_night_2"]),
+            "taco_night_3",
+        )
+
+    def test_blank_name_falls_back(self):
+        # normalize_list_id falls back to "list" for empty input
+        self.assertEqual(item_logic.unique_meal_id("", []), "list")
+
+
+class SelectFrequentTests(unittest.TestCase):
+    def _freq(self, **entries):
+        return entries
+
+    def test_requires_count_at_least_two(self):
+        freq = {
+            "eggs": {"display": "Eggs", "count": 1},
+            "milk": {"display": "Milk", "count": 2},
+        }
+        result = item_logic.select_frequent(freq, set())
+        self.assertEqual(result, [{"item": "Milk", "count": 2}])
+
+    def test_excludes_dismissed_and_on_list(self):
+        freq = {
+            "eggs": {"display": "Eggs", "count": 5},
+            "milk": {"display": "Milk", "count": 4, "dismissed": True},
+            "butter": {"display": "Butter", "count": 3},
+        }
+        result = item_logic.select_frequent(freq, {"butter"})
+        self.assertEqual(result, [{"item": "Eggs", "count": 5}])
+
+    def test_ranks_by_count_then_recency_and_caps(self):
+        freq = {
+            "a": {"display": "A", "count": 3, "last": "2026-01-01"},
+            "b": {"display": "B", "count": 5, "last": "2026-01-01"},
+            "c": {"display": "C", "count": 3, "last": "2026-02-01"},
+        }
+        result = item_logic.select_frequent(freq, set(), limit=2)
+        # B (highest count) first; then C beats A on recency at equal count
+        self.assertEqual(result, [{"item": "B", "count": 5}, {"item": "C", "count": 3}])
+
+    def test_falls_back_to_key_when_display_blank(self):
+        freq = {"paper towels": {"display": "  ", "count": 2}}
+        result = item_logic.select_frequent(freq, set())
+        self.assertEqual(result, [{"item": "paper towels", "count": 2}])
+
+
 if __name__ == "__main__":
     unittest.main()

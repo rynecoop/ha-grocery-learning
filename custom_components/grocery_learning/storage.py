@@ -66,6 +66,15 @@ class GroceryLearningStore:
             return LearnedTerms.from_raw(data.get("terms"), categories)
         return LearnedTerms.from_raw(data, categories)
 
+    async def load_raw(self) -> dict:
+        """Return the full raw persisted payload (for export/backup)."""
+        data = await self._store.async_load()
+        return data if isinstance(data, dict) else {}
+
+    async def save_raw(self, payload: dict) -> None:
+        """Persist a full raw payload verbatim (for import/restore)."""
+        await self._store.async_save(payload if isinstance(payload, dict) else {})
+
     async def load_item_meta(self) -> dict[str, dict[str, str]]:
         """Load item metadata map from storage."""
         data = await self._store.async_load()

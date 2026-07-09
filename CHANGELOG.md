@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.21.0
+- Added Backup & Restore (App Settings → Tools): export a single local JSON file with all your lists, saved meals, item history, and learned categories, and import it later to restore everything — handy for moving to a new Home Assistant install or keeping a safety copy. Import replaces your current data; run Repair Local Setup afterwards if you use voice.
+
 ## 0.20.0
 - Meals: added "From current list" — turn whatever is on the active list into a saved meal in one step, so a list you build often becomes a reusable meal.
 - Meals: you can now edit an ingredient right in the confirm checklist (tap the pencil) before adding it, so a quick tweak no longer means editing the whole meal.
