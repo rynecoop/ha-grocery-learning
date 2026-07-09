@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.16.0
+- Added Shopping Mode: a focused, phone-friendly screen for when you're at the store — tap the cart button to get only the unchecked items, grouped in your list's category (store) order, with big tap targets, a progress bar, and a quick add for things you forgot.
+
 ## 0.15.1
 - Improved the look of dragging: the whole item row (or list chip) now floats under the cursor instead of a tiny grip, the item you are moving dims, and a highlighted line shows where it will drop.
 
