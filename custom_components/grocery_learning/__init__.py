@@ -492,12 +492,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         except Exception as err:  # pragma: no cover
             _LOGGER.warning("Failed loading grocery activity storage, using empty list: %s", err)
             activity = []
+        try:
+            frequent = await store.load_frequent()
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed loading grocery frequent-item storage, using empty map: %s", err)
+            frequent = {}
 
         data["store"] = store
         data["terms"] = terms
         data["item_meta"] = item_meta
         data["multilist"] = multilist
         data["activity"] = activity
+        data["frequent"] = frequent
         data.setdefault("pending_duplicate", {})
         data.setdefault("pending_review", {})
         data["categories"] = list(DEFAULT_CATEGORIES)
@@ -549,6 +555,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN].get("item_meta", {}),
             hass.data[DOMAIN].get("multilist"),
             hass.data[DOMAIN].get("activity", []),
+            hass.data[DOMAIN].get("frequent", {}),
         )
         hass.data[DOMAIN]["dashboard_revision"] = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0) + 1
         changed = hass.data[DOMAIN].get("_change_list_id") or "*"
@@ -617,6 +624,42 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if _debug_enabled(hass):
             _LOGGER.info("Local List Assist activity: %s | %s | %s | %s", title, detail, list_name, source)
         await _save()
+
+    def _record_frequent(display_item: str, normalized: str) -> None:
+        # Persistent add-frequency tally, keyed by the normalized phrase, that
+        # survives clearing completed items — it powers the "frequent" quick-add
+        # suggestions. Sync (no save); the caller's _save persists it.
+        key = str(normalized).strip()
+        if not key:
+            return
+        frequent = hass.data[DOMAIN].setdefault("frequent", {})
+        if not isinstance(frequent, dict):
+            frequent = {}
+            hass.data[DOMAIN]["frequent"] = frequent
+        entry = frequent.get(key)
+        if not isinstance(entry, dict):
+            entry = {"display": display_item.strip() or key, "count": 0, "last": ""}
+        entry["count"] = int(entry.get("count", 0) or 0) + 1
+        entry["display"] = display_item.strip() or entry.get("display", key)
+        entry["last"] = dt_util.utcnow().isoformat()
+        frequent[key] = entry
+
+    def _frequent_payload(exclude_normalized: set[str], limit: int = 8) -> list[dict[str, Any]]:
+        frequent = hass.data[DOMAIN].get("frequent", {})
+        if not isinstance(frequent, dict):
+            return []
+        rows = [
+            (key, value)
+            for key, value in frequent.items()
+            if isinstance(value, dict)
+            and int(value.get("count", 0) or 0) >= 2
+            and key not in exclude_normalized
+        ]
+        rows.sort(key=lambda kv: (int(kv[1].get("count", 0) or 0), kv[1].get("last", "")), reverse=True)
+        return [
+            {"item": str(value.get("display", key)).strip() or key, "count": int(value.get("count", 0) or 0)}
+            for key, value in rows[:limit]
+        ]
 
     def _activity_payload() -> list[dict[str, str]]:
         activity = hass.data[DOMAIN].get("activity", [])
@@ -1445,6 +1488,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _clear_pending_duplicate()
             pending_duplicate = {}
 
+        # Suppress frequent-item suggestions that are already on the active list
+        # (needs_action) so the quick-add row never offers a duplicate.
+        exclude_normalized = {
+            _normalize_term(str(item.get("summary", "")).strip())
+            for item in items
+            if str(item.get("status", "")).strip() == "needs_action"
+        }
+        exclude_normalized.discard("")
+
         return {
             "categories": categories + ["other"],
             "groups": grouped,
@@ -1483,6 +1535,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "template_presets": template_presets(default_categories),
             },
             "activity": _activity_payload(),
+            "frequent_items": _frequent_payload(exclude_normalized),
             "setup": {
                 "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
             },
@@ -1561,6 +1614,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         target_entity = _internal_list_entity(category)
         if duplicate_item and not allow_duplicate:
             duplicate_item["quantity"] = _quantity_for_item(duplicate_item) + quantity
+            _record_frequent(display_item, normalized)
             await _record_item_meta(target_entity, display_item, call, quantity=quantity)
             duplicate_item["description"] = _description_with_existing_meta(
                 target_entity,
@@ -1589,6 +1643,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "quantity": quantity,
             }
         )
+        _record_frequent(display_item, normalized)
         await _record_item_meta(target_entity, display_item, call, quantity=quantity)
         await _save()
         await _record_activity(

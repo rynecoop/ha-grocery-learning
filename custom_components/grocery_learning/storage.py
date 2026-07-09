@@ -232,12 +232,39 @@ class GroceryLearningStore:
             )
         return cleaned
 
+    async def load_frequent(self) -> dict[str, dict]:
+        """Load the persistent per-item add-frequency tally."""
+        data = await self._store.async_load()
+        if not isinstance(data, dict):
+            return {}
+        raw = data.get("frequent", {})
+        if not isinstance(raw, dict):
+            return {}
+
+        cleaned: dict[str, dict] = {}
+        for key, value in raw.items():
+            if not isinstance(key, str) or not isinstance(value, dict):
+                continue
+            try:
+                count = int(value.get("count", 0) or 0)
+            except (TypeError, ValueError):
+                count = 0
+            if count <= 0:
+                continue
+            cleaned[key] = {
+                "display": str(value.get("display", key)).strip() or key,
+                "count": count,
+                "last": str(value.get("last", "")).strip(),
+            }
+        return cleaned
+
     async def save(
         self,
         terms: LearnedTerms,
         item_meta: dict[str, dict[str, str]] | None = None,
         multilist: dict | None = None,
         activity: list[dict[str, str]] | None = None,
+        frequent: dict[str, dict] | None = None,
     ) -> None:
         """Persist data to storage."""
         payload = {
@@ -248,6 +275,8 @@ class GroceryLearningStore:
             payload["multilist"] = multilist
         if activity is not None:
             payload["activity"] = activity
+        if frequent is not None:
+            payload["frequent"] = frequent
         await self._store.async_save(
             payload
         )

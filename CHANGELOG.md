@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.18.0
+- Added a "Frequent" quick-add row above the list: items you add often show up as one-tap chips so common staples go on the list without typing. Suggestions only appear once you've added an item a couple of times, they hide anything already on the current list, and the tally survives clearing completed items.
+
 ## 0.17.0
 - Much better automatic categorizing: greatly expanded the built-in knowledge of common grocery items and made matching prefer the most specific match, so far fewer items land in "Other" and you rarely have to teach or fix a category. For example "tomato sauce" now goes to Pantry instead of Produce.
 
