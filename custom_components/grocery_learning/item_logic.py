@@ -224,15 +224,22 @@ def category_for_term(
         if len(token) > 4 and token.endswith("es"):
             token_forms.add(token[:-2])
 
-    # Score keyword hits by specificity: a multi-word keyword like "tomato
-    # sauce" (pantry) should beat a single-word "tomato" (produce) for the item
-    # "tomato sauce". Ties fall to category order (first category listed wins).
+    # Score keyword hits so the best match wins, not just the first category:
+    #  * more matched words is more specific ("tomato sauce" > "tomato"), and
+    #  * a keyword that matches the item's head noun (its last word) breaks ties
+    #    toward what the item *is* — so "mushroom soup" routes to pantry ("soup")
+    #    rather than produce ("mushroom"), and "green pepper" stays produce.
+    # Equal scores fall to category order (first category listed wins).
+    head = tokens[-1] if tokens else ""
     best_category = ""
     best_score = 0
     for category in categories:
         for keyword in keywords_by_category.get(category, ()):
             parts = [p for p in str(keyword).split(" ") if p]
-            if parts and len(parts) > best_score and all(part in token_forms for part in parts):
-                best_score = len(parts)
+            if not parts or not all(part in token_forms for part in parts):
+                continue
+            score = len(parts) * 2 + (1 if head in parts else 0)
+            if score > best_score:
+                best_score = score
                 best_category = category
     return best_category or "other"
