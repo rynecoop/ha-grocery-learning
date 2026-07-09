@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.15.1
+- Improved the look of dragging: the whole item row (or list chip) now floats under the cursor instead of a tiny grip, the item you are moving dims, and a highlighted line shows where it will drop.
+
 ## 0.15.0
 - Added drag-and-drop reordering of items within a list: grab the handle on the left of an item and drop it where you want; the order is saved and syncs to other devices.
 - Made live updates list-aware: a change on one list no longer refreshes panels that are viewing a different list, so open devices do less unnecessary work.
