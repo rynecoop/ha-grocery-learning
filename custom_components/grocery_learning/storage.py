@@ -258,6 +258,44 @@ class GroceryLearningStore:
             }
         return cleaned
 
+    async def load_meals(self) -> dict[str, dict]:
+        """Load saved meals (name + ingredient list), keyed by meal id."""
+        data = await self._store.async_load()
+        if not isinstance(data, dict):
+            return {}
+        raw = data.get("meals", {})
+        if not isinstance(raw, dict):
+            return {}
+
+        cleaned: dict[str, dict] = {}
+        for key, value in raw.items():
+            if not isinstance(key, str) or not isinstance(value, dict):
+                continue
+            meal_id = key.strip()
+            if not meal_id:
+                continue
+            name = str(value.get("name", "")).strip()
+            if not name:
+                continue
+            ingredients_raw = value.get("ingredients", [])
+            ingredients: list[dict[str, str]] = []
+            if isinstance(ingredients_raw, list):
+                for ingredient in ingredients_raw:
+                    if isinstance(ingredient, dict):
+                        item = str(ingredient.get("item", "")).strip()
+                    else:
+                        item = str(ingredient).strip()
+                    if item:
+                        ingredients.append({"item": item})
+            cleaned[meal_id] = {
+                "id": meal_id,
+                "name": name,
+                "ingredients": ingredients,
+                "created": str(value.get("created", "")).strip(),
+                "updated": str(value.get("updated", "")).strip(),
+            }
+        return cleaned
+
     async def save(
         self,
         terms: LearnedTerms,
@@ -265,6 +303,7 @@ class GroceryLearningStore:
         multilist: dict | None = None,
         activity: list[dict[str, str]] | None = None,
         frequent: dict[str, dict] | None = None,
+        meals: dict[str, dict] | None = None,
     ) -> None:
         """Persist data to storage."""
         payload = {
@@ -277,6 +316,8 @@ class GroceryLearningStore:
             payload["activity"] = activity
         if frequent is not None:
             payload["frequent"] = frequent
+        if meals is not None:
+            payload["meals"] = meals
         await self._store.async_save(
             payload
         )

@@ -497,6 +497,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         except Exception as err:  # pragma: no cover
             _LOGGER.warning("Failed loading grocery frequent-item storage, using empty map: %s", err)
             frequent = {}
+        try:
+            meals = await store.load_meals()
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed loading grocery saved-meals storage, using empty map: %s", err)
+            meals = {}
 
         data["store"] = store
         data["terms"] = terms
@@ -504,6 +509,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         data["multilist"] = multilist
         data["activity"] = activity
         data["frequent"] = frequent
+        data["meals"] = meals
         data.setdefault("pending_duplicate", {})
         data.setdefault("pending_review", {})
         data["categories"] = list(DEFAULT_CATEGORIES)
@@ -556,6 +562,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN].get("multilist"),
             hass.data[DOMAIN].get("activity", []),
             hass.data[DOMAIN].get("frequent", {}),
+            hass.data[DOMAIN].get("meals", {}),
         )
         hass.data[DOMAIN]["dashboard_revision"] = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0) + 1
         changed = hass.data[DOMAIN].get("_change_list_id") or "*"
@@ -660,6 +667,51 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             {"item": str(value.get("display", key)).strip() or key, "count": int(value.get("count", 0) or 0)}
             for key, value in rows[:limit]
         ]
+
+    def _meals_payload() -> list[dict[str, Any]]:
+        # Saved meals with each ingredient's guessed category for the confirm
+        # checklist. The category is a display hint only; the real routing
+        # happens per-ingredient at add time via the normal route_item path.
+        meals = hass.data[DOMAIN].get("meals", {})
+        if not isinstance(meals, dict):
+            return []
+        terms_obj = hass.data[DOMAIN].get("terms")
+        out: list[dict[str, Any]] = []
+        for meal_id, meal in meals.items():
+            if not isinstance(meal, dict):
+                continue
+            name = str(meal.get("name", "")).strip()
+            if not name:
+                continue
+            ingredients: list[dict[str, str]] = []
+            for ingredient in meal.get("ingredients", []) or []:
+                raw = ingredient.get("item", "") if isinstance(ingredient, dict) else ingredient
+                item = str(raw).strip()
+                if not item:
+                    continue
+                category = "other"
+                if terms_obj is not None:
+                    try:
+                        category = _get_category_for_term(terms_obj, _normalize_term(item)) or "other"
+                    except Exception:  # pragma: no cover - defensive
+                        category = "other"
+                ingredients.append(
+                    {
+                        "item": item,
+                        "category": category,
+                        "category_display": _display_name_for_category(category),
+                    }
+                )
+            out.append(
+                {
+                    "id": str(meal.get("id", meal_id)).strip() or meal_id,
+                    "name": name,
+                    "ingredients": ingredients,
+                    "ingredient_count": len(ingredients),
+                }
+            )
+        out.sort(key=lambda meal: meal["name"].lower())
+        return out
 
     def _activity_payload() -> list[dict[str, str]]:
         activity = hass.data[DOMAIN].get("activity", [])
@@ -1536,6 +1588,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             },
             "activity": _activity_payload(),
             "frequent_items": _frequent_payload(exclude_normalized),
+            "meals": _meals_payload(),
             "setup": {
                 "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
             },
@@ -2448,6 +2501,102 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 blocking=True,
             )
             return {"ok": True}
+
+        if action == "save_meal":
+            name = _display_item_summary(str(payload.get("name", "")).strip()) or str(payload.get("name", "")).strip()
+            if not name:
+                return {"ok": False, "error": "missing_name"}
+            ingredients_raw = payload.get("ingredients", [])
+            ingredients: list[dict[str, str]] = []
+            seen: set[str] = set()
+            if isinstance(ingredients_raw, list):
+                for entry in ingredients_raw:
+                    raw = entry.get("item", "") if isinstance(entry, dict) else entry
+                    item = _display_item_summary(str(raw).strip()) or str(raw).strip()
+                    if not item:
+                        continue
+                    key = item.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    ingredients.append({"item": item})
+            meals = hass.data[DOMAIN].setdefault("meals", {})
+            if not isinstance(meals, dict):
+                meals = {}
+                hass.data[DOMAIN]["meals"] = meals
+            now = dt_util.utcnow().isoformat()
+            meal_id = _normalize_list_id(str(payload.get("meal_id", "")).strip()) if str(payload.get("meal_id", "")).strip() else ""
+            if not meal_id:
+                base = _normalize_list_id(name)
+                meal_id = base
+                suffix = 2
+                while meal_id in meals:
+                    meal_id = f"{base}_{suffix}"
+                    suffix += 1
+            created = str(meals.get(meal_id, {}).get("created", "")).strip() or now
+            meals[meal_id] = {
+                "id": meal_id,
+                "name": name,
+                "ingredients": ingredients,
+                "created": created,
+                "updated": now,
+            }
+            await _save()
+            await _record_activity("Meal saved", f"{name} · {len(ingredients)} ingredients", "", "panel")
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
+        if action == "delete_meal":
+            meal_id = str(payload.get("meal_id", "")).strip()
+            meals = hass.data[DOMAIN].get("meals", {})
+            if isinstance(meals, dict) and meal_id in meals:
+                removed = meals.pop(meal_id)
+                await _save()
+                await _record_activity("Meal removed", str(removed.get("name", meal_id)).strip() or meal_id, "", "panel")
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
+        if action == "add_meal_to_list":
+            target_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            _mark_changed_list(target_list_id)
+            items_raw = payload.get("items", [])
+            items: list[str] = []
+            if isinstance(items_raw, list):
+                for entry in items_raw:
+                    raw = entry.get("item", "") if isinstance(entry, dict) else entry
+                    item = str(raw).strip()
+                    if item:
+                        items.append(item)
+            request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
+            actor_name = str(payload.get("actor_name", "")).strip()
+            if request_user_id and not actor_name:
+                req_user = await hass.auth.async_get_user(request_user_id)
+                actor_name = _display_name_from_user(req_user)
+            request_context = Context(user_id=request_user_id) if request_user_id else None
+            added = 0
+            for item in items:
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_ROUTE_ITEM,
+                    {
+                        "item": item,
+                        "review_on_other": False,
+                        "source": "meal",
+                        "interactive_duplicate": False,
+                        "allow_duplicate": False,
+                        "quantity": 1,
+                        "list_id": target_list_id,
+                        "actor_user_id": request_user_id,
+                        "actor_name": actor_name,
+                    },
+                    blocking=True,
+                    context=request_context,
+                )
+                added += 1
+            if added:
+                _, target_obj = _internal_list_by_id(target_list_id)
+                list_name = str(target_obj.get("name", "")).strip() if isinstance(target_obj, dict) else ""
+                meal_name = str(payload.get("meal_name", "")).strip() or "Meal"
+                await _record_activity("Meal added", f"{meal_name} · {added} items", list_name, "meal")
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(target_list_id)}
 
         return {"ok": False, "error": "unknown_action"}
 

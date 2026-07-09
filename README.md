@@ -1,6 +1,6 @@
 # Local List Assist
 
-Local List Assist is a Home Assistant custom integration that gives you a local-first list app with clean list management, category-based organization, a phone-friendly Shopping Mode, one-tap frequent items, duplicate handling, review-and-learn routing, and voice-friendly add flows.
+Local List Assist is a Home Assistant custom integration that gives you a local-first list app with clean list management, category-based organization, a phone-friendly Shopping Mode, one-tap frequent items, saved meals, duplicate handling, review-and-learn routing, and voice-friendly add flows.
 
 ![Local List Assist main list](docs/screenshots/main-list.png)
 
@@ -14,6 +14,7 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 - dedicated sidebar app: `Local List Assist`
 - **Shopping Mode**: a focused, big-tap-target screen for when you are at the store
 - **Frequent quick-add**: one-tap chips for the items you add most often
+- **saved Meals**: define a meal once, then add its ingredients with a confirm checklist
 - **smarter automatic categories** so far fewer items land in `Other`
 - quick add with per-user attribution where Home Assistant provides user context
 - multiple local lists with color theming
@@ -38,6 +39,11 @@ Tap the cart button (🛒) to switch into Shopping Mode: a stripped-down, phone-
 
 ### Frequent Quick-Add
 The `FREQUENT` row above the list shows the staples you add most often as one-tap chips, so common items go on the list without typing. Suggestions appear once you have added an item a couple of times, hide anything already on the current list, and the tally survives clearing completed items.
+
+### Saved Meals
+Open `Meals` from the menu (⋯) to define a meal once — a name plus its ingredients, one per line. Then `Add to list` opens a confirm checklist: every ingredient is pre-checked, so you just uncheck anything you already have (or grew in the garden) and add the rest. Each ingredient is auto-categorized as it goes on the list, and meals are stored locally like everything else.
+
+![Saved Meals confirm checklist](docs/screenshots/meals.png)
 
 ### Smarter Automatic Categories
 Items are sorted into category sections automatically using an expanded built-in knowledge of common grocery items, with matching that prefers the most specific match (for example `tomato sauce` routes to `Pantry`, not `Produce`). When something still lands in `Other`, the review-and-learn flow lets you teach the correct category once and it sticks.

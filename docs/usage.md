@@ -27,6 +27,18 @@
 - anything already on the current list is hidden from the row
 - the frequency tally is kept even when you `Clear Completed`, so your common items keep showing up
 
+## Saved Meals
+- open `Meals` from the menu (⋯)
+- tap `New Meal`, give it a name, and enter its ingredients one per line, then `Create Meal`
+- tap `Add to list` on a meal to open a confirm checklist
+- every ingredient starts checked; uncheck anything you already have or grew, then tap `Add N to list`
+- use `All` / `None` to toggle every ingredient at once
+- each added ingredient is auto-categorized on the current list, just like a normal add
+- `Edit` changes a meal's name or ingredients; `Delete` removes it
+- meals are stored locally and shared across your Home Assistant devices
+
+![Saved Meals confirm checklist](screenshots/meals.png)
+
 ## Automatic Categories
 - items are sorted into category sections automatically from a built-in knowledge of common grocery items
 - matching prefers the most specific match, so multi-word items land correctly (for example `tomato sauce` goes to `Pantry`, not `Produce`)

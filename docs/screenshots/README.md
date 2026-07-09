@@ -9,6 +9,8 @@ Current captures used in the README and docs:
   - the phone-sized layout with the mobile header bar, chips, quick add, and `FREQUENT` row
 - `shopping-mode.png`
   - Shopping Mode: unchecked items in store order, progress bar, big tap targets, and quick add
+- `meals.png`
+  - the saved-meal confirm checklist: ingredients pre-checked, category chips, and `Add N to list`
 - `duplicate-review.png`
   - the duplicate decision card (`Add anyway` / `Skip`)
 - `configure.png`
