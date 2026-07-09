@@ -1463,7 +1463,7 @@ class LocalListAssistPanel extends LitElement {
     .quick-add-row { align-items: stretch; }
     .qty-input { width: 96px; flex: 0 0 96px; text-align: center; }
     .frequent-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
-    .frequent-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--lla-muted); margin-right: 2px; }
+    .frequent-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--lla-text-dim); margin-right: 2px; }
     .frequent-chip {
       display: inline-flex; align-items: center; gap: 4px;
       border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--lla-border));
