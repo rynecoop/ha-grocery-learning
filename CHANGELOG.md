@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.20.0
+- Meals: added "From current list" — turn whatever is on the active list into a saved meal in one step, so a list you build often becomes a reusable meal.
+- Meals: you can now edit an ingredient right in the confirm checklist (tap the pencil) before adding it, so a quick tweak no longer means editing the whole meal.
+- Frequent: long-press (or right-click) a Frequent chip to hide a suggestion you never want; it stays hidden even if it gets added again later.
+
 ## 0.19.1
 - Hardened the header layout on very narrow phones: the action buttons (cart, add, menu, refresh) now wrap onto a second line instead of being clipped at the edge on small screens, and a long dashboard name wraps instead of pushing the buttons off-screen.
 
