@@ -537,6 +537,19 @@ class LocalListAssistPanel extends LitElement {
     });
   }
 
+  async quickAddItem(item) {
+    const name = String(item || "").trim();
+    if (!name) return;
+    await this.act({
+      action: "add_item",
+      item: name,
+      quantity: 1,
+      list_id: this.currentListId(),
+      actor_user_id: this._hass?.user?.id || "",
+      actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
+    });
+  }
+
   toggleEditor(item) {
     const key = this.editorKey(item);
     if (this._openEditorKey === key) {
@@ -862,6 +875,7 @@ class LocalListAssistPanel extends LitElement {
               @input=${(e) => this.updateDraft("quickAddQty", e.target.value)} />
             <button class="btn primary" @click=${() => this.addItem()}>Add</button>
           </div>
+          ${this._frequentTemplate(state)}
         </section>
 
         ${this._menuOpen ? this._menuTemplate(multilist) : nothing}
@@ -1037,6 +1051,19 @@ class LocalListAssistPanel extends LitElement {
             @input=${(e) => this.updateDraft(`quantity:${key}`, e.target.value)} />
           <button class="btn" @click=${(e) => { e.stopPropagation(); this.saveCompletedItem(item); }}>Save</button>
         </div>
+      </div>`;
+  }
+
+  _frequentTemplate(state) {
+    const frequent = (state?.frequent_items || []).filter((f) => f && f.item);
+    if (!frequent.length) return nothing;
+    return html`
+      <div class="frequent-row" aria-label="Frequently added items">
+        <span class="frequent-label">Frequent</span>
+        ${frequent.map((f) => html`
+          <button class="frequent-chip" title=${`Added ${f.count}×`} @click=${() => this.quickAddItem(f.item)}>
+            <span class="frequent-plus">+</span>${f.item}
+          </button>`)}
       </div>`;
   }
 
@@ -1435,6 +1462,16 @@ class LocalListAssistPanel extends LitElement {
     }
     .quick-add-row { align-items: stretch; }
     .qty-input { width: 96px; flex: 0 0 96px; text-align: center; }
+    .frequent-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+    .frequent-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--lla-muted); margin-right: 2px; }
+    .frequent-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--lla-border));
+      background: color-mix(in srgb, var(--accent) 12%, var(--lla-surface-2));
+      color: var(--lla-text); border-radius: 999px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 13px;
+    }
+    .frequent-chip:hover { background: color-mix(in srgb, var(--accent) 22%, var(--lla-surface-2)); }
+    .frequent-plus { font-weight: 700; color: var(--accent); }
     .color-input { width: 100%; min-height: 48px; background: var(--lla-input-bg); border: 1px solid var(--lla-border); border-radius: 14px; padding: 6px; }
     .btn {
       border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--lla-border));
