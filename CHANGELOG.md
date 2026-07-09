@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.22.0
+- Meals now hold directions too, so a saved meal is a full recipe. Open a meal to get a tidy detail view with two tabs: "Add to list" (the ingredient checklist) and "Directions" — a numbered step list you can tap to check off as you cook. Add the directions when you create or edit a meal (one step per line). Tapping a meal opens it; Edit and Delete moved into that view.
+
 ## 0.21.0
 - Added Backup & Restore (App Settings → Tools): export a single local JSON file with all your lists, saved meals, item history, and learned categories, and import it later to restore everything — handy for moving to a new Home Assistant install or keeping a safety copy. Import replaces your current data; run Repair Local Setup afterwards if you use voice.
 

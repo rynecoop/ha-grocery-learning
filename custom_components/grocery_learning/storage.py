@@ -297,10 +297,17 @@ class GroceryLearningStore:
                         item = str(ingredient).strip()
                     if item:
                         ingredients.append({"item": item})
+            directions_raw = value.get("directions", [])
+            directions: list[str] = []
+            if isinstance(directions_raw, list):
+                directions = [str(step).strip() for step in directions_raw if str(step).strip()]
+            elif isinstance(directions_raw, str):
+                directions = [line.strip() for line in directions_raw.splitlines() if line.strip()]
             cleaned[meal_id] = {
                 "id": meal_id,
                 "name": name,
                 "ingredients": ingredients,
+                "directions": directions,
                 "created": str(value.get("created", "")).strip(),
                 "updated": str(value.get("updated", "")).strip(),
             }

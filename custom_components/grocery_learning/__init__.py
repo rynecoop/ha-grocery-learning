@@ -694,12 +694,21 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         "category_display": _display_name_for_category(category),
                     }
                 )
+            directions_raw = meal.get("directions", [])
+            if isinstance(directions_raw, str):
+                directions = [line.strip() for line in directions_raw.splitlines() if line.strip()]
+            elif isinstance(directions_raw, list):
+                directions = [str(step).strip() for step in directions_raw if str(step).strip()]
+            else:
+                directions = []
             out.append(
                 {
                     "id": str(meal.get("id", meal_id)).strip() or meal_id,
                     "name": name,
                     "ingredients": ingredients,
                     "ingredient_count": len(ingredients),
+                    "directions": directions,
+                    "direction_count": len(directions),
                 }
             )
         out.sort(key=lambda meal: meal["name"].lower())
@@ -2500,6 +2509,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 return {"ok": False, "error": "missing_name"}
             ingredients_raw = payload.get("ingredients", [])
             ingredients = _merge_meal_ingredients(ingredients_raw if isinstance(ingredients_raw, list) else [])
+            directions_raw = payload.get("directions", [])
+            if isinstance(directions_raw, str):
+                directions = [line.strip() for line in directions_raw.splitlines() if line.strip()]
+            elif isinstance(directions_raw, list):
+                directions = [str(step).strip() for step in directions_raw if str(step).strip()]
+            else:
+                directions = []
             meals = hass.data[DOMAIN].setdefault("meals", {})
             if not isinstance(meals, dict):
                 meals = {}
@@ -2513,6 +2529,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "id": meal_id,
                 "name": name,
                 "ingredients": ingredients,
+                "directions": directions,
                 "created": created,
                 "updated": now,
             }

@@ -42,9 +42,10 @@ Tap the cart button (🛒) to switch into Shopping Mode: a stripped-down, phone-
 The `FREQUENT` row above the list shows the staples you add most often as one-tap chips, so common items go on the list without typing. Suggestions appear once you have added an item a couple of times, hide anything already on the current list, and the tally survives clearing completed items.
 
 ### Saved Meals
-Open `Meals` from the menu (⋯) to define a meal once — a name plus its ingredients, one per line. Then `Add to list` opens a confirm checklist: every ingredient is pre-checked, so you just uncheck anything you already have (or grew in the garden) and add the rest. Each ingredient is auto-categorized as it goes on the list, and meals are stored locally like everything else.
+Open `Meals` from the menu (⋯) to define a meal once — a name, its ingredients (one per line), and optionally its directions (one step per line). Tapping a meal opens a detail view with two tabs: **Add to list**, a pre-checked ingredient checklist so you just uncheck anything you already have (or grew in the garden) and add the rest; and **Directions**, a numbered step list you can tap to check off as you cook. Each ingredient is auto-categorized as it goes on the list, and meals are stored locally like everything else.
 
-![Saved Meals confirm checklist](docs/screenshots/meals.png)
+![Saved Meals detail — Add to list tab](docs/screenshots/meals.png)
+![Saved Meals detail — Directions cook mode](docs/screenshots/meal-directions.png)
 
 ### Smarter Automatic Categories
 Items are sorted into category sections automatically using an expanded built-in knowledge of common grocery items, with matching that prefers the most specific match (for example `tomato sauce` routes to `Pantry`, not `Produce`). When something still lands in `Other`, the review-and-learn flow lets you teach the correct category once and it sticks.
