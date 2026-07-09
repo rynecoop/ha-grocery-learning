@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.23.0
+- Added a weekly meal planner: open Meals and switch to "This Week" to assign your saved meals to Monday–Sunday. Add a single day's ingredients or the whole week's to your list in one go — the ingredients are combined and de-duplicated across meals, then shown in the same confirm checklist so you can uncheck what you already have. Includes "Clear week", and the plan is stored locally and included in backups.
+
 ## 0.22.0
 - Meals now hold directions too, so a saved meal is a full recipe. Open a meal to get a tidy detail view with two tabs: "Add to list" (the ingredient checklist) and "Directions" — a numbered step list you can tap to check off as you cook. Add the directions when you create or edit a meal (one step per line). Tapping a meal opens it; Edit and Delete moved into that view.
 

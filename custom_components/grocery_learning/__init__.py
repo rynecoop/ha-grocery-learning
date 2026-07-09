@@ -85,6 +85,7 @@ from .storage import GroceryLearningStore, LearnedTerms
 
 _LOGGER = logging.getLogger(__name__)
 MAX_ACTIVITY_ITEMS = 40
+WEEK_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 INTENT_LOCAL_LIST_ASSIST_ADD_ITEM = "LocalListAssistAddItem"
 LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision"
 
@@ -505,6 +506,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         except Exception as err:  # pragma: no cover
             _LOGGER.warning("Failed loading grocery saved-meals storage, using empty map: %s", err)
             meals = {}
+        try:
+            meal_plan = await store.load_meal_plan()
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed loading grocery meal-plan storage, using empty plan: %s", err)
+            meal_plan = {day: [] for day in WEEK_DAYS}
 
         data["store"] = store
         data["terms"] = terms
@@ -513,6 +519,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         data["activity"] = activity
         data["frequent"] = frequent
         data["meals"] = meals
+        data["meal_plan"] = meal_plan
         data.setdefault("pending_duplicate", {})
         data.setdefault("pending_review", {})
         data["categories"] = list(DEFAULT_CATEGORIES)
@@ -566,6 +573,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN].get("activity", []),
             hass.data[DOMAIN].get("frequent", {}),
             hass.data[DOMAIN].get("meals", {}),
+            hass.data[DOMAIN].get("meal_plan", {}),
         )
         hass.data[DOMAIN]["dashboard_revision"] = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0) + 1
         changed = hass.data[DOMAIN].get("_change_list_id") or "*"
@@ -712,6 +720,23 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 }
             )
         out.sort(key=lambda meal: meal["name"].lower())
+        return out
+
+    def _meal_plan_payload() -> dict[str, list[dict[str, str]]]:
+        # Resolve each day's meal ids to {meal_id, name}, dropping any ids whose
+        # meal has since been deleted so the planner never shows dangling rows.
+        plan = hass.data[DOMAIN].get("meal_plan", {})
+        meals = hass.data[DOMAIN].get("meals", {})
+        out: dict[str, list[dict[str, str]]] = {}
+        for day in WEEK_DAYS:
+            ids = plan.get(day, []) if isinstance(plan, dict) else []
+            entries: list[dict[str, str]] = []
+            if isinstance(ids, list):
+                for meal_id in ids:
+                    meal = meals.get(meal_id) if isinstance(meals, dict) else None
+                    if isinstance(meal, dict) and str(meal.get("name", "")).strip():
+                        entries.append({"meal_id": str(meal_id), "name": str(meal.get("name")).strip()})
+            out[day] = entries
         return out
 
     def _activity_payload() -> list[dict[str, str]]:
@@ -1590,6 +1615,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "activity": _activity_payload(),
             "frequent_items": _frequent_payload(exclude_normalized),
             "meals": _meals_payload(),
+            "meal_plan": _meal_plan_payload(),
             "setup": {
                 "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
             },
@@ -2601,6 +2627,39 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 await _record_activity("Meal added", f"{meal_name} · {added} items", list_name, "meal")
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal(target_list_id)}
 
+        if action == "assign_meal":
+            day = str(payload.get("day", "")).strip().lower()
+            meal_id = str(payload.get("meal_id", "")).strip()
+            meals = hass.data[DOMAIN].get("meals", {})
+            if day in WEEK_DAYS and isinstance(meals, dict) and meal_id in meals:
+                plan = hass.data[DOMAIN].setdefault("meal_plan", {d: [] for d in WEEK_DAYS})
+                if not isinstance(plan, dict):
+                    plan = {d: [] for d in WEEK_DAYS}
+                    hass.data[DOMAIN]["meal_plan"] = plan
+                day_list = plan.setdefault(day, [])
+                if not isinstance(day_list, list):
+                    day_list = []
+                    plan[day] = day_list
+                if meal_id not in day_list:
+                    day_list.append(meal_id)
+                    await _save()
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
+        if action == "unassign_meal":
+            day = str(payload.get("day", "")).strip().lower()
+            meal_id = str(payload.get("meal_id", "")).strip()
+            plan = hass.data[DOMAIN].get("meal_plan", {})
+            if isinstance(plan, dict) and isinstance(plan.get(day), list) and meal_id in plan[day]:
+                plan[day] = [existing for existing in plan[day] if existing != meal_id]
+                await _save()
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
+        if action == "clear_meal_plan":
+            hass.data[DOMAIN]["meal_plan"] = {d: [] for d in WEEK_DAYS}
+            await _save()
+            await _record_activity("Meal plan cleared", "Cleared the weekly plan", "", "panel")
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
         if action == "export_data":
             terms_obj = hass.data[DOMAIN].get("terms")
             export = {
@@ -2613,6 +2672,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "multilist": hass.data[DOMAIN].get("multilist", {}),
                     "frequent": hass.data[DOMAIN].get("frequent", {}),
                     "meals": hass.data[DOMAIN].get("meals", {}),
+                    "meal_plan": hass.data[DOMAIN].get("meal_plan", {}),
                 },
             }
             return {"ok": True, "export": export}
@@ -2628,7 +2688,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             raw = await store.load_raw()
             if not isinstance(raw, dict):
                 raw = {}
-            for key in ("terms", "item_meta", "multilist", "frequent", "meals", "activity"):
+            for key in ("terms", "item_meta", "multilist", "frequent", "meals", "meal_plan", "activity"):
                 if isinstance(incoming.get(key), (dict, list)):
                     raw[key] = incoming[key]
             await store.save_raw(raw)
@@ -2640,6 +2700,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN]["multilist"] = await store.load_multilist(list(DEFAULT_CATEGORIES))
             hass.data[DOMAIN]["frequent"] = await store.load_frequent()
             hass.data[DOMAIN]["meals"] = await store.load_meals()
+            hass.data[DOMAIN]["meal_plan"] = await store.load_meal_plan()
             hass.data[DOMAIN]["activity"] = await store.load_activity()
             _mark_changed_list("*")
             await _save()

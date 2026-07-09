@@ -45,6 +45,12 @@ class LocalListAssistPanel extends LitElement {
     _mealEditingKey: { state: true },
     _mealTab: { state: true },
     _stepsChecked: { state: true },
+    _mealsView: { state: true },
+    _confirmOpen: { state: true },
+    _confirmItems: { state: true },
+    _confirmChecked: { state: true },
+    _confirmEdits: { state: true },
+    _confirmEditingKey: { state: true },
     _openEditorKey: { state: true },
     _undo: { state: true },
     _dragListId: { state: true },
@@ -77,6 +83,14 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditingKey = "";
     this._mealTab = "add";
     this._stepsChecked = {};
+    this._mealsView = "meals";
+    this._confirmOpen = false;
+    this._confirmItems = [];
+    this._confirmTitle = "";
+    this._confirmMealName = "";
+    this._confirmChecked = {};
+    this._confirmEdits = {};
+    this._confirmEditingKey = "";
     this._frequentLongPressTimer = null;
     this._suppressNextFrequentClick = "";
     this._openEditorKey = "";
@@ -469,6 +483,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealsOpen = false;
     this._mealEditorId = "";
     this._mealConfirmId = "";
+    this._confirmOpen = false;
   }
 
   openNavigation() {
@@ -991,6 +1006,7 @@ class LocalListAssistPanel extends LitElement {
         ${this._reorderListId && multilist ? this._reorderTemplate(state) : nothing}
         ${this._mealsOpen ? this._mealsTemplate(state) : nothing}
         ${this._mealConfirmId ? this._mealDetailTemplate(state) : nothing}
+        ${this._confirmOpen ? this._confirmAddTemplate() : nothing}
 
         ${this._error ? html`<section class="section"><div class="title">Error</div><div class="error">${this._error}</div></section>` : nothing}
         ${this._attentionTemplates(state)}
@@ -1073,6 +1089,7 @@ class LocalListAssistPanel extends LitElement {
 
   _onKeyDown(ev) {
     if (ev.key === "Escape") {
+      if (this._confirmOpen) { this.closeConfirmAdd(); return; }
       if (this._mealConfirmId) { this.closeMealDetail(); return; }
       if (this._configOpen || this._createListOpen || this._listSettingsOpen || this._menuOpen || this._reorderListId || this._mealsOpen) {
         this.closePanels();
@@ -1238,18 +1255,70 @@ class LocalListAssistPanel extends LitElement {
   _mealsTemplate(state) {
     const meals = state?.meals || [];
     const editing = !!this._mealEditorId;
+    const view = this._mealsView === "week" ? "week" : "meals";
     return html`
       <div class="overlay-shell" @click=${() => this.closePanels()}>
         <section class="modal-card" role="dialog" aria-label="Meals" @click=${(e) => e.stopPropagation()}>
           <div class="modal-head">
             <div>
-              <div class="title">Meals</div>
-              <div class="small">Save a meal once, then add its ingredients with a tap.</div>
+              <div class="title">${view === "week" ? "This Week" : "Meals"}</div>
+              <div class="small">${view === "week" ? "Plan the week, then add a day's or the whole week's ingredients." : "Save a meal once, then add it to your list or plan your week."}</div>
             </div>
             <button class="btn icon-btn compact" aria-label="Close meals" @click=${() => this.closePanels()}>×</button>
           </div>
-          ${editing ? this._mealEditorTemplate() : this._mealListTemplate(meals)}
+          ${editing ? nothing : html`
+            <div class="meal-tabs" style="margin-bottom:14px;">
+              <button class=${"meal-tab" + (view === "meals" ? " active" : "")} @click=${() => { this._mealsView = "meals"; }}>Meals</button>
+              <button class=${"meal-tab" + (view === "week" ? " active" : "")} @click=${() => { this._mealsView = "week"; }}>This Week</button>
+            </div>`}
+          ${editing
+            ? this._mealEditorTemplate()
+            : (view === "week" ? this._weekTemplate(state, meals) : this._mealListTemplate(meals))}
         </section>
+      </div>`;
+  }
+
+  _weekTemplate(state, meals) {
+    const plan = state?.meal_plan || {};
+    const days = [
+      ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"],
+      ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"],
+    ];
+    const totalPlanned = days.reduce((sum, [key]) => sum + ((plan[key] || []).length), 0);
+    if (!meals.length) {
+      return html`<div class="empty">Create a meal first, then you can plan it into your week.</div>`;
+    }
+    return html`
+      <div class="week-list">
+        ${days.map(([key, label]) => {
+          const dayMeals = plan[key] || [];
+          return html`
+            <div class="week-day">
+              <div class="week-day-head">
+                <strong>${label}</strong>
+                ${dayMeals.length
+                  ? html`<button class="btn compact" @click=${() => this.addDayToList(key, label)}>Add day</button>`
+                  : nothing}
+              </div>
+              <div class="week-day-meals">
+                ${dayMeals.length
+                  ? dayMeals.map((m) => html`
+                    <span class="week-chip">
+                      ${m.name}
+                      <button class="week-chip-x" aria-label="Remove ${m.name}" @click=${() => this.unassignMeal(key, m.meal_id)}>×</button>
+                    </span>`)
+                  : html`<span class="small">No meals yet</span>`}
+              </div>
+              <select class="input week-select" .value=${live("")} @change=${(e) => { this.assignMeal(key, e.target.value); e.target.value = ""; }}>
+                <option value="">+ Add a meal…</option>
+                ${meals.map((meal) => html`<option value=${meal.id}>${meal.name}</option>`)}
+              </select>
+            </div>`;
+        })}
+      </div>
+      <div class="row">
+        <button class="btn primary" ?disabled=${totalPlanned === 0} @click=${() => this.addWeekToList()}>Add whole week to list</button>
+        <button class="btn danger" ?disabled=${totalPlanned === 0} @click=${() => this.clearWeek()}>Clear week</button>
       </div>`;
   }
 
@@ -1365,6 +1434,54 @@ class LocalListAssistPanel extends LitElement {
       </div>`;
   }
 
+  _confirmAddTemplate() {
+    const items = this._confirmItems || [];
+    const selectedCount = items.filter((it, idx) => this._confirmChecked[String(idx)] && String(this.confirmValueAt(idx, it.item)).trim()).length;
+    return html`
+      <div class="overlay-shell" @click=${() => this.closeConfirmAdd()}>
+        <section class="modal-card" role="dialog" aria-label="Confirm ingredients" @click=${(e) => e.stopPropagation()}>
+          <div class="modal-head">
+            <div>
+              <div class="title">${this._confirmTitle}</div>
+              <div class="small">Uncheck anything you already have, then add the rest.</div>
+            </div>
+            <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closeConfirmAdd()}>×</button>
+          </div>
+          <div class="row" style="justify-content:space-between; align-items:center;">
+            <div class="small">${selectedCount} of ${items.length} selected</div>
+            <div class="row">
+              <button class="btn compact" @click=${() => this.setAllConfirm(true)}>All</button>
+              <button class="btn compact" @click=${() => this.setAllConfirm(false)}>None</button>
+            </div>
+          </div>
+          <div class="meal-ingredients">
+            ${items.map((it, idx) => {
+              const k = String(idx);
+              const checked = !!this._confirmChecked[k];
+              const editing = this._confirmEditingKey === k;
+              const value = this.confirmValueAt(idx, it.item);
+              return html`
+                <div class=${"meal-ingredient" + (checked ? "" : " unchecked")}>
+                  <input type="checkbox" .checked=${live(checked)} @change=${() => this.toggleConfirm(idx)} />
+                  ${editing
+                    ? html`<input id=${`confirm-ing-${k}`} class="input meal-ing-input" .value=${live(value)}
+                        @input=${(e) => this.updateConfirmEdit(idx, e.target.value)}
+                        @keydown=${(e) => { if (e.key === "Enter") { e.preventDefault(); this.stopEditConfirm(); } }}
+                        @blur=${() => this.stopEditConfirm()} />`
+                    : html`<span class="meal-ingredient-name" @click=${() => this.toggleConfirm(idx)}>${value}</span>`}
+                  <button class="meal-ing-edit" aria-label="Edit ingredient" title="Edit" @click=${() => this.startEditConfirm(idx, value)}>✎</button>
+                  ${editing ? nothing : (it.category_display ? html`<span class="pill">${it.category_display}</span>` : nothing)}
+                </div>`;
+            })}
+          </div>
+          <div class="row">
+            <button class="btn primary" ?disabled=${selectedCount === 0} @click=${() => this.submitConfirmAdd()}>Add ${selectedCount} to list</button>
+            <button class="btn" @click=${() => this.closeConfirmAdd()}>Cancel</button>
+          </div>
+        </section>
+      </div>`;
+  }
+
   _mealDirectionsTab(directions) {
     if (!directions.length) {
       return html`<div class="empty">No directions yet. Use Edit to add the steps, one per line.</div>`;
@@ -1419,6 +1536,7 @@ class LocalListAssistPanel extends LitElement {
     this.closePanels();
     this._mealsOpen = true;
     this._mealEditorId = "";
+    this._mealsView = "meals";
   }
 
   openMealEditor(mealId) {
@@ -1487,6 +1605,130 @@ class LocalListAssistPanel extends LitElement {
 
   async deleteMeal(mealId) {
     await this.act({ action: "delete_meal", meal_id: mealId });
+  }
+
+  // --- weekly planner ---
+  async assignMeal(day, mealId) {
+    const id = String(mealId || "").trim();
+    if (!id) return;
+    await this.act({ action: "assign_meal", day, meal_id: id });
+  }
+
+  async unassignMeal(day, mealId) {
+    await this.act({ action: "unassign_meal", day, meal_id: mealId });
+  }
+
+  async clearWeek() {
+    if (!window.confirm("Clear all meals from this week's plan?")) return;
+    await this.act({ action: "clear_meal_plan" });
+  }
+
+  aggregateMealItems(mealIds) {
+    const byId = new Map((this._state?.meals || []).map((m) => [m.id, m]));
+    const items = [];
+    const seen = new Set();
+    for (const id of mealIds) {
+      const meal = byId.get(id);
+      if (!meal) continue;
+      for (const ing of meal.ingredients || []) {
+        const item = (ing.item || "").trim();
+        const key = item.toLowerCase();
+        if (item && !seen.has(key)) {
+          seen.add(key);
+          items.push({ item, category_display: ing.category_display || "" });
+        }
+      }
+    }
+    return items;
+  }
+
+  addDayToList(day, label) {
+    const dayMeals = (this._state?.meal_plan?.[day]) || [];
+    const items = this.aggregateMealItems(dayMeals.map((m) => m.meal_id));
+    if (!items.length) return;
+    this.openConfirmAdd(items, `${label} meals`, `${label} meals`);
+  }
+
+  addWeekToList() {
+    const plan = this._state?.meal_plan || {};
+    const ids = [];
+    ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].forEach((d) => (plan[d] || []).forEach((m) => ids.push(m.meal_id)));
+    const items = this.aggregateMealItems(ids);
+    if (!items.length) return;
+    this.openConfirmAdd(items, "This week's meals", "This week's meals");
+  }
+
+  // --- generic confirm-add checklist (used by the planner) ---
+  openConfirmAdd(items, title, mealName) {
+    const checked = {};
+    items.forEach((_it, idx) => { checked[String(idx)] = true; });
+    this._confirmItems = items;
+    this._confirmTitle = title;
+    this._confirmMealName = mealName || title;
+    this._confirmChecked = checked;
+    this._confirmEdits = {};
+    this._confirmEditingKey = "";
+    this._confirmOpen = true;
+  }
+
+  closeConfirmAdd() {
+    this._confirmOpen = false;
+    this._confirmEditingKey = "";
+  }
+
+  confirmValueAt(idx, fallback) {
+    const edited = this._confirmEdits[String(idx)];
+    return edited !== undefined ? edited : fallback;
+  }
+
+  toggleConfirm(idx) {
+    const k = String(idx);
+    this._confirmChecked = { ...this._confirmChecked, [k]: !this._confirmChecked[k] };
+  }
+
+  setAllConfirm(value) {
+    const checked = {};
+    (this._confirmItems || []).forEach((_it, idx) => { checked[String(idx)] = value; });
+    this._confirmChecked = checked;
+  }
+
+  startEditConfirm(idx, value) {
+    const k = String(idx);
+    if (this._confirmEdits[k] === undefined) {
+      this._confirmEdits = { ...this._confirmEdits, [k]: value };
+    }
+    this._confirmChecked = { ...this._confirmChecked, [k]: true };
+    this._confirmEditingKey = k;
+    this.updateComplete.then(() => {
+      const el = this.renderRoot?.getElementById(`confirm-ing-${k}`);
+      if (el) { el.focus(); el.select?.(); }
+    });
+  }
+
+  updateConfirmEdit(idx, value) {
+    this._confirmEdits = { ...this._confirmEdits, [String(idx)]: value };
+  }
+
+  stopEditConfirm() {
+    this._confirmEditingKey = "";
+  }
+
+  async submitConfirmAdd() {
+    const items = (this._confirmItems || [])
+      .map((it, idx) => ({ item: String(this.confirmValueAt(idx, it.item)).trim(), checked: !!this._confirmChecked[String(idx)] }))
+      .filter((entry) => entry.checked && entry.item)
+      .map((entry) => ({ item: entry.item }));
+    this._confirmOpen = false;
+    this._confirmEditingKey = "";
+    if (!items.length) return;
+    await this.act({
+      action: "add_meal_to_list",
+      meal_name: this._confirmMealName,
+      list_id: this.currentListId(),
+      items,
+      actor_user_id: this._hass?.user?.id || "",
+      actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
+    });
   }
 
   mealIngKey(index, item) {
@@ -1952,6 +2194,15 @@ class LocalListAssistPanel extends LitElement {
     .meal-step.done { opacity: 0.55; }
     .meal-step.done .meal-step-text { text-decoration: line-through; }
     .meal-step.done .meal-step-num { color: #fff; background: var(--accent); border-color: var(--accent); }
+    .week-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; max-height: 56vh; overflow-y: auto; }
+    .week-day { border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; background: var(--lla-surface-2); }
+    .week-day-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+    .week-day-meals { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .week-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 6px 5px 12px; font-size: 13px;
+      border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--lla-border)); background: color-mix(in srgb, var(--accent) 14%, var(--lla-surface)); }
+    .week-chip-x { border: none; background: transparent; color: var(--lla-text-dim); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; border-radius: 50%; }
+    .week-chip-x:hover { color: var(--lla-danger); }
+    .week-select { padding: 8px 10px; }
     .color-input { width: 100%; min-height: 48px; background: var(--lla-input-bg); border: 1px solid var(--lla-border); border-radius: 14px; padding: 6px; }
     .btn {
       border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--lla-border));

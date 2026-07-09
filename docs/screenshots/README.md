@@ -10,7 +10,11 @@ Current captures used in the README and docs:
 - `shopping-mode.png`
   - Shopping Mode: unchecked items in store order, progress bar, big tap targets, and quick add
 - `meals.png`
-  - the saved-meal confirm checklist: ingredients pre-checked, category chips, and `Add N to list`
+  - the saved-meal detail view, "Add to list" tab: ingredient checklist with tabs, category chips, and `Add N to list`
+- `meal-directions.png`
+  - the saved-meal detail view, "Directions" tab: numbered steps in cook mode with some checked off
+- `meal-planner.png`
+  - the weekly "This Week" planner: Monday–Sunday with assigned meal chips and add-to-list controls
 - `duplicate-review.png`
   - the duplicate decision card (`Add anyway` / `Skip`)
 - `configure.png`
