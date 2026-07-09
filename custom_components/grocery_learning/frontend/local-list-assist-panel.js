@@ -864,7 +864,7 @@ class LocalListAssistPanel extends LitElement {
           : nothing}
         <section class="hero">
           <div class="hero-head">
-            <div>
+            <div class="hero-headings">
               <div class="hero-title">${dashboardName}</div>
               <div class="sub">Local-only Home Assistant workspace. Current list: ${activeListName}.</div>
             </div>
@@ -1652,8 +1652,9 @@ class LocalListAssistPanel extends LitElement {
     }
     .title { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
     .modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
-    .hero-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-    .hero-title { font-size: 28px; font-weight: 800; margin: 0 0 8px; }
+    .hero-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .hero-headings { min-width: 0; flex: 1 1 60%; }
+    .hero-title { font-size: 28px; font-weight: 800; margin: 0 0 8px; overflow-wrap: anywhere; }
     .sub, .small, .label, .empty { color: var(--lla-text-dim); }
     .section-label { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
     .subsection { display: flex; flex-direction: column; gap: 12px; }
@@ -1751,7 +1752,7 @@ class LocalListAssistPanel extends LitElement {
     .chip-actions { display: flex; gap: 6px; }
     .chip-icon-btn { width: 28px; height: 28px; border-radius: 999px; border: 1px solid var(--lla-border); background: color-mix(in srgb, var(--accent) 18%, var(--lla-surface-2)); color: var(--lla-text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; font-size: 14px; line-height: 1; }
     .chip-icon-btn.danger { background: color-mix(in srgb, var(--lla-danger) 30%, var(--lla-surface-2)); border-color: var(--lla-danger); }
-    .hero-actions { display: flex; gap: 8px; align-items: center; }
+    .hero-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .divider { height: 1px; background: var(--lla-border); margin: 16px 0; }
     .error { color: var(--lla-danger); font-weight: 600; }
     .undo-toast {
