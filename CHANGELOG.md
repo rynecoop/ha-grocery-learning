@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.0
+- Added drag-and-drop reordering of items within a list: grab the handle on the left of an item and drop it where you want; the order is saved and syncs to other devices.
+- Made live updates list-aware: a change on one list no longer refreshes panels that are viewing a different list, so open devices do less unnecessary work.
+
 ## 0.14.0
 - Rebuilt the panel UI on Lit (Home Assistant's own framework): the app now follows your Home Assistant theme (light, dark, or custom) instead of always being dark.
 - Item edits and quick-add no longer lose focus or your typing when another device makes a change, because the list updates in place instead of rebuilding.

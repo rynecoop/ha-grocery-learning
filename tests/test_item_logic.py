@@ -232,5 +232,38 @@ class CategoryForTermTests(unittest.TestCase):
         )
 
 
+class ReorderCategoryItemsTests(unittest.TestCase):
+    def _items(self):
+        return [
+            {"id": "a", "category": "produce", "status": "needs_action"},
+            {"id": "x", "category": "dairy", "status": "needs_action"},
+            {"id": "b", "category": "produce", "status": "needs_action"},
+            {"id": "c", "category": "produce", "status": "completed"},
+            {"id": "d", "category": "produce", "status": "needs_action"},
+        ]
+
+    def test_reorders_within_category_only(self):
+        result = item_logic.reorder_category_items(self._items(), "produce", ["d", "a", "b"])
+        # Produce active slots are indices 0, 2, 4 -> now d, a, b in those slots.
+        self.assertEqual([i["id"] for i in result], ["d", "x", "a", "c", "b"])
+        # The dairy item and the completed item never moved.
+        self.assertEqual(result[1]["id"], "x")
+        self.assertEqual(result[3]["id"], "c")
+
+    def test_unmentioned_ids_keep_order_at_end(self):
+        result = item_logic.reorder_category_items(self._items(), "produce", ["d"])
+        # d first, then a and b keep their relative order.
+        self.assertEqual([i["id"] for i in result if i["category"] == "produce" and i["status"] == "needs_action"], ["d", "a", "b"])
+
+    def test_noop_for_single_or_empty(self):
+        one = [{"id": "a", "category": "produce", "status": "needs_action"}]
+        self.assertEqual(item_logic.reorder_category_items(one, "produce", ["a"]), one)
+        self.assertEqual(item_logic.reorder_category_items([], "produce", []), [])
+
+    def test_ignores_unknown_ids(self):
+        result = item_logic.reorder_category_items(self._items(), "produce", ["zzz", "b", "a", "d"])
+        self.assertEqual([i["id"] for i in result if i["category"] == "produce" and i["status"] == "needs_action"], ["b", "a", "d"])
+
+
 if __name__ == "__main__":
     unittest.main()

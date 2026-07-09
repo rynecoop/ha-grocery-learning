@@ -61,6 +61,8 @@ class LocalListAssistPanel extends LitElement {
     this._openEditorKey = "";
     this._undo = null;
     this._dragListId = "";
+    this._dragItemRef = "";
+    this._dragItemCategory = "";
     this._undoTimer = null;
     this._chipLongPressTimer = null;
     this._suppressNextChipClick = "";
@@ -174,6 +176,13 @@ class LocalListAssistPanel extends LitElement {
       return;
     }
     this._lastSeenLiveRevision = revision;
+    // Scoped updates: if the change was to a different list than the one this
+    // panel is showing, there's nothing to refresh here. "*" means broadcast
+    // (structural/list changes, or an action whose list is ambiguous).
+    const changed = String(event?.list_id ?? "*");
+    if (changed && changed !== "*" && changed !== this.currentListId()) {
+      return;
+    }
     // Keyed rendering + draft-backed inputs preserve focus and in-progress
     // edits across a reload, so we can refresh immediately.
     this.load(true);
@@ -712,6 +721,56 @@ class LocalListAssistPanel extends LitElement {
     await this.act({ action: "set_list_order", order });
   }
 
+  // --- drag and drop item reorder (within a category) ---
+  _groupFor(category) {
+    return (this._state?.groups || []).find((group) => group.category === category) || null;
+  }
+
+  onItemDragStart(item, ev) {
+    this._dragItemRef = item.item_ref;
+    this._dragItemCategory = item.category;
+    if (ev.dataTransfer) {
+      ev.dataTransfer.effectAllowed = "move";
+      try { ev.dataTransfer.setData("text/plain", item.item_ref); } catch (_e) {}
+    }
+  }
+
+  onItemDragOver(item, ev) {
+    // Only allow dropping onto another active item in the same category.
+    if (this._dragItemRef && this._dragItemCategory === item.category) {
+      ev.preventDefault();
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+    }
+  }
+
+  async onItemDrop(targetItem, ev) {
+    ev.preventDefault();
+    const draggedRef = this._dragItemRef;
+    const category = this._dragItemCategory;
+    this._dragItemRef = "";
+    this._dragItemCategory = "";
+    if (!draggedRef || draggedRef === targetItem.item_ref || category !== targetItem.category) {
+      return;
+    }
+    const group = this._groupFor(category);
+    if (!group) return;
+    const refs = (group.items || []).map((it) => it.item_ref);
+    const from = refs.indexOf(draggedRef);
+    const to = refs.indexOf(targetItem.item_ref);
+    if (from < 0 || to < 0) return;
+    refs.splice(from, 1);
+    refs.splice(to, 0, draggedRef);
+    await this.actFast(
+      { action: "set_item_order", list_id: this.currentListId(), category, order: refs },
+      (state) => {
+        const g = (state.groups || []).find((grp) => grp.category === category);
+        if (!g) return;
+        const byRef = new Map((g.items || []).map((it) => [it.item_ref, it]));
+        g.items = refs.map((ref) => byRef.get(ref)).filter(Boolean);
+      }
+    );
+  }
+
   // --- templates ---
   render() {
     const state = this._state;
@@ -862,9 +921,13 @@ class LocalListAssistPanel extends LitElement {
     const editorOpen = this._openEditorKey === key;
     const qty = Number(item.quantity || 1);
     return html`
-      <div class="item">
+      <div class="item" @dragover=${(e) => this.onItemDragOver(item, e)} @drop=${(e) => this.onItemDrop(item, e)}>
         <div class="item-main" @click=${() => this.toggleEditor(item)}>
           <div class="item-summary">
+            <span class="drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag to reorder"
+              @click=${(e) => e.stopPropagation()}
+              @dragstart=${(e) => this.onItemDragStart(item, e)}
+              @dragend=${() => { this._dragItemRef = ""; this._dragItemCategory = ""; }}>⠿</span>
             <input class="complete-toggle" type="checkbox" aria-label="Complete item"
               @click=${(e) => e.stopPropagation()}
               @change=${(e) => { if (e.target.checked) this.completeItem(item); }} />
@@ -1303,6 +1366,8 @@ class LocalListAssistPanel extends LitElement {
     .item-main { display: flex; justify-content: space-between; gap: 10px; align-items: center; cursor: pointer; }
     .item-pills { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .item-summary { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .drag-handle { cursor: grab; color: var(--lla-text-dim); font-size: 16px; line-height: 1; user-select: none; touch-action: none; padding: 0 2px; }
+    .drag-handle:active { cursor: grabbing; }
     .editor { display: none; gap: 10px; margin-top: 10px; }
     .editor.open { display: flex; flex-wrap: wrap; }
     .edit-qty { width: 96px; flex: 0 0 96px; text-align: center; }

@@ -76,6 +76,7 @@ from .item_logic import (
     meta_quantity as _meta_quantity,
     normalize_category as _normalize_category,
     normalize_list_id as _normalize_list_id,
+    reorder_category_items as _reorder_category_items,
 )
 from .storage import GroceryLearningStore, LearnedTerms
 
@@ -502,7 +503,21 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         data["categories"] = list(DEFAULT_CATEGORIES)
         data.setdefault("dashboard_revision", 0)
 
-    def _publish_dashboard_revision() -> None:
+    def _mark_changed_list(list_id: str) -> None:
+        # Record which list an action changed so the live-update push can be
+        # scoped: panels viewing a different list can skip the reload. Two
+        # different lists in one action, or an unmarked action, broadcast to
+        # every panel ("*"), which is always safe.
+        normalized = _normalize_list_id(str(list_id)) if list_id else ""
+        target = normalized or "*"
+        data = hass.data[DOMAIN]
+        current = data.get("_change_list_id")
+        if current is None:
+            data["_change_list_id"] = target
+        elif current != target:
+            data["_change_list_id"] = "*"
+
+    def _publish_dashboard_revision(changed_list_id: str = "*") -> None:
         revision = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0)
         # Legacy live-update channel: a state entity the panel diffs. Kept as a
         # fallback for panels whose WebSocket subscription isn't active.
@@ -516,15 +531,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             },
         )
         # Primary live-update channel: push the new revision to subscribed panels.
-        _notify_update_listeners(revision)
+        _notify_update_listeners(revision, changed_list_id)
 
-    def _notify_update_listeners(revision: int) -> None:
+    def _notify_update_listeners(revision: int, changed_list_id: str = "*") -> None:
         listeners = hass.data[DOMAIN].get("update_listeners")
         if not listeners:
             return
         for forward in list(listeners):
             try:
-                forward(revision)
+                forward(revision, changed_list_id)
             except Exception:  # pragma: no cover - defensive; never let one panel break others
                 _LOGGER.debug("Live update push to a panel failed", exc_info=True)
 
@@ -536,7 +551,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN].get("activity", []),
         )
         hass.data[DOMAIN]["dashboard_revision"] = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0) + 1
-        _publish_dashboard_revision()
+        changed = hass.data[DOMAIN].get("_change_list_id") or "*"
+        hass.data[DOMAIN]["_change_list_id"] = None
+        _publish_dashboard_revision(changed)
 
     async def _save() -> None:
         # Inside a locked action, coalesce every persist into a single store
@@ -570,6 +587,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         async with hass.data[DOMAIN]["_action_lock"]:
             token = _IN_LOCKED_ACTION.set(True)
             hass.data[DOMAIN]["_save_dirty"] = False
+            hass.data[DOMAIN]["_change_list_id"] = None
             try:
                 return await func()
             finally:
@@ -1670,6 +1688,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if item:
                 quantity = _coerce_quantity(payload.get("quantity", 1))
                 target_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+                _mark_changed_list(target_list_id)
                 request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
                 actor_name = str(payload.get("actor_name", "")).strip()
                 if request_user_id and not actor_name:
@@ -1890,6 +1909,25 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             active_id = _active_internal_list()[0]
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal(active_id)}
 
+        if action == "set_item_order":
+            list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            category = _normalize_category(str(payload.get("category", "")).strip()) or "other"
+            requested = payload.get("order", [])
+            if not isinstance(requested, list):
+                return {"ok": False, "error": "invalid_order"}
+            order_ids = [str(candidate).strip() for candidate in requested if str(candidate).strip()]
+            _ensure_multilist_model()
+            model = hass.data[DOMAIN]["multilist"]
+            list_obj = model.get("lists", {}).get(list_id)
+            if not isinstance(list_obj, dict):
+                return {"ok": False, "error": "list_not_found"}
+            items = list_obj.get("items", [])
+            if isinstance(items, list):
+                list_obj["items"] = _reorder_category_items(items, category, order_ids)
+            _mark_changed_list(list_id)
+            await _save()
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
+
         if action == "rename_list":
             if not multilist_mode:
                 return {"ok": False, "error": "multilist_disabled"}
@@ -1983,6 +2021,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             item_ref = str(payload.get("item", "")).strip()
             status = str(payload.get("status", "")).strip().lower()
             selected_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            _mark_changed_list(selected_list_id)
             if list_entity and item_ref and status in {"completed", "needs_action"}:
                 if multilist_mode:
                     _, list_obj = _internal_list_by_id(selected_list_id) if selected_list_id else _active_internal_list()
@@ -2015,6 +2054,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             target_category = _normalize_category(str(payload.get("target_category", "")).strip())
             learn = bool(payload.get("learn", True))
             selected_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            _mark_changed_list(selected_list_id)
             categories = _active_categories()
             if not list_entity or not item_ref or not next_summary:
                 return {"ok": False, "error": "missing_item_reference"}
@@ -2191,6 +2231,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         if action == "clear_completed":
             selected_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            _mark_changed_list(selected_list_id)
             if multilist_mode:
                 active_list_id, list_obj = _internal_list_by_id(selected_list_id) if selected_list_id else _active_internal_list()
                 items: list[dict[str, Any]] = list_obj.setdefault("items", [])
@@ -3092,9 +3133,11 @@ lists:
         async def _ws_subscribe_updates(hass_inner, connection, msg):
             listeners: set = hass_inner.data.setdefault(DOMAIN, {}).setdefault("update_listeners", set())
 
-            def _forward(revision: int) -> None:
+            def _forward(revision: int, changed_list_id: str = "*") -> None:
                 connection.send_message(
-                    websocket_api.event_message(msg["id"], {"revision": revision})
+                    websocket_api.event_message(
+                        msg["id"], {"revision": revision, "list_id": changed_list_id}
+                    )
                 )
 
             listeners.add(_forward)
@@ -3106,7 +3149,7 @@ lists:
             connection.subscriptions[msg["id"]] = _unsubscribe
             connection.send_result(msg["id"])
             # Send the current revision immediately so a just-opened panel syncs.
-            _forward(int(hass_inner.data.get(DOMAIN, {}).get("dashboard_revision", 0) or 0))
+            _forward(int(hass_inner.data.get(DOMAIN, {}).get("dashboard_revision", 0) or 0), "*")
 
         websocket_api.async_register_command(hass, _ws_subscribe_updates)
         data["ws_registered"] = True

@@ -161,6 +161,45 @@ def merge_meta_records(existing: Mapping[str, str], incoming: Mapping[str, str])
 
 # --- category routing --------------------------------------------------------
 
+def reorder_category_items(
+    items: Sequence[Mapping[str, Any]],
+    category: str,
+    ordered_ids: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Return ``items`` with the active rows of ``category`` reordered.
+
+    Only ``needs_action`` items in ``category`` move, and they are placed into
+    the exact slots they already occupy in the flat list — so every other row
+    (other categories, completed items) keeps its position. ``ordered_ids`` is
+    the desired id order; any of the category's ids not mentioned keep their
+    current relative order at the end.
+    """
+    items = list(items)
+    category = str(category)
+    slots = [
+        index
+        for index, item in enumerate(items)
+        if str(item.get("status", "needs_action")) == "needs_action"
+        and str(item.get("category", "other")) == category
+    ]
+    if len(slots) < 2:
+        return items
+
+    slot_ids = [str(items[index].get("id", "")) for index in slots]
+    by_id = {str(item.get("id", "")): item for item in items}
+
+    desired: list[str] = [str(oid) for oid in ordered_ids if str(oid) in slot_ids]
+    seen = set(desired)
+    for sid in slot_ids:
+        if sid not in seen:
+            desired.append(sid)
+            seen.add(sid)
+
+    for slot, oid in zip(slots, desired):
+        items[slot] = by_id.get(oid, items[slot])
+    return items
+
+
 def category_for_term(
     terms_data: Mapping[str, Sequence[str]],
     normalized: str,
