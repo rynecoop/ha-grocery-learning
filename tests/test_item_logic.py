@@ -332,6 +332,18 @@ class RealKeywordRoutingTests(unittest.TestCase):
         for text, expected in cases.items():
             self.assertEqual(self.route(text), expected, f"{text!r} should route to {expected}")
 
+    def test_head_noun_breaks_ties(self):
+        # "soup" is the head noun -> pantry, even though the modifier word also
+        # appears in another category (mushroom/tomato/chicken/potato = produce/meat).
+        self.assertEqual(self.route("mushroom soup"), "pantry")
+        self.assertEqual(self.route("cream of mushroom soup"), "pantry")
+        self.assertEqual(self.route("tomato soup"), "pantry")
+        self.assertEqual(self.route("chicken noodle soup"), "pantry")
+        self.assertEqual(self.route("potato soup"), "pantry")
+        # But the fresh items still route to their real section.
+        self.assertEqual(self.route("mushrooms"), "produce")
+        self.assertEqual(self.route("roma tomatoes"), "produce")
+
     def test_unknown_still_other(self):
         self.assertEqual(self.route("garden hose"), "other")
 
