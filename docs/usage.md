@@ -43,6 +43,17 @@
 
 ![Meal directions cook mode](screenshots/meal-directions.png)
 
+## Weekly Meal Planner
+- open `Meals` from the menu (⋯) and switch to the `This Week` tab
+- for each day (Monday–Sunday), pick a saved meal from `+ Add a meal…` to assign it; a day can hold more than one meal
+- tap the `×` on a meal chip to remove it from that day
+- `Add day` adds that day's ingredients to your list; `Add whole week to list` adds every planned meal's ingredients
+  - ingredients are combined and de-duplicated across meals, then shown in the same confirm checklist so you can uncheck anything you already have before adding
+- `Clear week` empties the plan
+- the plan is stored locally, syncs across devices, and is included in backups
+
+![Weekly meal planner](screenshots/meal-planner.png)
+
 ![Saved Meals confirm checklist](screenshots/meals.png)
 
 ## Automatic Categories

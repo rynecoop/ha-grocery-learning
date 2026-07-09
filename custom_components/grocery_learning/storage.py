@@ -313,6 +313,22 @@ class GroceryLearningStore:
             }
         return cleaned
 
+    async def load_meal_plan(self) -> dict[str, list[str]]:
+        """Load the weekly meal plan (day -> list of meal ids)."""
+        days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        plan: dict[str, list[str]] = {day: [] for day in days}
+        data = await self._store.async_load()
+        if not isinstance(data, dict):
+            return plan
+        raw = data.get("meal_plan", {})
+        if not isinstance(raw, dict):
+            return plan
+        for day in days:
+            values = raw.get(day, [])
+            if isinstance(values, list):
+                plan[day] = [str(meal_id).strip() for meal_id in values if str(meal_id).strip()]
+        return plan
+
     async def save(
         self,
         terms: LearnedTerms,
@@ -321,6 +337,7 @@ class GroceryLearningStore:
         activity: list[dict[str, str]] | None = None,
         frequent: dict[str, dict] | None = None,
         meals: dict[str, dict] | None = None,
+        meal_plan: dict[str, list[str]] | None = None,
     ) -> None:
         """Persist data to storage."""
         payload = {
@@ -335,6 +352,8 @@ class GroceryLearningStore:
             payload["frequent"] = frequent
         if meals is not None:
             payload["meals"] = meals
+        if meal_plan is not None:
+            payload["meal_plan"] = meal_plan
         await self._store.async_save(
             payload
         )
