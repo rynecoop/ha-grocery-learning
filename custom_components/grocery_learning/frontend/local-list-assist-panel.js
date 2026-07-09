@@ -41,6 +41,8 @@ class LocalListAssistPanel extends LitElement {
     _mealEditorId: { state: true },
     _mealConfirmId: { state: true },
     _mealChecked: { state: true },
+    _mealConfirmEdits: { state: true },
+    _mealEditingKey: { state: true },
     _openEditorKey: { state: true },
     _undo: { state: true },
     _dragListId: { state: true },
@@ -69,6 +71,10 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditorId = "";
     this._mealConfirmId = "";
     this._mealChecked = {};
+    this._mealConfirmEdits = {};
+    this._mealEditingKey = "";
+    this._frequentLongPressTimer = null;
+    this._suppressNextFrequentClick = "";
     this._openEditorKey = "";
     this._undo = null;
     this._dragListId = "";
@@ -561,6 +567,37 @@ class LocalListAssistPanel extends LitElement {
       actor_user_id: this._hass?.user?.id || "",
       actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
     });
+  }
+
+  onFrequentClick(item) {
+    if (this._suppressNextFrequentClick === item) {
+      this._suppressNextFrequentClick = "";
+      return;
+    }
+    this.quickAddItem(item);
+  }
+
+  onFrequentPointerDown(item, ev) {
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+    this.clearFrequentLongPress();
+    this._frequentLongPressTimer = window.setTimeout(() => {
+      this._suppressNextFrequentClick = item;
+      this.dismissFrequent(item);
+      this.clearFrequentLongPress();
+    }, 550);
+  }
+
+  clearFrequentLongPress() {
+    if (this._frequentLongPressTimer) {
+      window.clearTimeout(this._frequentLongPressTimer);
+      this._frequentLongPressTimer = null;
+    }
+  }
+
+  async dismissFrequent(item) {
+    const name = String(item || "").trim();
+    if (!name) return;
+    await this.act({ action: "dismiss_frequent", item: name, list_id: this.currentListId() });
   }
 
   toggleEditor(item) {
@@ -1079,7 +1116,12 @@ class LocalListAssistPanel extends LitElement {
       <div class="frequent-row" aria-label="Frequently added items">
         <span class="frequent-label">Frequent</span>
         ${frequent.map((f) => html`
-          <button class="frequent-chip" title=${`Added ${f.count}×`} @click=${() => this.quickAddItem(f.item)}>
+          <button class="frequent-chip" title="Tap to add · long-press or right-click to hide"
+            @click=${() => this.onFrequentClick(f.item)}
+            @pointerdown=${(e) => this.onFrequentPointerDown(f.item, e)}
+            @pointerup=${() => this.clearFrequentLongPress()}
+            @pointerleave=${() => this.clearFrequentLongPress()}
+            @contextmenu=${(e) => { e.preventDefault(); this.dismissFrequent(f.item); }}>
             <span class="frequent-plus">+</span>${f.item}
           </button>`)}
       </div>`;
@@ -1173,7 +1215,10 @@ class LocalListAssistPanel extends LitElement {
             </div>`)
           : html`<div class="empty">No saved meals yet. Create one to add its ingredients with a tap.</div>`}
       </div>
-      <div class="row"><button class="btn primary" @click=${() => this.openMealEditor("new")}>New Meal</button></div>`;
+      <div class="row">
+        <button class="btn primary" @click=${() => this.openMealEditor("new")}>New Meal</button>
+        <button class="btn" @click=${() => this.openMealFromList()}>From current list</button>
+      </div>`;
   }
 
   _mealEditorTemplate() {
@@ -1197,7 +1242,10 @@ class LocalListAssistPanel extends LitElement {
     const meal = (state?.meals || []).find((m) => m.id === this._mealConfirmId) || null;
     if (!meal) return nothing;
     const ingredients = meal.ingredients || [];
-    const selectedCount = ingredients.filter((ing, idx) => this._mealChecked[this.mealIngKey(idx, ing.item)]).length;
+    const selectedCount = ingredients.filter((ing, idx) => {
+      const key = this.mealIngKey(idx, ing.item);
+      return this._mealChecked[key] && String(this.ingredientValue(key, ing.item)).trim();
+    }).length;
     return html`
       <div class="overlay-shell" @click=${() => this.closeMealConfirm()}>
         <section class="modal-card" role="dialog" aria-label="Confirm meal ingredients" @click=${(e) => e.stopPropagation()}>
@@ -1219,12 +1267,20 @@ class LocalListAssistPanel extends LitElement {
             ${ingredients.map((ing, idx) => {
               const key = this.mealIngKey(idx, ing.item);
               const checked = !!this._mealChecked[key];
+              const editing = this._mealEditingKey === key;
+              const value = this.ingredientValue(key, ing.item);
               return html`
-                <label class=${"meal-ingredient" + (checked ? "" : " unchecked")}>
+                <div class=${"meal-ingredient" + (checked ? "" : " unchecked")}>
                   <input type="checkbox" .checked=${live(checked)} @change=${() => this.toggleMealIngredient(key)} />
-                  <span class="meal-ingredient-name">${ing.item}</span>
-                  <span class="pill">${ing.category_display}</span>
-                </label>`;
+                  ${editing
+                    ? html`<input id=${`meal-ing-${key}`} class="input meal-ing-input" .value=${live(value)}
+                        @input=${(e) => this.updateIngredientEdit(key, e.target.value)}
+                        @keydown=${(e) => { if (e.key === "Enter") { e.preventDefault(); this.stopEditIngredient(); } }}
+                        @blur=${() => this.stopEditIngredient()} />`
+                    : html`<span class="meal-ingredient-name" @click=${() => this.toggleMealIngredient(key)}>${value}</span>`}
+                  <button class="meal-ing-edit" aria-label="Edit ingredient" title="Edit" @click=${() => this.startEditIngredient(key, value)}>✎</button>
+                  ${editing ? nothing : html`<span class="pill">${ing.category_display}</span>`}
+                </div>`;
             })}
           </div>
           <div class="row">
@@ -1284,6 +1340,31 @@ class LocalListAssistPanel extends LitElement {
     this.requestUpdate();
   }
 
+  openMealFromList() {
+    const groups = this._state?.groups || [];
+    const items = [];
+    const seen = new Set();
+    for (const group of groups) {
+      for (const item of group.items || []) {
+        const summary = (item.summary || "").trim();
+        const key = summary.toLowerCase();
+        if (summary && !seen.has(key)) {
+          seen.add(key);
+          items.push(summary);
+        }
+      }
+    }
+    this._mealEditorId = "new";
+    this._drafts.mealName = "";
+    this._drafts.mealIngredients = items.join("\n");
+    this._mealsOpen = true;
+    this.requestUpdate();
+    this.updateComplete.then(() => {
+      const el = this.renderRoot?.querySelector(".modal-card .input");
+      if (el) el.focus();
+    });
+  }
+
   closeMealEditor() {
     this._mealEditorId = "";
     this._drafts.mealName = "";
@@ -1319,6 +1400,8 @@ class LocalListAssistPanel extends LitElement {
     const checked = {};
     (meal.ingredients || []).forEach((ing, idx) => { checked[this.mealIngKey(idx, ing.item)] = true; });
     this._mealChecked = checked;
+    this._mealConfirmEdits = {};
+    this._mealEditingKey = "";
     this._mealConfirmId = mealId;
     this._mealsOpen = false;
     this._mealEditorId = "";
@@ -1326,6 +1409,32 @@ class LocalListAssistPanel extends LitElement {
 
   closeMealConfirm() {
     this._mealConfirmId = "";
+    this._mealEditingKey = "";
+  }
+
+  ingredientValue(key, fallback) {
+    const edited = this._mealConfirmEdits[key];
+    return (edited !== undefined ? edited : fallback);
+  }
+
+  startEditIngredient(key, currentValue) {
+    if (this._mealConfirmEdits[key] === undefined) {
+      this._mealConfirmEdits = { ...this._mealConfirmEdits, [key]: currentValue };
+    }
+    this._mealChecked = { ...this._mealChecked, [key]: true };
+    this._mealEditingKey = key;
+    this.updateComplete.then(() => {
+      const el = this.renderRoot?.getElementById(`meal-ing-${key}`);
+      if (el) { el.focus(); el.select?.(); }
+    });
+  }
+
+  updateIngredientEdit(key, value) {
+    this._mealConfirmEdits = { ...this._mealConfirmEdits, [key]: value };
+  }
+
+  stopEditIngredient() {
+    this._mealEditingKey = "";
   }
 
   toggleMealIngredient(key) {
@@ -1342,9 +1451,14 @@ class LocalListAssistPanel extends LitElement {
     const meal = (this._state?.meals || []).find((m) => m.id === this._mealConfirmId) || null;
     if (!meal) { this._mealConfirmId = ""; return; }
     const items = (meal.ingredients || [])
-      .filter((ing, idx) => this._mealChecked[this.mealIngKey(idx, ing.item)])
-      .map((ing) => ({ item: ing.item }));
+      .map((ing, idx) => {
+        const key = this.mealIngKey(idx, ing.item);
+        return { key, item: String(this.ingredientValue(key, ing.item)).trim() };
+      })
+      .filter(({ key, item }) => this._mealChecked[key] && item)
+      .map(({ item }) => ({ item }));
     this._mealConfirmId = "";
+    this._mealEditingKey = "";
     if (!items.length) return;
     await this.act({
       action: "add_meal_to_list",
@@ -1691,6 +1805,12 @@ class LocalListAssistPanel extends LitElement {
     .meal-ingredient-name { flex: 1; font-weight: 600; }
     .meal-ingredient.unchecked { opacity: 0.5; }
     .meal-ingredient.unchecked .meal-ingredient-name { text-decoration: line-through; }
+    .meal-ing-input { flex: 1; padding: 8px 10px; border-radius: 10px; }
+    .meal-ing-edit {
+      flex: 0 0 auto; border: none; background: transparent; color: var(--lla-text-dim);
+      cursor: pointer; font: inherit; font-size: 16px; padding: 4px 6px; border-radius: 8px;
+    }
+    .meal-ing-edit:hover { color: var(--lla-text); background: color-mix(in srgb, var(--accent) 14%, transparent); }
     .color-input { width: 100%; min-height: 48px; background: var(--lla-input-bg); border: 1px solid var(--lla-border); border-radius: 14px; padding: 6px; }
     .btn {
       border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--lla-border));

@@ -23,6 +23,7 @@
 ## Frequent Quick-Add
 - the `FREQUENT` row above the list shows the items you add most often as one-tap chips
 - tap a chip to add that item to the current list
+- long-press a chip on touch, or right-click on desktop, to hide a suggestion you never want (it stays hidden even if it gets added again later)
 - a suggestion appears only after you have added an item a couple of times
 - anything already on the current list is hidden from the row
 - the frequency tally is kept even when you `Clear Completed`, so your common items keep showing up
@@ -30,8 +31,10 @@
 ## Saved Meals
 - open `Meals` from the menu (⋯)
 - tap `New Meal`, give it a name, and enter its ingredients one per line, then `Create Meal`
+- or tap `From current list` to turn whatever is on the active list into a new meal, then just name it
 - tap `Add to list` on a meal to open a confirm checklist
 - every ingredient starts checked; uncheck anything you already have or grew, then tap `Add N to list`
+- tap the pencil (✎) on an ingredient to tweak its text before adding, without editing the whole meal
 - use `All` / `None` to toggle every ingredient at once
 - each added ingredient is auto-categorized on the current list, just like a normal add
 - `Edit` changes a meal's name or ingredients; `Delete` removes it

@@ -660,6 +660,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             for key, value in frequent.items()
             if isinstance(value, dict)
             and int(value.get("count", 0) or 0) >= 2
+            and not value.get("dismissed")
             and key not in exclude_normalized
         ]
         rows.sort(key=lambda kv: (int(kv[1].get("count", 0) or 0), kv[1].get("last", "")), reverse=True)
@@ -2544,6 +2545,17 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await _save()
             await _record_activity("Meal saved", f"{name} · {len(ingredients)} ingredients", "", "panel")
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
+        if action == "dismiss_frequent":
+            item = str(payload.get("item", "")).strip()
+            normalized = _normalize_term(item) if item else str(payload.get("normalized", "")).strip()
+            frequent = hass.data[DOMAIN].get("frequent", {})
+            if isinstance(frequent, dict) and normalized in frequent and isinstance(frequent[normalized], dict):
+                frequent[normalized]["dismissed"] = True
+                await _save()
+            raw_list = str(payload.get("list_id", "")).strip()
+            list_id = _normalize_list_id(raw_list) if raw_list else None
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
 
         if action == "delete_meal":
             meal_id = str(payload.get("meal_id", "")).strip()

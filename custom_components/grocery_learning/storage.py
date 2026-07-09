@@ -255,6 +255,7 @@ class GroceryLearningStore:
                 "display": str(value.get("display", key)).strip() or key,
                 "count": count,
                 "last": str(value.get("last", "")).strip(),
+                "dismissed": bool(value.get("dismissed", False)),
             }
         return cleaned
 
