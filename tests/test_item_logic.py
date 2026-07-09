@@ -265,5 +265,76 @@ class ReorderCategoryItemsTests(unittest.TestCase):
         self.assertEqual([i["id"] for i in result if i["category"] == "produce" and i["status"] == "needs_action"], ["b", "a", "d"])
 
 
+const = _load_module(
+    "custom_components.grocery_learning.const",
+    "custom_components/grocery_learning/const.py",
+)
+
+
+class CategorySpecificityTests(unittest.TestCase):
+    CATEGORIES = ["produce", "dairy", "pantry"]
+    KEYWORDS = {
+        "produce": ("tomato", "pepper"),
+        "dairy": ("butter", "milk"),
+        "pantry": ("tomato sauce", "peanut butter", "black pepper", "coconut milk"),
+    }
+
+    def route(self, text):
+        return item_logic.category_for_term(
+            {}, item_logic.canonical_item_phrase(text), self.CATEGORIES, self.KEYWORDS
+        )
+
+    def test_multiword_keyword_beats_single(self):
+        self.assertEqual(self.route("tomato sauce"), "pantry")
+        self.assertEqual(self.route("peanut butter"), "pantry")
+        self.assertEqual(self.route("black pepper"), "pantry")
+        self.assertEqual(self.route("coconut milk"), "pantry")
+
+    def test_single_word_still_routes(self):
+        self.assertEqual(self.route("tomato"), "produce")
+        self.assertEqual(self.route("butter"), "dairy")
+        self.assertEqual(self.route("bell pepper"), "produce")  # only produce has "pepper"
+
+
+class RealKeywordRoutingTests(unittest.TestCase):
+    """Route common grocery phrases through the shipped keyword table."""
+
+    def route(self, text):
+        return item_logic.category_for_term(
+            {},
+            item_logic.canonical_item_phrase(text),
+            list(const.DEFAULT_CATEGORIES),
+            const.DEFAULT_KEYWORDS_BY_CATEGORY,
+        )
+
+    def test_common_items(self):
+        cases = {
+            "bananas": "produce",
+            "baby spinach": "produce",
+            "chicken breast": "meat",
+            "ground beef": "meat",
+            "whole milk": "dairy",
+            "almond milk": "dairy",
+            "shredded cheddar": "dairy",
+            "everything bagels": "bakery",
+            "sourdough bread": "bakery",
+            "ice cream": "frozen",
+            "frozen pizza": "frozen",
+            "tomato sauce": "pantry",
+            "peanut butter": "pantry",
+            "coconut milk": "pantry",
+            "black pepper": "pantry",
+            "paper towels": "household",
+            "laundry detergent": "household",
+            "ibuprofen": "pharmacy",
+            "toothpaste": "pharmacy",
+        }
+        for text, expected in cases.items():
+            self.assertEqual(self.route(text), expected, f"{text!r} should route to {expected}")
+
+    def test_unknown_still_other(self):
+        self.assertEqual(self.route("garden hose"), "other")
+
+
 if __name__ == "__main__":
     unittest.main()

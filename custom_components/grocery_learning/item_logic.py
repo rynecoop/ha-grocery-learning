@@ -224,12 +224,15 @@ def category_for_term(
         if len(token) > 4 and token.endswith("es"):
             token_forms.add(token[:-2])
 
-    def _keyword_match(keyword: str) -> bool:
-        parts = [p for p in keyword.split(" ") if p]
-        return bool(parts) and all(part in token_forms for part in parts)
-
+    # Score keyword hits by specificity: a multi-word keyword like "tomato
+    # sauce" (pantry) should beat a single-word "tomato" (produce) for the item
+    # "tomato sauce". Ties fall to category order (first category listed wins).
+    best_category = ""
+    best_score = 0
     for category in categories:
-        words = keywords_by_category.get(category, ())
-        if any(_keyword_match(word) for word in words):
-            return category
-    return "other"
+        for keyword in keywords_by_category.get(category, ()):
+            parts = [p for p in str(keyword).split(" ") if p]
+            if parts and len(parts) > best_score and all(part in token_forms for part in parts):
+                best_score = len(parts)
+                best_category = category
+    return best_category or "other"

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.17.0
+- Much better automatic categorizing: greatly expanded the built-in knowledge of common grocery items and made matching prefer the most specific match, so far fewer items land in "Other" and you rarely have to teach or fix a category. For example "tomato sauce" now goes to Pantry instead of Produce.
+
 ## 0.16.0
 - Added Shopping Mode: a focused, phone-friendly screen for when you're at the store — tap the cart button to get only the unchecked items, grouped in your list's category (store) order, with big tap targets, a progress bar, and a quick add for things you forgot.
 
