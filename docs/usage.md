@@ -43,16 +43,19 @@
 
 ![Meal directions cook mode](screenshots/meal-directions.png)
 
-## Weekly Meal Planner
+## Meal Planner (dated calendar)
 - open `Meals` from the menu (⋯) and switch to the `This Week` tab
-- for each day (Monday–Sunday), pick a saved meal from `+ Add a meal…` to assign it; a day can hold more than one meal
+- the planner is a dated calendar: each row is a real date (e.g. "Monday Jul 6"), and today is highlighted
+- use the `‹` and `›` arrows to move between weeks; `Today` jumps back to the current week
+- for each day, pick a saved meal from `+ Add a meal…` to assign it; a day can hold more than one meal
 - tap the `×` on a meal chip to remove it from that day
-- `Add day` adds that day's ingredients to your list; `Add whole week to list` adds every planned meal's ingredients
+- `Add day` adds that day's ingredients to your list; `Add whole week to list` adds every meal planned in the week you are viewing
   - ingredients are combined and de-duplicated across meals, then shown in the same confirm checklist so you can uncheck anything you already have before adding
-- `Clear week` empties the plan
+- nothing ever expires or clears on its own — past and future weeks stay exactly as you left them
+- `Clear week` only clears the week currently shown; other weeks are untouched
 - the plan is stored locally, syncs across devices, and is included in backups
 
-![Weekly meal planner](screenshots/meal-planner.png)
+![Meal planner dated calendar](screenshots/meal-planner.png)
 
 ![Saved Meals confirm checklist](screenshots/meals.png)
 

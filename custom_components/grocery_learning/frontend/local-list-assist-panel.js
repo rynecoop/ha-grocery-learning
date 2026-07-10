@@ -46,6 +46,7 @@ class LocalListAssistPanel extends LitElement {
     _mealTab: { state: true },
     _stepsChecked: { state: true },
     _mealsView: { state: true },
+    _weekStart: { state: true },
     _confirmOpen: { state: true },
     _confirmItems: { state: true },
     _confirmChecked: { state: true },
@@ -84,6 +85,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealTab = "add";
     this._stepsChecked = {};
     this._mealsView = "meals";
+    this._weekStart = "";
     this._confirmOpen = false;
     this._confirmItems = [];
     this._confirmTitle = "";
@@ -1279,25 +1281,39 @@ class LocalListAssistPanel extends LitElement {
   }
 
   _weekTemplate(state, meals) {
-    const plan = state?.meal_plan || {};
-    const days = [
-      ["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"],
-      ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"],
-    ];
-    const totalPlanned = days.reduce((sum, [key]) => sum + ((plan[key] || []).length), 0);
     if (!meals.length) {
-      return html`<div class="empty">Create a meal first, then you can plan it into your week.</div>`;
+      return html`<div class="empty">Create a meal first, then you can plan it onto a day.</div>`;
     }
+    const plan = state?.meal_plan || {};
+    const dates = this.weekDates();
+    const todayISO = this._toISODate(new Date());
+    const thisMonday = this._toISODate(this._mondayOf(new Date()));
+    const isCurrentWeek = this.weekStartISO() === thisMonday;
+    const rangeStart = this._parseISODate(dates[0]);
+    const rangeEnd = this._parseISODate(dates[6]);
+    const fmt = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const totalPlanned = dates.reduce((sum, key) => sum + ((plan[key] || []).length), 0);
     return html`
+      <div class="week-nav">
+        <button class="btn icon-btn compact" aria-label="Previous week" @click=${() => this.shiftWeek(-7)}>‹</button>
+        <div class="week-range">
+          <strong>${fmt(rangeStart)} – ${fmt(rangeEnd)}</strong>
+          ${isCurrentWeek ? html`<span class="week-badge">This week</span>` : html`<button class="btn compact" @click=${() => this.goToday()}>Today</button>`}
+        </div>
+        <button class="btn icon-btn compact" aria-label="Next week" @click=${() => this.shiftWeek(7)}>›</button>
+      </div>
       <div class="week-list">
-        ${days.map(([key, label]) => {
+        ${dates.map((key) => {
+          const date = this._parseISODate(key);
+          const weekday = date.toLocaleDateString(undefined, { weekday: "long" });
           const dayMeals = plan[key] || [];
+          const isToday = key === todayISO;
           return html`
-            <div class="week-day">
+            <div class=${"week-day" + (isToday ? " today" : "")}>
               <div class="week-day-head">
-                <strong>${label}</strong>
+                <strong>${weekday} <span class="week-day-date">${fmt(date)}${isToday ? " · Today" : ""}</span></strong>
                 ${dayMeals.length
-                  ? html`<button class="btn compact" @click=${() => this.addDayToList(key, label)}>Add day</button>`
+                  ? html`<button class="btn compact" @click=${() => this.addDayToList(key, weekday)}>Add day</button>`
                   : nothing}
               </div>
               <div class="week-day-meals">
@@ -1537,6 +1553,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealsOpen = true;
     this._mealEditorId = "";
     this._mealsView = "meals";
+    this._weekStart = this._toISODate(this._mondayOf(new Date()));
   }
 
   openMealEditor(mealId) {
@@ -1607,20 +1624,61 @@ class LocalListAssistPanel extends LitElement {
     await this.act({ action: "delete_meal", meal_id: mealId });
   }
 
-  // --- weekly planner ---
-  async assignMeal(day, mealId) {
-    const id = String(mealId || "").trim();
-    if (!id) return;
-    await this.act({ action: "assign_meal", day, meal_id: id });
+  // --- weekly planner (dated) ---
+  _toISODate(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   }
 
-  async unassignMeal(day, mealId) {
-    await this.act({ action: "unassign_meal", day, meal_id: mealId });
+  _parseISODate(iso) {
+    const [y, m, d] = String(iso).split("-").map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+  }
+
+  _mondayOf(date) {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const offset = (d.getDay() + 6) % 7; // days since Monday
+    d.setDate(d.getDate() - offset);
+    return d;
+  }
+
+  weekStartISO() {
+    return this._weekStart || this._toISODate(this._mondayOf(new Date()));
+  }
+
+  weekDates() {
+    const start = this._parseISODate(this.weekStartISO());
+    return Array.from({ length: 7 }, (_v, i) => {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      return this._toISODate(d);
+    });
+  }
+
+  shiftWeek(deltaDays) {
+    const start = this._parseISODate(this.weekStartISO());
+    start.setDate(start.getDate() + deltaDays);
+    this._weekStart = this._toISODate(start);
+  }
+
+  goToday() {
+    this._weekStart = this._toISODate(this._mondayOf(new Date()));
+  }
+
+  async assignMeal(dateKey, mealId) {
+    const id = String(mealId || "").trim();
+    if (!id || !dateKey) return;
+    await this.act({ action: "assign_meal", date: dateKey, meal_id: id });
+  }
+
+  async unassignMeal(dateKey, mealId) {
+    await this.act({ action: "unassign_meal", date: dateKey, meal_id: mealId });
   }
 
   async clearWeek() {
-    if (!window.confirm("Clear all meals from this week's plan?")) return;
-    await this.act({ action: "clear_meal_plan" });
+    if (!window.confirm("Remove all meals from the days shown this week? Other weeks are untouched.")) return;
+    await this.act({ action: "clear_meal_plan_dates", dates: this.weekDates() });
   }
 
   aggregateMealItems(mealIds) {
@@ -1642,8 +1700,8 @@ class LocalListAssistPanel extends LitElement {
     return items;
   }
 
-  addDayToList(day, label) {
-    const dayMeals = (this._state?.meal_plan?.[day]) || [];
+  addDayToList(dateKey, label) {
+    const dayMeals = (this._state?.meal_plan?.[dateKey]) || [];
     const items = this.aggregateMealItems(dayMeals.map((m) => m.meal_id));
     if (!items.length) return;
     this.openConfirmAdd(items, `${label} meals`, `${label} meals`);
@@ -1652,7 +1710,7 @@ class LocalListAssistPanel extends LitElement {
   addWeekToList() {
     const plan = this._state?.meal_plan || {};
     const ids = [];
-    ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].forEach((d) => (plan[d] || []).forEach((m) => ids.push(m.meal_id)));
+    this.weekDates().forEach((dateKey) => (plan[dateKey] || []).forEach((m) => ids.push(m.meal_id)));
     const items = this.aggregateMealItems(ids);
     if (!items.length) return;
     this.openConfirmAdd(items, "This week's meals", "This week's meals");
@@ -2194,7 +2252,12 @@ class LocalListAssistPanel extends LitElement {
     .meal-step.done { opacity: 0.55; }
     .meal-step.done .meal-step-text { text-decoration: line-through; }
     .meal-step.done .meal-step-num { color: #fff; background: var(--accent); border-color: var(--accent); }
-    .week-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; max-height: 56vh; overflow-y: auto; }
+    .week-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .week-range { display: flex; align-items: center; gap: 10px; flex: 1; justify-content: center; }
+    .week-badge { font-size: 12px; color: var(--lla-text-dim); border: 1px solid var(--lla-border); border-radius: 999px; padding: 2px 10px; }
+    .week-day-date { font-weight: 500; color: var(--lla-text-dim); font-size: 13px; }
+    .week-day.today { border-color: color-mix(in srgb, var(--accent) 60%, var(--lla-border)); background: color-mix(in srgb, var(--accent) 8%, var(--lla-surface-2)); }
+    .week-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; max-height: 52vh; overflow-y: auto; }
     .week-day { border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; background: var(--lla-surface-2); }
     .week-day-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
     .week-day-meals { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }

@@ -85,7 +85,7 @@ from .storage import GroceryLearningStore, LearnedTerms
 
 _LOGGER = logging.getLogger(__name__)
 MAX_ACTIVITY_ITEMS = 40
-WEEK_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+_MEAL_PLAN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 INTENT_LOCAL_LIST_ASSIST_ADD_ITEM = "LocalListAssistAddItem"
 LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision"
 
@@ -510,7 +510,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             meal_plan = await store.load_meal_plan()
         except Exception as err:  # pragma: no cover
             _LOGGER.warning("Failed loading grocery meal-plan storage, using empty plan: %s", err)
-            meal_plan = {day: [] for day in WEEK_DAYS}
+            meal_plan = {}
 
         data["store"] = store
         data["terms"] = terms
@@ -723,20 +723,23 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         return out
 
     def _meal_plan_payload() -> dict[str, list[dict[str, str]]]:
-        # Resolve each day's meal ids to {meal_id, name}, dropping any ids whose
-        # meal has since been deleted so the planner never shows dangling rows.
+        # Resolve each dated day's meal ids to {meal_id, name}, dropping any ids
+        # whose meal has since been deleted (and any day left empty) so the
+        # planner never shows dangling rows. Keyed by ISO date (YYYY-MM-DD).
         plan = hass.data[DOMAIN].get("meal_plan", {})
         meals = hass.data[DOMAIN].get("meals", {})
         out: dict[str, list[dict[str, str]]] = {}
-        for day in WEEK_DAYS:
-            ids = plan.get(day, []) if isinstance(plan, dict) else []
-            entries: list[dict[str, str]] = []
-            if isinstance(ids, list):
+        if isinstance(plan, dict):
+            for date_key, ids in plan.items():
+                if not isinstance(ids, list):
+                    continue
+                entries: list[dict[str, str]] = []
                 for meal_id in ids:
                     meal = meals.get(meal_id) if isinstance(meals, dict) else None
                     if isinstance(meal, dict) and str(meal.get("name", "")).strip():
                         entries.append({"meal_id": str(meal_id), "name": str(meal.get("name")).strip()})
-            out[day] = entries
+                if entries:
+                    out[str(date_key)] = entries
         return out
 
     def _activity_payload() -> list[dict[str, str]]:
@@ -2628,36 +2631,49 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal(target_list_id)}
 
         if action == "assign_meal":
-            day = str(payload.get("day", "")).strip().lower()
+            date_key = str(payload.get("date", "")).strip()
             meal_id = str(payload.get("meal_id", "")).strip()
             meals = hass.data[DOMAIN].get("meals", {})
-            if day in WEEK_DAYS and isinstance(meals, dict) and meal_id in meals:
-                plan = hass.data[DOMAIN].setdefault("meal_plan", {d: [] for d in WEEK_DAYS})
+            if _MEAL_PLAN_DATE_RE.match(date_key) and isinstance(meals, dict) and meal_id in meals:
+                plan = hass.data[DOMAIN].setdefault("meal_plan", {})
                 if not isinstance(plan, dict):
-                    plan = {d: [] for d in WEEK_DAYS}
+                    plan = {}
                     hass.data[DOMAIN]["meal_plan"] = plan
-                day_list = plan.setdefault(day, [])
+                day_list = plan.setdefault(date_key, [])
                 if not isinstance(day_list, list):
                     day_list = []
-                    plan[day] = day_list
+                    plan[date_key] = day_list
                 if meal_id not in day_list:
                     day_list.append(meal_id)
                     await _save()
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "unassign_meal":
-            day = str(payload.get("day", "")).strip().lower()
+            date_key = str(payload.get("date", "")).strip()
             meal_id = str(payload.get("meal_id", "")).strip()
             plan = hass.data[DOMAIN].get("meal_plan", {})
-            if isinstance(plan, dict) and isinstance(plan.get(day), list) and meal_id in plan[day]:
-                plan[day] = [existing for existing in plan[day] if existing != meal_id]
+            if isinstance(plan, dict) and isinstance(plan.get(date_key), list) and meal_id in plan[date_key]:
+                remaining = [existing for existing in plan[date_key] if existing != meal_id]
+                if remaining:
+                    plan[date_key] = remaining
+                else:
+                    plan.pop(date_key, None)
                 await _save()
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
-        if action == "clear_meal_plan":
-            hass.data[DOMAIN]["meal_plan"] = {d: [] for d in WEEK_DAYS}
-            await _save()
-            await _record_activity("Meal plan cleared", "Cleared the weekly plan", "", "panel")
+        if action == "clear_meal_plan_dates":
+            dates_raw = payload.get("dates", [])
+            dates = {str(d).strip() for d in dates_raw if isinstance(dates_raw, list) and str(d).strip()}
+            plan = hass.data[DOMAIN].get("meal_plan", {})
+            if isinstance(plan, dict) and dates:
+                removed = False
+                for date_key in list(plan.keys()):
+                    if date_key in dates:
+                        plan.pop(date_key, None)
+                        removed = True
+                if removed:
+                    await _save()
+                    await _record_activity("Meal plan cleared", "Cleared the shown week from the plan", "", "panel")
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "export_data":

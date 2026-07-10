@@ -14,7 +14,7 @@ Current captures used in the README and docs:
 - `meal-directions.png`
   - the saved-meal detail view, "Directions" tab: numbered steps in cook mode with some checked off
 - `meal-planner.png`
-  - the weekly "This Week" planner: Monday–Sunday with assigned meal chips and add-to-list controls
+  - the meal planner: a dated calendar week with the ‹ › week navigation, assigned meal chips, and add-to-list controls
 - `duplicate-review.png`
   - the duplicate decision card (`Add anyway` / `Skip`)
 - `configure.png`

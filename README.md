@@ -15,7 +15,7 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 - **Shopping Mode**: a focused, big-tap-target screen for when you are at the store
 - **Frequent quick-add**: one-tap chips for the items you add most often
 - **saved Meals**: define a meal once (ingredients + directions), add it with a confirm checklist, and cook from the numbered steps
-- **weekly meal planner**: assign meals to Mon–Sun and add a day's or the whole week's ingredients at once
+- **meal planner (dated calendar)**: assign meals to real dates, page between weeks, and add a day's or the whole week's ingredients at once — nothing ever auto-clears
 - **smarter automatic categories** so far fewer items land in `Other`
 - quick add with per-user attribution where Home Assistant provides user context
 - multiple local lists with color theming
@@ -48,10 +48,10 @@ Open `Meals` from the menu (⋯) to define a meal once — a name, its ingredien
 ![Saved Meals detail — Add to list tab](docs/screenshots/meals.png)
 ![Saved Meals detail — Directions cook mode](docs/screenshots/meal-directions.png)
 
-### Weekly Meal Planner
-In `Meals`, switch to the **This Week** tab to assign your saved meals to Monday–Sunday. Then add a single day's ingredients or the whole week's to your list in one go — they're combined and de-duplicated across meals and shown in the same confirm checklist, so you just uncheck what you already have. The plan is stored locally and included in backups.
+### Meal Planner
+In `Meals`, switch to the **This Week** tab for a dated calendar. Each day is a real date (today is highlighted), and you can page between weeks with the ‹ › arrows — nothing ever expires or clears on its own, so past and future weeks stay exactly as you left them. Assign your saved meals to days, then add a single day's ingredients or the whole shown week's to your list in one go — they're combined and de-duplicated across meals and shown in the same confirm checklist, so you just uncheck what you already have. The plan is stored locally and included in backups.
 
-![Weekly meal planner](docs/screenshots/meal-planner.png)
+![Meal planner dated calendar](docs/screenshots/meal-planner.png)
 
 ### Smarter Automatic Categories
 Items are sorted into category sections automatically using an expanded built-in knowledge of common grocery items, with matching that prefers the most specific match (for example `tomato sauce` routes to `Pantry`, not `Produce`). When something still lands in `Other`, the review-and-learn flow lets you teach the correct category once and it sticks.
