@@ -12,6 +12,7 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 
 ## Highlights
 - dedicated sidebar app: `Local List Assist`
+- **phone-first bottom tab bar**: `List` · `Shop` · `Meals` · `Plan`, each one tap away
 - **Shopping Mode**: a focused, big-tap-target screen for when you are at the store
 - **Frequent quick-add**: one-tap chips for the items you add most often
 - **saved Meals**: define a meal once (ingredients + directions), add it with a confirm checklist, and cook from the numbered steps
@@ -35,7 +36,7 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 ## Key Features
 
 ### Shopping Mode
-Tap the cart button (🛒) to switch into Shopping Mode: a stripped-down, phone-first view that shows only the unchecked items, grouped in your list's category (store) order, with large tap targets, a progress bar, and a quick add for anything you forgot. Check items off as you move through the store; tap `Done` to return to the full list.
+Tap the **Shop** tab in the bottom bar to switch into Shopping Mode: a stripped-down, phone-first view that shows only the unchecked items, grouped in your list's category (store) order, with large tap targets, a progress bar, and a quick add for anything you forgot. Check items off as you move through the store; tap `Done` or the `List` tab to return to the full list.
 
 ![Shopping Mode](docs/screenshots/shopping-mode.png)
 
@@ -86,12 +87,12 @@ The panel follows your Home Assistant theme, so it looks at home in light, dark,
 6. If an item lands in `Other`, use the review actions once to teach the category.
 
 ## Current UI Model
-- `+` button: create a new list
+- **bottom tab bar**: switch between `List`, `Shop` (Shopping Mode), `Meals`, and `Plan` (the meal-plan calendar) — every main screen is one tap away
+- `+` button (List screen): create a new list
 - active list chip: open `List Settings`
 - long-press on touch or right-click on desktop: reorder lists
-- hamburger menu: open navigation drawer
-- `App Settings`: sync/repair/tools/links
-- `Activity`: available from `App Settings -> Tools`
+- `⋯` menu: `App Settings`, `List Settings`, and `Activity`
+- `App Settings`: sync/repair/tools/links/backup
 
 ## Live Updates
 - changes made on one Home Assistant device propagate to other open Local List Assist panels almost immediately
