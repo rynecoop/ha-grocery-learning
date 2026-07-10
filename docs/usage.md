@@ -2,21 +2,29 @@
 
 ![Main list](screenshots/main-list.png)
 
+## Getting Around
+- the app has a **bottom tab bar** with four screens, each one tap away:
+  - `List` — your grocery list (and its list chips, quick add, and frequent items)
+  - `Shop` — Shopping Mode
+  - `Meals` — your saved recipes
+  - `Plan` — the dated meal-plan calendar
+- the `⋯` menu (top of the List screen) holds `App Settings`, `List Settings`, and `Activity`
+
 ## Daily Flow
 1. Add items with Quick Add.
 2. Tap a `FREQUENT` chip to add a common item without typing.
 3. Add items by voice if you installed voice phrases.
-4. When you head to the store, tap the cart button (🛒) to enter Shopping Mode.
+4. When you head to the store, tap the `Shop` tab to enter Shopping Mode.
 5. Work through the category sections in order.
 6. Check items off as you go.
 7. Clear completed items when you are done.
 
 ## Shopping Mode
-- tap the cart button (🛒) in the header to enter Shopping Mode
+- tap the `Shop` tab in the bottom bar to enter Shopping Mode
 - Shopping Mode shows only the unchecked items, grouped in your list's category (store) order
 - it has large tap targets, a progress bar (`X left`), and a quick add for anything you forgot
 - checking an item off moves it out of the remaining list
-- tap `Done` to return to the full list
+- tap `Done` or the `List` tab to return to the full list
 
 ![Shopping Mode](screenshots/shopping-mode.png)
 
@@ -29,7 +37,7 @@
 - the frequency tally is kept even when you `Clear Completed`, so your common items keep showing up
 
 ## Saved Meals
-- open `Meals` from the menu (⋯)
+- tap the `Meals` tab in the bottom bar
 - tap `New Meal`, give it a name, enter its ingredients one per line and (optionally) its directions one step per line, then `Create Meal`
 - or tap `From current list` to turn whatever is on the active list into a new meal, then just name it
 - tap a meal to open its detail view, which has two tabs:
@@ -44,7 +52,7 @@
 ![Meal directions cook mode](screenshots/meal-directions.png)
 
 ## Meal Planner (dated calendar)
-- open `Meals` from the menu (⋯) and switch to the `This Week` tab
+- tap the `Plan` tab in the bottom bar
 - the planner is a dated calendar: each row is a real date (e.g. "Monday Jul 6"), and today is highlighted
 - use the `‹` and `›` arrows to move between weeks; `Today` jumps back to the current week
 - for each day, pick a saved meal from `+ Add a meal…` to assign it; a day can hold more than one meal

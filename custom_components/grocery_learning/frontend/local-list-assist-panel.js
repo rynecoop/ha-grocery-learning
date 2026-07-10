@@ -37,7 +37,6 @@ class LocalListAssistPanel extends LitElement {
     _reorderListId: { state: true },
     _appToolsOpen: { state: true },
     _listToolsOpen: { state: true },
-    _mealsOpen: { state: true },
     _mealEditorId: { state: true },
     _mealConfirmId: { state: true },
     _mealChecked: { state: true },
@@ -45,7 +44,6 @@ class LocalListAssistPanel extends LitElement {
     _mealEditingKey: { state: true },
     _mealTab: { state: true },
     _stepsChecked: { state: true },
-    _mealsView: { state: true },
     _weekStart: { state: true },
     _confirmOpen: { state: true },
     _confirmItems: { state: true },
@@ -76,7 +74,6 @@ class LocalListAssistPanel extends LitElement {
     this._reorderListId = "";
     this._appToolsOpen = false;
     this._listToolsOpen = false;
-    this._mealsOpen = false;
     this._mealEditorId = "";
     this._mealConfirmId = "";
     this._mealChecked = {};
@@ -84,7 +81,6 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditingKey = "";
     this._mealTab = "add";
     this._stepsChecked = {};
-    this._mealsView = "meals";
     this._weekStart = "";
     this._confirmOpen = false;
     this._confirmItems = [];
@@ -482,7 +478,6 @@ class LocalListAssistPanel extends LitElement {
     this._reorderListId = "";
     this._appToolsOpen = false;
     this._listToolsOpen = false;
-    this._mealsOpen = false;
     this._mealEditorId = "";
     this._mealConfirmId = "";
     this._confirmOpen = false;
@@ -951,7 +946,7 @@ class LocalListAssistPanel extends LitElement {
   render() {
     const state = this._state;
     if (!state && this._loading) {
-      return html`<div class="wrap"><section class="hero"><div class="empty">Loading…</div></section></div>`;
+      return html`<div class="app"><div class="app-scroll"><div class="wrap"><section class="hero"><div class="empty">Loading…</div></section></div></div></div>`;
     }
     const multilist = !!state?.settings?.experimental_multilist;
     const dashboardName = state?.settings?.dashboard_name || "Local List Assist";
@@ -960,12 +955,39 @@ class LocalListAssistPanel extends LitElement {
     const activeListColor = state?.system?.active_list_color || active?.color || "#2c78ba";
     const visibleGroups = (state?.groups || []).filter((group) => (group.items || []).length > 0);
 
-    if (this._view === "shopping" && state) {
-      return this._shoppingTemplate(state, activeListName, activeListColor, visibleGroups);
+    let screen;
+    if (this._view === "shopping") {
+      screen = this._shoppingTemplate(state, activeListName, activeListColor, visibleGroups);
+    } else if (this._view === "meals") {
+      screen = this._mealsScreen(state);
+    } else if (this._view === "plan") {
+      screen = this._planScreen(state);
+    } else {
+      screen = this._listScreen(state, multilist, dashboardName, activeListName, visibleGroups);
     }
 
     return html`
-      <div class="wrap" style=${styleMap({ "--accent": activeListColor })} @keydown=${(e) => this._onKeyDown(e)}>
+      <div class="app" style=${styleMap({ "--accent": activeListColor })} @keydown=${(e) => this._onKeyDown(e)}>
+        <div class="app-scroll">${screen}</div>
+        ${this._menuOpen ? this._menuTemplate(multilist) : nothing}
+        ${this._configOpen ? this._appSettingsTemplate(state) : nothing}
+        ${this._createListOpen && multilist ? this._createListTemplate(state) : nothing}
+        ${this._listSettingsOpen && multilist ? this._listSettingsTemplate(state, activeListName, activeListColor) : nothing}
+        ${this._reorderListId && multilist ? this._reorderTemplate(state) : nothing}
+        ${this._mealConfirmId ? this._mealDetailTemplate(state) : nothing}
+        ${this._confirmOpen ? this._confirmAddTemplate() : nothing}
+        ${this._bottomBar()}
+        ${this._undo ? html`
+          <div class="undo-toast">
+            <span>${this._undo.label}</span>
+            <button class="btn" @click=${() => this.runUndo()}>Undo</button>
+          </div>` : nothing}
+      </div>`;
+  }
+
+  _listScreen(state, multilist, dashboardName, activeListName, visibleGroups) {
+    return html`
+      <div class="wrap">
         ${this._narrow
           ? html`<div class="mobile-bar">
               <button id="menuBtn" class="btn icon-btn" aria-label="Open navigation" @click=${() => this.openNavigation()}>☰</button>
@@ -979,7 +1001,6 @@ class LocalListAssistPanel extends LitElement {
               <div class="sub">Local-only Home Assistant workspace. Current list: ${activeListName}.</div>
             </div>
             <div class="hero-actions">
-              <button class="btn icon-btn compact shop-btn" aria-label="Shopping mode" title="Shopping mode" @click=${() => this.enterShopping()}>🛒</button>
               <button class="btn icon-btn compact" aria-label="Create list" title="Create list" @click=${() => this.openCreateList()}>+</button>
               <button class="btn icon-btn compact" aria-label="Open menu" title="Menu" @click=${() => { this._menuOpen = !this._menuOpen; }}>⋯</button>
               <button class="btn icon-btn compact" aria-label="Refresh list data" title="Refresh" @click=${() => this.load(true)}>⟳</button>
@@ -1001,20 +1022,12 @@ class LocalListAssistPanel extends LitElement {
           ${this._frequentTemplate(state)}
         </section>
 
-        ${this._menuOpen ? this._menuTemplate(multilist) : nothing}
-        ${this._configOpen ? this._appSettingsTemplate(state) : nothing}
-        ${this._createListOpen && multilist ? this._createListTemplate(state) : nothing}
-        ${this._listSettingsOpen && multilist ? this._listSettingsTemplate(state, activeListName, activeListColor) : nothing}
-        ${this._reorderListId && multilist ? this._reorderTemplate(state) : nothing}
-        ${this._mealsOpen ? this._mealsTemplate(state) : nothing}
-        ${this._mealConfirmId ? this._mealDetailTemplate(state) : nothing}
-        ${this._confirmOpen ? this._confirmAddTemplate() : nothing}
-
         ${this._error ? html`<section class="section"><div class="title">Error</div><div class="error">${this._error}</div></section>` : nothing}
         ${this._attentionTemplates(state)}
 
-        ${this._view === "list"
-          ? html`
+        ${this._view === "activity"
+          ? html`<section class="section"><div class="title">Recent Activity</div>${this._activityTemplate(state)}</section>`
+          : html`
               ${visibleGroups.length
                 ? visibleGroups.map((group) => html`
                     <section class="section">
@@ -1033,15 +1046,8 @@ class LocalListAssistPanel extends LitElement {
                     ? repeat(state.completed, (item) => item.item_ref, (item) => this._completedItemTemplate(item))
                     : html`<div class="empty">No completed items.</div>`}
                 </div>
-              </section>`
-          : html`<section class="section"><div class="title">Recent Activity</div>${this._activityTemplate(state)}</section>`}
-      </div>
-      ${this._undo ? html`
-        <div class="undo-toast">
-          <span>${this._undo.label}</span>
-          <button class="btn" @click=${() => this.runUndo()}>Undo</button>
-        </div>` : nothing}
-    `;
+              </section>`}
+      </div>`;
   }
 
   _listChips(state) {
@@ -1093,7 +1099,7 @@ class LocalListAssistPanel extends LitElement {
     if (ev.key === "Escape") {
       if (this._confirmOpen) { this.closeConfirmAdd(); return; }
       if (this._mealConfirmId) { this.closeMealDetail(); return; }
-      if (this._configOpen || this._createListOpen || this._listSettingsOpen || this._menuOpen || this._reorderListId || this._mealsOpen) {
+      if (this._configOpen || this._createListOpen || this._listSettingsOpen || this._menuOpen || this._reorderListId) {
         this.closePanels();
       }
     }
@@ -1254,28 +1260,33 @@ class LocalListAssistPanel extends LitElement {
     await this.act({ action: "apply_review", category, learn });
   }
 
-  _mealsTemplate(state) {
+  _mealsScreen(state) {
     const meals = state?.meals || [];
     const editing = !!this._mealEditorId;
-    const view = this._mealsView === "week" ? "week" : "meals";
     return html`
-      <div class="overlay-shell" @click=${() => this.closePanels()}>
-        <section class="modal-card" role="dialog" aria-label="Meals" @click=${(e) => e.stopPropagation()}>
-          <div class="modal-head">
-            <div>
-              <div class="title">${view === "week" ? "This Week" : "Meals"}</div>
-              <div class="small">${view === "week" ? "Plan the week, then add a day's or the whole week's ingredients." : "Save a meal once, then add it to your list or plan your week."}</div>
-            </div>
-            <button class="btn icon-btn compact" aria-label="Close meals" @click=${() => this.closePanels()}>×</button>
+      <div class="wrap page meal-page">
+        <section class="hero">
+          <div class="page-head">
+            <div class="hero-title">${editing ? (this._mealEditorId === "new" ? "New Meal" : "Edit Meal") : "Meals"}</div>
+            <button class="btn icon-btn compact" aria-label="Refresh" title="Refresh" @click=${() => this.load(true)}>⟳</button>
           </div>
-          ${editing ? nothing : html`
-            <div class="meal-tabs" style="margin-bottom:14px;">
-              <button class=${"meal-tab" + (view === "meals" ? " active" : "")} @click=${() => { this._mealsView = "meals"; }}>Meals</button>
-              <button class=${"meal-tab" + (view === "week" ? " active" : "")} @click=${() => { this._mealsView = "week"; }}>This Week</button>
-            </div>`}
-          ${editing
-            ? this._mealEditorTemplate()
-            : (view === "week" ? this._weekTemplate(state, meals) : this._mealListTemplate(meals))}
+          <div class="sub">Save a meal once — ingredients and directions — then add it to your list or plan it into a day.</div>
+          ${editing ? this._mealEditorTemplate() : this._mealListTemplate(meals)}
+        </section>
+      </div>`;
+  }
+
+  _planScreen(state) {
+    const meals = state?.meals || [];
+    return html`
+      <div class="wrap page meal-page">
+        <section class="hero">
+          <div class="page-head">
+            <div class="hero-title">Plan</div>
+            <button class="btn icon-btn compact" aria-label="Refresh" title="Refresh" @click=${() => this.load(true)}>⟳</button>
+          </div>
+          <div class="sub">Plan meals onto dates, then add a day's or the whole week's ingredients to your list.</div>
+          ${this._weekTemplate(state, meals)}
         </section>
       </div>`;
   }
@@ -1523,7 +1534,6 @@ class LocalListAssistPanel extends LitElement {
             <button class="btn icon-btn compact" aria-label="Close menu" @click=${() => this.closePanels()}>×</button>
           </div>
           <div class="drawer-stack">
-            <button class="btn" @click=${() => this.openMeals()}>🍽 Meals</button>
             <button class="btn" @click=${() => { this._view = this._view === "activity" ? "list" : "activity"; this.closePanels(); }}>${this._view === "activity" ? "Back to List" : "Activity"}</button>
             <button class="btn" @click=${() => this.openAppSettings()}>App Settings</button>
             ${multilist ? html`<button class="btn" @click=${() => this.openListSettings()}>List Settings</button>` : nothing}
@@ -1548,12 +1558,44 @@ class LocalListAssistPanel extends LitElement {
     this._reorderListId = "";
   }
 
-  openMeals() {
+  // --- primary navigation (bottom bar) ---
+  goList() {
     this.closePanels();
-    this._mealsOpen = true;
     this._mealEditorId = "";
-    this._mealsView = "meals";
+    this._view = "list";
+  }
+
+  goShop() {
+    this.enterShopping();
+  }
+
+  goMeals() {
+    this.closePanels();
+    this._mealEditorId = "";
+    this._view = "meals";
+  }
+
+  goPlan() {
+    this.closePanels();
+    this._mealEditorId = "";
     this._weekStart = this._toISODate(this._mondayOf(new Date()));
+    this._view = "plan";
+  }
+
+  _bottomBar() {
+    const v = this._view;
+    const tab = (icon, label, onClick, active) => html`
+      <button class=${"nav-item" + (active ? " active" : "")} @click=${onClick}
+        aria-label=${label} aria-current=${active ? "page" : "false"}>
+        <span class="nav-icon">${icon}</span><span class="nav-label">${label}</span>
+      </button>`;
+    return html`
+      <nav class="bottom-nav">
+        ${tab("🧾", "List", () => this.goList(), v === "list" || v === "activity")}
+        ${tab("🛒", "Shop", () => this.goShop(), v === "shopping")}
+        ${tab("🍽", "Meals", () => this.goMeals(), v === "meals")}
+        ${tab("📅", "Plan", () => this.goPlan(), v === "plan")}
+      </nav>`;
   }
 
   openMealEditor(mealId) {
@@ -1563,7 +1605,7 @@ class LocalListAssistPanel extends LitElement {
     this._drafts.mealIngredients = (meal?.ingredients || []).map((i) => i.item).join("\n");
     this._drafts.mealDirections = (meal?.directions || []).join("\n");
     this._mealConfirmId = "";
-    this._mealsOpen = true;
+    this._view = "meals";
     this.requestUpdate();
   }
 
@@ -1586,10 +1628,10 @@ class LocalListAssistPanel extends LitElement {
     this._drafts.mealIngredients = items.join("\n");
     this._drafts.mealDirections = "";
     this._mealConfirmId = "";
-    this._mealsOpen = true;
+    this._view = "meals";
     this.requestUpdate();
     this.updateComplete.then(() => {
-      const el = this.renderRoot?.querySelector(".modal-card .input");
+      const el = this.renderRoot?.querySelector(".meal-page .input");
       if (el) el.focus();
     });
   }
@@ -1809,7 +1851,7 @@ class LocalListAssistPanel extends LitElement {
     if (nextTab === "directions" && !hasDirections) nextTab = "add";
     this._mealTab = nextTab;
     this._mealConfirmId = mealId;
-    this._mealsOpen = false;
+    this._view = "meals";
     this._mealEditorId = "";
   }
 
@@ -1821,7 +1863,7 @@ class LocalListAssistPanel extends LitElement {
   backToMeals() {
     this._mealConfirmId = "";
     this._mealEditingKey = "";
-    this._mealsOpen = true;
+    this._view = "meals";
   }
 
   toggleStep(index) {
@@ -2182,6 +2224,24 @@ class LocalListAssistPanel extends LitElement {
       font-family: var(--paper-font-body1_-_font-family, "Segoe UI", system-ui, sans-serif);
     }
     * { box-sizing: border-box; }
+    .app { --accent: #2c78ba; }
+    .app-scroll { padding-bottom: 82px; }
+    .page-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .bottom-nav {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+      display: flex; gap: 4px; justify-content: center; padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+      background: var(--lla-surface); border-top: 1px solid var(--lla-border);
+      box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.14);
+    }
+    .nav-item {
+      flex: 1 1 0; max-width: 160px; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      border: none; background: transparent; color: var(--lla-text-dim); cursor: pointer;
+      font: inherit; padding: 7px 4px; border-radius: 12px; min-height: 52px; justify-content: center;
+    }
+    .nav-item .nav-icon { font-size: 21px; line-height: 1; }
+    .nav-item .nav-label { font-size: 12px; font-weight: 600; }
+    .nav-item.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+    .nav-item:hover { color: var(--lla-text); }
     .wrap { max-width: 1120px; margin: 0 auto; padding: 20px; --accent: #2c78ba; }
     .hero, .section {
       background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 10%, var(--lla-surface)), var(--lla-surface));
@@ -2331,13 +2391,12 @@ class LocalListAssistPanel extends LitElement {
     .divider { height: 1px; background: var(--lla-border); margin: 16px 0; }
     .error { color: var(--lla-danger); font-weight: 600; }
     .undo-toast {
-      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+      position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%);
       background: var(--lla-surface); color: var(--lla-text); border: 1px solid var(--lla-border);
       border-radius: 14px; padding: 10px 14px; display: flex; align-items: center; gap: 12px;
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); z-index: 40;
     }
     .undo-toast .btn { padding: 6px 12px; }
-    .shop-btn { font-size: 20px; }
     .shopping { max-width: 720px; margin: 0 auto; padding: 10px 12px 40px; min-height: 100%; --accent: #2c78ba; }
     .shop-bar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--lla-bg-1); }
     .shop-done { padding: 10px 14px; }

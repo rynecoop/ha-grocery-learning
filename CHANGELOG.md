@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.25.0
+- Much easier navigation, especially on phones: there's now a bottom tab bar with List, Shop, Meals, and Plan, so every main screen is one tap away instead of being buried in the menu. Meals and the planner are now full screens rather than a pop-up you had to dig for. Multiple lists work exactly as before (the list chips still live on the List screen); the ⋯ menu now just holds settings, activity, and backup.
+
 ## 0.24.0
 - The meal planner is now a dated calendar instead of a single rolling week. Each day is a real date, and you can move between weeks with the ‹ › arrows (with a "Today" jump). Nothing ever expires or clears on its own — past and future weeks stay exactly as you left them until you remove them. "Clear week" now only clears the week you are looking at, and today's date is highlighted.
 
