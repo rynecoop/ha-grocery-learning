@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.24.0
+- The meal planner is now a dated calendar instead of a single rolling week. Each day is a real date, and you can move between weeks with the ‹ › arrows (with a "Today" jump). Nothing ever expires or clears on its own — past and future weeks stay exactly as you left them until you remove them. "Clear week" now only clears the week you are looking at, and today's date is highlighted.
+
 ## 0.23.0
 - Added a weekly meal planner: open Meals and switch to "This Week" to assign your saved meals to Monday–Sunday. Add a single day's ingredients or the whole week's to your list in one go — the ingredients are combined and de-duplicated across meals, then shown in the same confirm checklist so you can uncheck what you already have. Includes "Clear week", and the plan is stored locally and included in backups.
 

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from homeassistant.helpers.storage import Store
+
+_DATE_KEY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 from .const import DEFAULT_CATEGORIES, STORAGE_KEY, STORAGE_VERSION
 
@@ -314,19 +317,27 @@ class GroceryLearningStore:
         return cleaned
 
     async def load_meal_plan(self) -> dict[str, list[str]]:
-        """Load the weekly meal plan (day -> list of meal ids)."""
-        days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-        plan: dict[str, list[str]] = {day: [] for day in days}
+        """Load the meal plan, keyed by ISO date (``YYYY-MM-DD``) -> meal ids.
+
+        Only well-formed date keys with at least one meal id are kept, so legacy
+        day-of-week keys and empty days are dropped on load.
+        """
+        plan: dict[str, list[str]] = {}
         data = await self._store.async_load()
         if not isinstance(data, dict):
             return plan
         raw = data.get("meal_plan", {})
         if not isinstance(raw, dict):
             return plan
-        for day in days:
-            values = raw.get(day, [])
-            if isinstance(values, list):
-                plan[day] = [str(meal_id).strip() for meal_id in values if str(meal_id).strip()]
+        for key, values in raw.items():
+            if not isinstance(key, str):
+                continue
+            date_key = key.strip()
+            if not _DATE_KEY_RE.match(date_key) or not isinstance(values, list):
+                continue
+            ids = [str(meal_id).strip() for meal_id in values if str(meal_id).strip()]
+            if ids:
+                plan[date_key] = ids
         return plan
 
     async def save(
