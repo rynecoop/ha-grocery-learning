@@ -68,6 +68,7 @@ from .multilist_ops import archive_list as apply_archive_list, delete_archived_l
 from .item_logic import (
     canonical_item_phrase as _canonical_item_phrase,
     category_for_term as _category_for_term,
+    clean_suggestion_display as _clean_suggestion_display,
     coerce_quantity as _coerce_quantity,
     dedupe_rank_suggestions as _dedupe_rank_suggestions,
     decode_contributors as _decode_contributors,
@@ -300,6 +301,20 @@ class GroceryLearningActionView(HomeAssistantView):
 
 def _normalize_term(value: str) -> str:
     return _canonical_item_phrase(value)
+
+
+def _suggestion_key(display: str, fallback: str = "") -> str:
+    """Canonical de-dupe/routing key for a quick-add suggestion.
+
+    Strips a trailing quantity ("x 3") from the display before normalizing, so
+    suggestions that differ only by casing or a baked-in quantity collapse into
+    one entry and route to the same category. Falls back to a raw normalized
+    value when the display text is empty (e.g. a legacy item_meta key suffix).
+    """
+    cleaned = _clean_suggestion_display(display)
+    if cleaned:
+        return _normalize_term(cleaned)
+    return _normalize_term(fallback) if fallback else ""
 
 
 def _display_name_for_category(category: str) -> str:
@@ -754,12 +769,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         frequent = hass.data[DOMAIN].get("frequent", {})
         if isinstance(frequent, dict):
-            for normalized, value in frequent.items():
+            for freq_key, value in frequent.items():
                 if not isinstance(value, dict) or value.get("dismissed"):
                     continue
+                display = str(value.get("display", freq_key)).strip()
+                normalized = _suggestion_key(display, str(freq_key))
+                if not normalized:
+                    continue
                 entries.append({
-                    "normalized": str(normalized),
-                    "item": str(value.get("display", normalized)).strip() or str(normalized),
+                    "normalized": normalized,
+                    "item": display or str(freq_key),
                     "count": int(value.get("count", 0) or 0),
                     "last": str(value.get("last", "")),
                     "source": "frequent",
@@ -767,16 +786,24 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
         item_meta = hass.data[DOMAIN].get("item_meta", {})
         if isinstance(item_meta, dict):
-            for normalized, meta in item_meta.items():
+            for meta_key, meta in item_meta.items():
                 if not isinstance(meta, dict):
                     continue
                 try:
                     add_count = int(meta.get("add_count", 0) or 0)
                 except (TypeError, ValueError):
                     add_count = 0
+                display = str(meta.get("last_item_text", "")).strip()
+                # item_meta is keyed by "{list_entity}|{normalized}", so re-derive
+                # the bare canonical term from the stored text (falling back to the
+                # key suffix) — using the compound key as the normalized value would
+                # break category routing and de-duplication in the dropdown.
+                normalized = _suggestion_key(display, str(meta_key).rsplit("|", 1)[-1])
+                if not normalized:
+                    continue
                 entries.append({
-                    "normalized": str(normalized),
-                    "item": str(meta.get("last_item_text", "")).strip() or str(normalized),
+                    "normalized": normalized,
+                    "item": display or normalized,
                     "count": add_count,
                     "last": str(meta.get("last_added_at", "")),
                     "source": "history",
@@ -789,8 +816,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 for item in (list_obj.get("items", []) if isinstance(list_obj, dict) else []):
                     summary = str(item.get("summary", "")).strip() if isinstance(item, dict) else ""
                     if summary:
+                        normalized = _suggestion_key(summary, summary)
+                        if not normalized:
+                            continue
                         entries.append({
-                            "normalized": _normalize_term(summary),
+                            "normalized": normalized,
                             "item": summary,
                             "count": 0,
                             "last": "",
@@ -800,6 +830,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         ranked = _dedupe_rank_suggestions(entries, limit)
         out: list[dict[str, Any]] = []
         for entry in ranked:
+            display = _clean_suggestion_display(entry["item"]) or entry["item"]
             category = "other"
             if terms_obj is not None:
                 try:
@@ -807,7 +838,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 except Exception:  # pragma: no cover - defensive
                     category = "other"
             out.append({
-                "item": entry["item"],
+                "item": display,
+                "normalized": entry["normalized"],
                 "category": category,
                 "category_display": _display_name_for_category(category),
                 "source": entry.get("source", ""),
@@ -2647,6 +2679,40 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             if isinstance(frequent, dict) and normalized in frequent and isinstance(frequent[normalized], dict):
                 frequent[normalized]["dismissed"] = True
                 await _save()
+            raw_list = str(payload.get("list_id", "")).strip()
+            list_id = _normalize_list_id(raw_list) if raw_list else None
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}
+
+        if action == "dismiss_suggestion":
+            # Remove a quick-add autocomplete suggestion the user long-pressed to
+            # delete: drop it from the frequent tally and forget every item_meta
+            # history record for that phrase (keys are "{list_entity}|{normalized}")
+            # so it stops surfacing in the dropdown.
+            raw = str(payload.get("normalized", "")).strip()
+            item = str(payload.get("item", "")).strip()
+            normalized = raw or _suggestion_key(item)
+            changed = False
+            if normalized:
+                frequent = hass.data[DOMAIN].get("frequent", {})
+                if isinstance(frequent, dict):
+                    for freq_key, value in frequent.items():
+                        if not isinstance(value, dict) or value.get("dismissed"):
+                            continue
+                        if _suggestion_key(str(value.get("display", freq_key)), str(freq_key)) == normalized:
+                            value["dismissed"] = True
+                            changed = True
+                meta_map = hass.data[DOMAIN].get("item_meta", {})
+                if isinstance(meta_map, dict):
+                    stale = [
+                        key for key, meta in meta_map.items()
+                        if isinstance(meta, dict)
+                        and _suggestion_key(str(meta.get("last_item_text", "")), str(key).rsplit("|", 1)[-1]) == normalized
+                    ]
+                    for key in stale:
+                        meta_map.pop(key, None)
+                        changed = True
+                if changed:
+                    await _save()
             raw_list = str(payload.get("list_id", "")).strip()
             list_id = _normalize_list_id(raw_list) if raw_list else None
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal(list_id)}

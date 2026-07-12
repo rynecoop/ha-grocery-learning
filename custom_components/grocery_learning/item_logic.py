@@ -161,6 +161,26 @@ def merge_meta_records(existing: Mapping[str, str], incoming: Mapping[str, str])
 
 # --- quick-add autocomplete --------------------------------------------------
 
+_QUANTITY_SUFFIX_RE = re.compile(r"\s*[x×]\s*\d+\s*$", re.IGNORECASE)
+
+
+def clean_suggestion_display(value: str) -> str:
+    """Tidy an item's display text for the quick-add suggestion dropdown.
+
+    Collapses whitespace, drops a trailing quantity suffix (``x 3``, ``x3``,
+    ``×2``), and standardizes capitalization to Title Case so variants like
+    ``apples``/``Apples``/``APPLES`` all render as one consistent ``Apples``.
+    """
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    text = _QUANTITY_SUFFIX_RE.sub("", text).strip()
+    if not text:
+        return ""
+    return " ".join(
+        (word[:1].upper() + word[1:].lower()) if word else word
+        for word in text.split(" ")
+    )
+
+
 def dedupe_rank_suggestions(entries: Sequence[Mapping[str, Any]], limit: int = 250) -> list[dict[str, Any]]:
     """Merge candidate quick-add suggestions from several sources into one list.
 

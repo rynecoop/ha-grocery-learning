@@ -655,6 +655,41 @@ class LocalListAssistPanel extends LitElement {
     await this.addItem();
   }
 
+  onSuggestionClick(s) {
+    if (this._suppressNextSuggestClick) {
+      this._suppressNextSuggestClick = false;
+      return;
+    }
+    this.selectSuggestion(s.item);
+  }
+
+  onSuggestionPointerDown(s, ev) {
+    if (ev.pointerType === "mouse" && ev.button !== 0) return;
+    this.clearSuggestLongPress();
+    this._suggestLongPressTimer = window.setTimeout(() => {
+      this._suppressNextSuggestClick = true;
+      this.dismissSuggestion(s);
+      this.clearSuggestLongPress();
+    }, 550);
+  }
+
+  clearSuggestLongPress() {
+    if (this._suggestLongPressTimer) {
+      window.clearTimeout(this._suggestLongPressTimer);
+      this._suggestLongPressTimer = null;
+    }
+  }
+
+  async dismissSuggestion(s) {
+    if (this._suggestBlurTimer) { window.clearTimeout(this._suggestBlurTimer); this._suggestBlurTimer = null; }
+    await this.act({
+      action: "dismiss_suggestion",
+      normalized: s?.normalized || "",
+      item: s?.item || "",
+      list_id: this.currentListId(),
+    });
+  }
+
   async quickAddItem(item) {
     const name = String(item || "").trim();
     if (!name) return;
@@ -1285,7 +1320,12 @@ class LocalListAssistPanel extends LitElement {
       <div class="suggest-dropdown" @mousedown=${(e) => e.preventDefault()}>
         ${matches.map((s, i) => html`
           <button class=${"suggest-row" + (this._suggestIndex === i ? " active" : "")}
-            @click=${() => this.selectSuggestion(s.item)}>
+            title="Tap to add · long-press or right-click to remove"
+            @click=${() => this.onSuggestionClick(s)}
+            @contextmenu=${(e) => { e.preventDefault(); this.dismissSuggestion(s); }}
+            @pointerdown=${(e) => this.onSuggestionPointerDown(s, e)}
+            @pointerup=${() => this.clearSuggestLongPress()}
+            @pointerleave=${() => this.clearSuggestLongPress()}>
             <span class="suggest-name">${s.item}</span>
             <span class="pill">${s.category_display}</span>
           </button>`)}
