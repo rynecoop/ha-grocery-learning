@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.26.0
+- Bigger default category set for new lists: new grocery lists now start with Seafood, Snacks, Beverages, and Personal Care in addition to the existing sections, so common items land in the right place instead of "Other" and a fresh list feels more complete. Existing lists are unchanged — this only affects newly created lists.
+- Made the review-and-learn step clearer: when an item needs a category, the prompt now explains that picking one teaches the app so future adds of that item route there automatically (and what "Keep Other" does).
+
 ## 0.25.0
 - Much easier navigation, especially on phones: there's now a bottom tab bar with List, Shop, Meals, and Plan, so every main screen is one tap away instead of being buried in the menu. Meals and the planner are now full screens rather than a pop-up you had to dig for. Multiple lists work exactly as before (the list chips still live on the List screen); the ⋯ menu now just holds settings, activity, and backup.
 

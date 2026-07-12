@@ -55,7 +55,7 @@ In `Meals`, switch to the **This Week** tab for a dated calendar. Each day is a 
 ![Meal planner dated calendar](docs/screenshots/meal-planner.png)
 
 ### Smarter Automatic Categories
-Items are sorted into category sections automatically using an expanded built-in knowledge of common grocery items, with matching that prefers the most specific match (for example `tomato sauce` routes to `Pantry`, not `Produce`). When something still lands in `Other`, the review-and-learn flow lets you teach the correct category once and it sticks.
+Items are sorted into category sections automatically using an expanded built-in knowledge of common grocery items, with matching that prefers the most specific match (for example `tomato sauce` routes to `Pantry`, not `Produce`). New lists start with a full default set — Produce, Bakery, Seafood, Meat, Dairy, Frozen, Snacks, Beverages, Pantry, Household, Personal Care, and Pharmacy — so common items land in the right place instead of `Other`. When something still lands in `Other`, the review-and-learn flow lets you teach the correct category once and it sticks.
 
 ### Backup & Restore
 From `App Settings -> Tools`, `Export backup` downloads a single JSON file with all your lists, saved meals, item history, and learned categories; `Import backup` restores it. Handy for moving to a new Home Assistant install or keeping a safety copy. Import replaces your current data, so run `Repair Local Setup` afterwards if you use voice.

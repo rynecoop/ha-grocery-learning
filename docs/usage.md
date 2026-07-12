@@ -90,9 +90,9 @@
 - choose `Add anyway` or `Skip`
 
 ## Review and Learning
-- unknown items may land in `Other`
-- use the review buttons once to assign the correct category
-- future adds of the same term should route correctly
+- when an item doesn't match any category, a `Review Needed` card appears
+- tap the category it belongs to — the app **learns** it, so future adds of that same item route there automatically
+- tap `Keep Other` to leave it uncategorized (it stays in the `Other` section and isn't learned)
 
 ## Activity
 - activity is available from `App Settings -> Tools -> Open activity`
