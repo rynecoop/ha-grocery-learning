@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.27.0
+- Turn categories on and off with checkboxes: List Settings, the Create List form, and App Settings → Default categories now show every standard category (Produce, Bakery, Seafood, Meat, Dairy, Frozen, Snacks, Beverages, Pantry, Household, Personal Care, Pharmacy) as a simple checklist. Uncheck the ones you don't want and their section disappears (any items in it move to Other); check them to bring them back. Renaming and reordering still work as before.
+
 ## 0.26.0
 - Bigger default category set for new lists: new grocery lists now start with Seafood, Snacks, Beverages, and Personal Care in addition to the existing sections, so common items land in the right place instead of "Other" and a fresh list feels more complete. Existing lists are unchanged — this only affects newly created lists.
 - Made the review-and-learn step clearer: when an item needs a category, the prompt now explains that picking one teaches the app so future adds of that item route there automatically (and what "Keep Other" does).

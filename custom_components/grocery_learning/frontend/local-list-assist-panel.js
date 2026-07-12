@@ -440,6 +440,18 @@ class LocalListAssistPanel extends LitElement {
     this.writeCategoryDraft(key, current);
   }
 
+  toggleStandardCategory(key, category) {
+    const current = this.parseCategoryDraft(key);
+    const index = current.indexOf(category);
+    if (index >= 0) {
+      current.splice(index, 1);
+    } else {
+      current.push(category);
+    }
+    this.writeCategoryDraft(key, current);
+    this.requestUpdate();
+  }
+
   renameCategoryDraft(key, index, value) {
     const next = String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
     if (!next) return false;
@@ -2160,10 +2172,25 @@ class LocalListAssistPanel extends LitElement {
 
   _categoryEditorTemplate(key, label, placeholder, helper = "") {
     const values = this.parseCategoryDraft(key);
+    const currentSet = new Set(values);
+    const standard = this._state?.settings?.standard_categories || [];
     const inputKey = `${key}::new`;
     return html`
       <div class="category-editor">
         <div class="label">${label}</div>
+        ${standard.length ? html`
+          <div class="small">Check the sections this list should use. Unchecking one hides its section and moves any items in it to Other.</div>
+          <div class="category-check-grid">
+            ${standard.map((category) => {
+              const on = currentSet.has(category);
+              return html`
+                <label class=${"category-check" + (on ? " on" : "")}>
+                  <input type="checkbox" .checked=${live(on)} @change=${() => this.toggleStandardCategory(key, category)} />
+                  <span>${this.categoryDisplay(category)}</span>
+                </label>`;
+            })}
+          </div>
+          <div class="label" style="margin-top:14px;">Custom categories &amp; order</div>` : nothing}
         <div class="row category-add-row">
           <input class="input" placeholder=${placeholder} .value=${live(this._drafts[inputKey] || "")}
             @input=${(e) => this.updateDraft(inputKey, e.target.value)}
@@ -2383,6 +2410,13 @@ class LocalListAssistPanel extends LitElement {
     .edit-summary { flex: 1 1 160px; }
     .pill { font-size: 11px; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 26%, var(--lla-surface-2)); color: var(--lla-text); }
     .ghost-pill { background: color-mix(in srgb, var(--lla-text-dim) 18%, var(--lla-surface-2)); }
+    .category-check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
+    .category-check {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px;
+      border: 1px solid var(--lla-border); background: var(--lla-surface-2); cursor: pointer; font-weight: 600;
+    }
+    .category-check input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--accent); }
+    .category-check.on { border-color: color-mix(in srgb, var(--accent) 45%, var(--lla-border)); background: color-mix(in srgb, var(--accent) 10%, var(--lla-surface-2)); }
     .category-chip-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
     .category-chip-card { display: flex; align-items: center; gap: 8px; border: 1px solid var(--lla-border); background: var(--lla-surface-2); border-radius: 16px; padding: 8px 10px; }
     .chip-actions { display: flex; gap: 6px; }

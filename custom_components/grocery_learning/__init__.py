@@ -1596,6 +1596,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "archived_lists": _archived_list_catalog(),
             "settings": {
                 "categories": default_categories,
+                "standard_categories": list(DEFAULT_CATEGORIES),
                 "experimental_multilist": True,
                 "default_grocery_categories": bool(_entry_value(active_entry, CONF_DEFAULT_GROCERY_CATEGORIES, True)),
                 "debug_mode": bool(_entry_value(active_entry, CONF_DEBUG_MODE, False)),
