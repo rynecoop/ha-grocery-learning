@@ -28,6 +28,15 @@
 
 ![Shopping Mode](screenshots/shopping-mode.png)
 
+## Quick Add Autocomplete
+- as you type in Quick Add, a dropdown suggests items you've added before, each with its category already worked out
+- the suggestions come from your frequent items, your item history, and what's already on your lists, ranked by how often and how recently you add them
+- tap a suggestion (or use the arrow keys + Enter) to add it in one tap with the category already applied — no retyping or re-categorizing
+- keep typing and choose `Add "…" as new item` to add exactly what you typed
+- this helps avoid near-duplicates like "milk" vs "Milk" vs "whole milk"
+
+![Quick Add autocomplete](screenshots/autocomplete.png)
+
 ## Frequent Quick-Add
 - the `FREQUENT` row above the list shows the items you add most often as one-tap chips
 - tap a chip to add that item to the current list

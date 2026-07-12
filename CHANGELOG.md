@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.28.0
+- Type-ahead suggestions in Quick Add: as you type, a dropdown shows items you've added before — each with its category already resolved — so you can add a known item in one tap without retyping or re-categorizing. Suggestions are drawn from your frequent items, item history, and what's already on your lists, ranked by how often and how recently you add them. Use the arrow keys and Enter to pick one, or keep typing and choose "Add … as new item". This also cuts down on near-duplicates like "milk" vs "Milk" vs "whole milk".
+
 ## 0.27.0
 - Turn categories on and off with checkboxes: List Settings, the Create List form, and App Settings → Default categories now show every standard category (Produce, Bakery, Seafood, Meat, Dairy, Frozen, Snacks, Beverages, Pantry, Household, Personal Care, Pharmacy) as a simple checklist. Uncheck the ones you don't want and their section disappears (any items in it move to Other); check them to bring them back. Renaming and reordering still work as before.
 

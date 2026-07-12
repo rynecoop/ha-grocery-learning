@@ -14,6 +14,7 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 - dedicated sidebar app: `Local List Assist`
 - **phone-first bottom tab bar**: `List` · `Shop` · `Meals` · `Plan`, each one tap away
 - **Shopping Mode**: a focused, big-tap-target screen for when you are at the store
+- **Quick Add autocomplete**: type-ahead suggestions of items you've added before, each with its category already resolved
 - **Frequent quick-add**: one-tap chips for the items you add most often
 - **saved Meals**: define a meal once (ingredients + directions), add it with a confirm checklist, and cook from the numbered steps
 - **meal planner (dated calendar)**: assign meals to real dates, page between weeks, and add a day's or the whole week's ingredients at once — nothing ever auto-clears
@@ -39,6 +40,11 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 Tap the **Shop** tab in the bottom bar to switch into Shopping Mode: a stripped-down, phone-first view that shows only the unchecked items, grouped in your list's category (store) order, with large tap targets, a progress bar, and a quick add for anything you forgot. Check items off as you move through the store; tap `Done` or the `List` tab to return to the full list.
 
 ![Shopping Mode](docs/screenshots/shopping-mode.png)
+
+### Quick Add Autocomplete
+As you type in Quick Add, a dropdown suggests items you've added before — each with its category already resolved — so a known item goes on the list in one tap without retyping or re-categorizing. Suggestions are drawn from your frequent items, item history, and what's already on your lists, ranked by how often and how recently you add them; use the arrow keys and Enter to pick one, or keep typing and choose "Add … as new item". It also cuts down on near-duplicates like "milk" vs "Milk" vs "whole milk".
+
+![Quick Add autocomplete](docs/screenshots/autocomplete.png)
 
 ### Frequent Quick-Add
 The `FREQUENT` row above the list shows the staples you add most often as one-tap chips, so common items go on the list without typing. Suggestions appear once you have added an item a couple of times, hide anything already on the current list, and the tally survives clearing completed items.
