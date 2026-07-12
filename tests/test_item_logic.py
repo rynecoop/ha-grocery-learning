@@ -327,10 +327,55 @@ class RealKeywordRoutingTests(unittest.TestCase):
             "paper towels": "household",
             "laundry detergent": "household",
             "ibuprofen": "pharmacy",
-            "toothpaste": "pharmacy",
+            "toothpaste": "personal_care",
         }
         for text, expected in cases.items():
             self.assertEqual(self.route(text), expected, f"{text!r} should route to {expected}")
+
+    def test_new_finer_categories(self):
+        # On a new list (full default set), the finer split categories win over
+        # their broad parent because they are ordered first in DEFAULT_CATEGORIES.
+        cases = {
+            "salmon": "seafood",
+            "shrimp": "seafood",
+            "soda": "beverages",
+            "orange juice": "beverages",
+            "coffee": "beverages",
+            "potato chips": "snacks",
+            "trail mix": "snacks",
+            "shampoo": "personal_care",
+            "deodorant": "personal_care",
+            "toothpaste": "personal_care",
+            # broad-parent items with no finer split stay put
+            "ibuprofen": "pharmacy",
+            "canned black beans": "pantry",
+            "chicken breast": "meat",
+        }
+        for text, expected in cases.items():
+            self.assertEqual(self.route(text), expected, f"{text!r} should route to {expected}")
+
+
+class LegacyListNoRegressionTests(unittest.TestCase):
+    """A pre-existing list without the finer categories must route unchanged."""
+
+    LEGACY = ["produce", "bakery", "meat", "dairy", "frozen", "pantry", "household", "pharmacy"]
+
+    def route(self, text):
+        return item_logic.category_for_term(
+            {}, item_logic.canonical_item_phrase(text), self.LEGACY, const.DEFAULT_KEYWORDS_BY_CATEGORY
+        )
+
+    def test_finer_items_fall_back_to_broad_parent(self):
+        cases = {
+            "salmon": "meat",
+            "soda": "pantry",
+            "orange juice": "pantry",
+            "potato chips": "pantry",
+            "shampoo": "pharmacy",
+            "toothpaste": "pharmacy",
+        }
+        for text, expected in cases.items():
+            self.assertEqual(self.route(text), expected, f"{text!r} should route to {expected} on a legacy list")
 
     def test_head_noun_breaks_ties(self):
         # "soup" is the head noun -> pantry, even though the modifier word also

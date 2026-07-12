@@ -1237,7 +1237,8 @@ class LocalListAssistPanel extends LitElement {
       parts.push(html`
         <section class="section">
           <div class="title">Review Needed</div>
-          <div class="small">Item: <strong>${state.pending_review.item}</strong> (${state.pending_review.source_list})</div>
+          <div class="small">This item didn't match a category. Pick where it belongs and the app <strong>learns</strong> it — future adds of <strong>${state.pending_review.item}</strong> will route there automatically. Or tap <em>Keep Other</em> to leave it uncategorized.</div>
+          <div class="small" style="margin-top:8px;">Item: <strong>${state.pending_review.item}</strong> (${state.pending_review.source_list})</div>
           <div class="row">
             ${(state.categories || []).map((cat) => html`<button class="btn" @click=${() => this.applyReview(cat, true)}>${cat.replaceAll("_", " ")}</button>`)}
             <button class="btn" @click=${() => this.applyReview("other", false)}>Keep Other</button>

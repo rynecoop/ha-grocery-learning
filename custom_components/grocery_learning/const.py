@@ -15,14 +15,24 @@ SERVICE_INSTALL_VOICE_SENTENCES = "install_voice_sentences"
 SERVICE_APPLY_REVIEW = "apply_review"
 SERVICE_CONFIRM_DUPLICATE = "confirm_duplicate"
 
+# The default (and grocery-template) category set for new lists. Finer
+# categories are ordered before their broader parent (seafood before meat;
+# snacks and beverages before pantry; personal_care before pharmacy) because
+# category_for_term breaks keyword ties by this order — so on a list that has
+# both, "salmon" routes to Seafood and "soda" to Beverages. Existing lists keep
+# their own saved category order and are unaffected.
 DEFAULT_CATEGORIES = [
     "produce",
     "bakery",
+    "seafood",
     "meat",
     "dairy",
     "frozen",
+    "snacks",
+    "beverages",
     "pantry",
     "household",
+    "personal_care",
     "pharmacy",
 ]
 
@@ -108,27 +118,65 @@ DEFAULT_KEYWORDS_BY_CATEGORY: dict[str, tuple[str, ...]] = {
         "lemonade", "sweetener", "stevia", "splenda", "nutella", "raisin", "hummus",
         "guacamole", "olive", "relish", "teriyaki", "coconut water",
     ),
+    # The four categories below are also represented within meat/pantry/pharmacy
+    # above (so lists without these finer categories still route correctly). On a
+    # list that has both, the finer category wins because it is ordered first in
+    # DEFAULT_CATEGORIES.
+    "seafood": (
+        "fish", "salmon", "tuna", "shrimp", "crab", "lobster", "scallop", "cod", "tilapia",
+        "catfish", "sardine", "seafood", "shellfish", "clam", "oyster", "mussel", "halibut",
+        "mahi", "trout", "anchovy", "calamari", "crawfish", "prawn", "swordfish", "snapper",
+    ),
+    "beverages": (
+        "soda", "pop", "coke", "pepsi", "sprite", "juice", "apple juice", "orange juice",
+        "coffee", "tea", "iced tea", "water", "sparkling water", "seltzer", "energy drink",
+        "gatorade", "powerade", "lemonade", "coconut water", "kombucha", "cola", "root beer",
+        "ginger ale", "sports drink", "beverage", "drink", "red bull", "la croix", "tonic",
+        "club soda", "smoothie",
+    ),
+    "snacks": (
+        "chip", "cracker", "snack", "popcorn", "pretzel", "tortilla chip", "candy", "chocolate",
+        "gummy", "raisin", "applesauce", "pudding", "jello", "trail mix", "protein bar",
+        "granola bar", "fruit snack", "nut", "almond", "cashew", "peanut", "pistachio", "walnut",
+        "pecan", "sunflower seed", "goldfish", "cheez it", "dorito", "cheeto", "beef jerky",
+        "fruit cup", "rice cake", "granola",
+    ),
+    "personal_care": (
+        "toothpaste", "toothbrush", "mouthwash", "floss", "deodorant", "shampoo", "conditioner",
+        "razor", "shaving cream", "body wash", "face wash", "soap", "lotion", "moisturizer",
+        "sunscreen", "chapstick", "lip balm", "cotton swab", "q tip", "cotton ball", "tampon",
+        "pad", "diaper", "baby wipe", "hairspray", "makeup", "nail polish", "perfume", "cologne",
+        "hairbrush", "comb",
+    ),
 }
 
 HELPER_BY_CATEGORY = {
     "produce": "input_text.grocery_learned_produce",
     "bakery": "input_text.grocery_learned_bakery",
+    "seafood": "input_text.grocery_learned_seafood",
     "meat": "input_text.grocery_learned_meat",
     "dairy": "input_text.grocery_learned_dairy",
     "frozen": "input_text.grocery_learned_frozen",
+    "snacks": "input_text.grocery_learned_snacks",
+    "beverages": "input_text.grocery_learned_beverages",
     "pantry": "input_text.grocery_learned_pantry",
     "household": "input_text.grocery_learned_household",
+    "personal_care": "input_text.grocery_learned_personal_care",
     "pharmacy": "input_text.grocery_learned_pharmacy",
 }
 
 TARGET_LIST_BY_CATEGORY = {
     "produce": "todo.grocery_produce",
     "bakery": "todo.grocery_bakery",
+    "seafood": "todo.grocery_seafood",
     "meat": "todo.grocery_meat",
     "dairy": "todo.grocery_dairy",
     "frozen": "todo.grocery_frozen",
+    "snacks": "todo.grocery_snacks",
+    "beverages": "todo.grocery_beverages",
     "pantry": "todo.grocery_pantry",
     "household": "todo.grocery_household",
+    "personal_care": "todo.grocery_personal_care",
     "pharmacy": "todo.grocery_pharmacy",
     "other": "todo.grocery_other",
 }
