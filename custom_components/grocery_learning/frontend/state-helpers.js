@@ -169,3 +169,22 @@ export function deleteArchivedListLocal(state, listId) {
   archivedLists.splice(index, 1);
   return true;
 }
+
+// Filter a pre-ranked suggestion list against what the user has typed.
+// Prefix matches come first (they are the strongest signal), then substring
+// matches, both preserving the input's existing rank order. An exact match of
+// the query is dropped so the dropdown doesn't just echo what was typed.
+export function matchSuggestions(all, query, limit = 6) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return [];
+  const cap = Math.max(0, limit || 0);
+  const prefix = [];
+  const substring = [];
+  for (const suggestion of all || []) {
+    const name = String(suggestion && suggestion.item || "").trim().toLowerCase();
+    if (!name || name === q) continue;
+    if (name.startsWith(q)) prefix.push(suggestion);
+    else if (name.includes(q)) substring.push(suggestion);
+  }
+  return prefix.concat(substring).slice(0, cap);
+}

@@ -7,6 +7,7 @@ import {
   createListLocal as applyCreateListLocal,
   deleteArchivedListLocal as applyDeleteArchivedListLocal,
   groupTitle as deriveGroupTitle,
+  matchSuggestions,
   moveItemToCompleted as applyMoveItemToCompleted,
   switchListLocal as applySwitchListLocal,
   updateItemLocal as applyUpdateItemLocal,
@@ -44,6 +45,8 @@ class LocalListAssistPanel extends LitElement {
     _mealEditingKey: { state: true },
     _mealTab: { state: true },
     _stepsChecked: { state: true },
+    _suggestOpen: { state: true },
+    _suggestIndex: { state: true },
     _weekStart: { state: true },
     _confirmOpen: { state: true },
     _confirmItems: { state: true },
@@ -81,6 +84,9 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditingKey = "";
     this._mealTab = "add";
     this._stepsChecked = {};
+    this._suggestOpen = false;
+    this._suggestIndex = -1;
+    this._suggestBlurTimer = null;
     this._weekStart = "";
     this._confirmOpen = false;
     this._confirmItems = [];
@@ -585,6 +591,70 @@ class LocalListAssistPanel extends LitElement {
     });
   }
 
+  // --- quick-add autocomplete ---
+  quickAddSuggestions() {
+    return matchSuggestions(this._state?.suggestions || [], this._drafts.quickAdd || "", 6);
+  }
+
+  onQuickAddInput(value) {
+    this.updateDraft("quickAdd", value);
+    this._suggestOpen = true;
+    this._suggestIndex = -1;
+  }
+
+  onQuickAddFocus() {
+    if ((this._drafts.quickAdd || "").trim()) this._suggestOpen = true;
+  }
+
+  closeSuggest() {
+    this._suggestOpen = false;
+    this._suggestIndex = -1;
+  }
+
+  deferCloseSuggest() {
+    if (this._suggestBlurTimer) window.clearTimeout(this._suggestBlurTimer);
+    this._suggestBlurTimer = window.setTimeout(() => { this.closeSuggest(); this._suggestBlurTimer = null; }, 150);
+  }
+
+  onQuickAddKeydown(ev) {
+    const matches = this.quickAddSuggestions();
+    if (ev.key === "ArrowDown") {
+      if (matches.length) {
+        ev.preventDefault();
+        this._suggestOpen = true;
+        this._suggestIndex = Math.min(this._suggestIndex + 1, matches.length); // last index = "add new" row
+      }
+      return;
+    }
+    if (ev.key === "ArrowUp") {
+      if (this._suggestOpen) {
+        ev.preventDefault();
+        this._suggestIndex = Math.max(this._suggestIndex - 1, -1);
+      }
+      return;
+    }
+    if (ev.key === "Escape") {
+      if (this._suggestOpen) { ev.preventDefault(); this.closeSuggest(); }
+      return;
+    }
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      if (this._suggestOpen && this._suggestIndex >= 0 && this._suggestIndex < matches.length) {
+        this.selectSuggestion(matches[this._suggestIndex].item);
+      } else {
+        this.closeSuggest();
+        this.addItem();
+      }
+    }
+  }
+
+  async selectSuggestion(item) {
+    this.closeSuggest();
+    this._drafts.quickAdd = String(item || "");
+    this.requestUpdate();
+    await this.addItem();
+  }
+
   async quickAddItem(item) {
     const name = String(item || "").trim();
     if (!name) return;
@@ -1023,9 +1093,14 @@ class LocalListAssistPanel extends LitElement {
                 <div class="small">Tap the active list to manage it. Drag a chip to reorder, or long-press / right-click for reorder controls.</div>`
             : nothing}
           <div class="row quick-add-row">
-            <input id="quickAdd" class="input" placeholder="Add item" .value=${live(this._drafts.quickAdd || "")}
-              @input=${(e) => this.updateDraft("quickAdd", e.target.value)}
-              @keydown=${(e) => { if (e.key === "Enter") { e.preventDefault(); this.addItem(); } }} />
+            <div class="quick-add-field">
+              <input id="quickAdd" class="input" placeholder="Add item" autocomplete="off" .value=${live(this._drafts.quickAdd || "")}
+                @input=${(e) => this.onQuickAddInput(e.target.value)}
+                @focus=${() => this.onQuickAddFocus()}
+                @blur=${() => this.deferCloseSuggest()}
+                @keydown=${(e) => this.onQuickAddKeydown(e)} />
+              ${this._suggestOpen ? this._suggestDropdown() : nothing}
+            </div>
             <input id="quickAddQty" class="input qty-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Qty"
               .value=${live(this._drafts.quickAddQty || "1")}
               @input=${(e) => this.updateDraft("quickAddQty", e.target.value)} />
@@ -1199,6 +1274,25 @@ class LocalListAssistPanel extends LitElement {
             @input=${(e) => this.updateDraft(`quantity:${key}`, e.target.value)} />
           <button class="btn" @click=${(e) => { e.stopPropagation(); this.saveCompletedItem(item); }}>Save</button>
         </div>
+      </div>`;
+  }
+
+  _suggestDropdown() {
+    const typed = (this._drafts.quickAdd || "").trim();
+    const matches = this.quickAddSuggestions();
+    if (!typed || !matches.length) return nothing;
+    return html`
+      <div class="suggest-dropdown" @mousedown=${(e) => e.preventDefault()}>
+        ${matches.map((s, i) => html`
+          <button class=${"suggest-row" + (this._suggestIndex === i ? " active" : "")}
+            @click=${() => this.selectSuggestion(s.item)}>
+            <span class="suggest-name">${s.item}</span>
+            <span class="pill">${s.category_display}</span>
+          </button>`)}
+        <button class=${"suggest-row suggest-new" + (this._suggestIndex === matches.length ? " active" : "")}
+          @click=${() => { this.closeSuggest(); this.addItem(); }}>
+          <span class="suggest-name">+ Add “${typed}” as new item</span>
+        </button>
       </div>`;
   }
 
@@ -2293,6 +2387,22 @@ class LocalListAssistPanel extends LitElement {
       border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; font: inherit;
     }
     .quick-add-row { align-items: stretch; }
+    .quick-add-field { position: relative; flex: 1; min-width: 0; }
+    .quick-add-field .input { width: 100%; }
+    .suggest-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 25;
+      background: var(--lla-surface); border: 1px solid var(--lla-border); border-radius: 14px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28); overflow: hidden; max-height: 320px; overflow-y: auto;
+    }
+    .suggest-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+      border: none; background: transparent; color: var(--lla-text); font: inherit; text-align: left;
+      padding: 11px 14px; cursor: pointer; border-bottom: 1px solid var(--lla-border);
+    }
+    .suggest-row:last-child { border-bottom: none; }
+    .suggest-row:hover, .suggest-row.active { background: color-mix(in srgb, var(--accent) 14%, var(--lla-surface-2)); }
+    .suggest-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .suggest-new .suggest-name { font-weight: 500; color: var(--lla-text-dim); }
     .qty-input { width: 96px; flex: 0 0 96px; text-align: center; }
     .frequent-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
     .frequent-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--lla-text-dim); margin-right: 2px; }

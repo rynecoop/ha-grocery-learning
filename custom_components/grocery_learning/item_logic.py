@@ -159,6 +159,49 @@ def merge_meta_records(existing: Mapping[str, str], incoming: Mapping[str, str])
     return merged
 
 
+# --- quick-add autocomplete --------------------------------------------------
+
+def dedupe_rank_suggestions(entries: Sequence[Mapping[str, Any]], limit: int = 250) -> list[dict[str, Any]]:
+    """Merge candidate quick-add suggestions from several sources into one list.
+
+    Each entry is a mapping with ``normalized`` (the canonical key used for
+    de-duplication), ``item`` (the display text), ``count`` (how often it has
+    been added), ``last`` (an ISO timestamp string), and ``source``. Entries with
+    the same ``normalized`` key collapse into one — the highest count and most
+    recent timestamp win, and the first non-empty display text is kept. The
+    result is ranked by count then recency, capped at ``limit``.
+    """
+    by_norm: dict[str, dict[str, Any]] = {}
+    for entry in entries or ():
+        normalized = str(entry.get("normalized", "")).strip()
+        if not normalized:
+            continue
+        item = str(entry.get("item", "")).strip()
+        try:
+            count = int(entry.get("count", 0) or 0)
+        except (TypeError, ValueError):
+            count = 0
+        last = str(entry.get("last", "")).strip()
+        existing = by_norm.get(normalized)
+        if existing is None:
+            by_norm[normalized] = {
+                "normalized": normalized,
+                "item": item or normalized,
+                "count": count,
+                "last": last,
+                "source": str(entry.get("source", "")).strip(),
+            }
+            continue
+        if count > existing["count"]:
+            existing["count"] = count
+        if last > existing["last"]:
+            existing["last"] = last
+        if not existing["item"] and item:
+            existing["item"] = item
+    ranked = sorted(by_norm.values(), key=lambda s: (s["count"], s["last"]), reverse=True)
+    return ranked[: max(0, int(limit))]
+
+
 # --- category routing --------------------------------------------------------
 
 def reorder_category_items(

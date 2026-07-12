@@ -69,6 +69,7 @@ from .item_logic import (
     canonical_item_phrase as _canonical_item_phrase,
     category_for_term as _category_for_term,
     coerce_quantity as _coerce_quantity,
+    dedupe_rank_suggestions as _dedupe_rank_suggestions,
     decode_contributors as _decode_contributors,
     display_item_summary as _display_item_summary,
     format_contributors as _format_contributors,
@@ -740,6 +741,77 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         entries.append({"meal_id": str(meal_id), "name": str(meal.get("name")).strip()})
                 if entries:
                     out[str(date_key)] = entries
+        return out
+
+    def _suggestions_payload(limit: int = 250) -> list[dict[str, Any]]:
+        # Candidate quick-add autocomplete entries, gathered from the frequent
+        # tally, the per-item history (item_meta), and items currently on any
+        # list, de-duplicated by normalized phrase and ranked by how often /
+        # how recently they've been added. The frontend filters this list as the
+        # user types. Each entry carries its resolved category for display.
+        terms_obj = hass.data[DOMAIN].get("terms")
+        entries: list[dict[str, Any]] = []
+
+        frequent = hass.data[DOMAIN].get("frequent", {})
+        if isinstance(frequent, dict):
+            for normalized, value in frequent.items():
+                if not isinstance(value, dict) or value.get("dismissed"):
+                    continue
+                entries.append({
+                    "normalized": str(normalized),
+                    "item": str(value.get("display", normalized)).strip() or str(normalized),
+                    "count": int(value.get("count", 0) or 0),
+                    "last": str(value.get("last", "")),
+                    "source": "frequent",
+                })
+
+        item_meta = hass.data[DOMAIN].get("item_meta", {})
+        if isinstance(item_meta, dict):
+            for normalized, meta in item_meta.items():
+                if not isinstance(meta, dict):
+                    continue
+                try:
+                    add_count = int(meta.get("add_count", 0) or 0)
+                except (TypeError, ValueError):
+                    add_count = 0
+                entries.append({
+                    "normalized": str(normalized),
+                    "item": str(meta.get("last_item_text", "")).strip() or str(normalized),
+                    "count": add_count,
+                    "last": str(meta.get("last_added_at", "")),
+                    "source": "history",
+                })
+
+        multilist = hass.data[DOMAIN].get("multilist", {})
+        lists = multilist.get("lists", {}) if isinstance(multilist, dict) else {}
+        if isinstance(lists, dict):
+            for list_obj in lists.values():
+                for item in (list_obj.get("items", []) if isinstance(list_obj, dict) else []):
+                    summary = str(item.get("summary", "")).strip() if isinstance(item, dict) else ""
+                    if summary:
+                        entries.append({
+                            "normalized": _normalize_term(summary),
+                            "item": summary,
+                            "count": 0,
+                            "last": "",
+                            "source": "list",
+                        })
+
+        ranked = _dedupe_rank_suggestions(entries, limit)
+        out: list[dict[str, Any]] = []
+        for entry in ranked:
+            category = "other"
+            if terms_obj is not None:
+                try:
+                    category = _get_category_for_term(terms_obj, entry["normalized"]) or "other"
+                except Exception:  # pragma: no cover - defensive
+                    category = "other"
+            out.append({
+                "item": entry["item"],
+                "category": category,
+                "category_display": _display_name_for_category(category),
+                "source": entry.get("source", ""),
+            })
         return out
 
     def _activity_payload() -> list[dict[str, str]]:
@@ -1620,6 +1692,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "frequent_items": _frequent_payload(exclude_normalized),
             "meals": _meals_payload(),
             "meal_plan": _meal_plan_payload(),
+            "suggestions": _suggestions_payload(),
             "setup": {
                 "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
             },

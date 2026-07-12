@@ -5,6 +5,7 @@ import {
   createListLocal,
   deleteArchivedListLocal,
   groupTitle,
+  matchSuggestions,
   moveItemToCompleted,
   recategorizeItemLocal,
   renameListLocal,
@@ -149,4 +150,23 @@ test("updateItemLocal can rename a completed item", () => {
 
   assert.equal(updated, true);
   assert.equal(state.completed[0].summary, "Milk");
+});
+
+test("matchSuggestions returns prefix matches before substring, capped", () => {
+  const all = [
+    { item: "Whole milk", category_display: "Dairy" },
+    { item: "Milk", category_display: "Dairy" },
+    { item: "Almond milk", category_display: "Dairy" },
+    { item: "Cereal", category_display: "Pantry" },
+  ];
+  const result = matchSuggestions(all, "mil", 6).map((s) => s.item);
+  assert.deepEqual(result, ["Milk", "Whole milk", "Almond milk"]); // prefix first, Cereal excluded
+  assert.deepEqual(matchSuggestions(all, "mil", 2).map((s) => s.item), ["Milk", "Whole milk"]);
+});
+
+test("matchSuggestions ignores empty query and exact echoes", () => {
+  const all = [{ item: "Milk" }, { item: "Bananas" }];
+  assert.deepEqual(matchSuggestions(all, "", 6), []);
+  // an exact match of the typed text is dropped so the dropdown doesn't just echo it
+  assert.deepEqual(matchSuggestions(all, "milk", 6), []);
 });

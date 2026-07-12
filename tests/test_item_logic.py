@@ -412,6 +412,34 @@ class MergeMealIngredientsTests(unittest.TestCase):
         self.assertEqual(item_logic.merge_meal_ingredients(None), [])
 
 
+class DedupeRankSuggestionsTests(unittest.TestCase):
+    def test_dedupes_by_normalized_and_keeps_best(self):
+        entries = [
+            {"normalized": "milk", "item": "Milk", "count": 2, "last": "2026-01-01", "source": "frequent"},
+            {"normalized": "milk", "item": "milk", "count": 5, "last": "2026-02-01", "source": "history"},
+            {"normalized": "eggs", "item": "Eggs", "count": 3, "last": "2026-01-15", "source": "frequent"},
+        ]
+        out = item_logic.dedupe_rank_suggestions(entries)
+        self.assertEqual([s["item"] for s in out], ["Milk", "Eggs"])  # milk(5) ranks above eggs(3)
+        self.assertEqual(out[0]["count"], 5)          # max count across sources
+        self.assertEqual(out[0]["last"], "2026-02-01")  # most recent timestamp
+        self.assertEqual(out[0]["item"], "Milk")       # first non-empty display kept
+
+    def test_ranks_by_recency_on_count_tie(self):
+        entries = [
+            {"normalized": "a", "item": "A", "count": 3, "last": "2026-01-01"},
+            {"normalized": "b", "item": "B", "count": 3, "last": "2026-02-01"},
+        ]
+        self.assertEqual([s["item"] for s in item_logic.dedupe_rank_suggestions(entries)], ["B", "A"])
+
+    def test_skips_blank_normalized_and_caps(self):
+        entries = [{"normalized": "", "item": "x", "count": 9}]
+        entries += [{"normalized": f"n{i}", "item": f"I{i}", "count": i} for i in range(5)]
+        out = item_logic.dedupe_rank_suggestions(entries, limit=2)
+        self.assertEqual(len(out), 2)
+        self.assertTrue(all(s["normalized"] for s in out))
+
+
 class UniqueMealIdTests(unittest.TestCase):
     def test_slugifies_name(self):
         self.assertEqual(item_logic.unique_meal_id("Taco Night", []), "taco_night")
