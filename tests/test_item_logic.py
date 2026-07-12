@@ -440,6 +440,29 @@ class DedupeRankSuggestionsTests(unittest.TestCase):
         self.assertTrue(all(s["normalized"] for s in out))
 
 
+class CleanSuggestionDisplayTests(unittest.TestCase):
+    def test_standardizes_capitalization(self):
+        self.assertEqual(item_logic.clean_suggestion_display("apples"), "Apples")
+        self.assertEqual(item_logic.clean_suggestion_display("APPLES"), "Apples")
+        self.assertEqual(item_logic.clean_suggestion_display("aPPles"), "Apples")
+        self.assertEqual(item_logic.clean_suggestion_display("whole milk"), "Whole Milk")
+
+    def test_strips_trailing_quantity_suffix(self):
+        self.assertEqual(item_logic.clean_suggestion_display("Avocado x 3"), "Avocado")
+        self.assertEqual(item_logic.clean_suggestion_display("avocado x3"), "Avocado")
+        self.assertEqual(item_logic.clean_suggestion_display("Bananas ×2"), "Bananas")
+
+    def test_collapses_whitespace_and_handles_blank(self):
+        self.assertEqual(item_logic.clean_suggestion_display("  green   beans  "), "Green Beans")
+        self.assertEqual(item_logic.clean_suggestion_display(""), "")
+        self.assertEqual(item_logic.clean_suggestion_display("   "), "")
+
+    def test_keeps_interior_digits_and_symbols(self):
+        # only a trailing quantity is stripped, not numbers that are part of the name
+        self.assertEqual(item_logic.clean_suggestion_display("2% milk"), "2% Milk")
+        self.assertEqual(item_logic.clean_suggestion_display("half & half"), "Half & Half")
+
+
 class UniqueMealIdTests(unittest.TestCase):
     def test_slugifies_name(self):
         self.assertEqual(item_logic.unique_meal_id("Taco Night", []), "taco_night")
