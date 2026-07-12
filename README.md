@@ -17,7 +17,7 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 - **Frequent quick-add**: one-tap chips for the items you add most often
 - **saved Meals**: define a meal once (ingredients + directions), add it with a confirm checklist, and cook from the numbered steps
 - **meal planner (dated calendar)**: assign meals to real dates, page between weeks, and add a day's or the whole week's ingredients at once — nothing ever auto-clears
-- **smarter automatic categories** so far fewer items land in `Other`
+- **smarter automatic categories** so far fewer items land in `Other`, with a checkbox list to turn categories on or off
 - quick add with per-user attribution where Home Assistant provides user context
 - multiple local lists with color theming
 - category sections with per-list category order (your store walk order)

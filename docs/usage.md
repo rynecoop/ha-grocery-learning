@@ -77,10 +77,12 @@
 - use `List Settings` to:
   - rename the list
   - change list color
-  - add categories
-  - reorder categories
-  - edit category names in place
-  - remove categories
+  - turn categories on or off with the checkbox list of standard categories (unchecking hides a section and moves its items to `Other`; checking brings it back)
+  - add your own custom categories
+  - reorder categories and edit category names in place
+- to change which categories every *new* list starts with, use the same checkbox list under `App Settings -> Default categories`
+
+![Turn categories on and off](screenshots/category-toggle.png)
 - long-press a list chip on touch or right-click on desktop to open list reorder controls
 - drag a list chip to reorder your lists
 - drag the handle (`⠿`) on the left of an item to reorder items within a category; the order is saved and syncs to other devices
