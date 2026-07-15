@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.28.2
+- Fixed Quick Add autocomplete so the suggestions narrow as you type. Previously the dropdown only reflected the first letter and didn't refine as you typed more, so typing "apples" still showed everything starting with "a". It now filters on the full text with every keystroke.
+
 ## 0.28.1
 - Fixed Quick Add autocomplete: suggestions now show their real category (e.g. Produce) in the dropdown instead of everything reading "Other", variants of the same item are merged and shown with one consistent capitalization (so "apples", "Apples", and "APPLES" collapse into a single "Apples"), and a stray quantity like "x 3" no longer leaks into a suggestion's name.
 - You can now remove a Quick Add suggestion you don't want: long-press it (or right-click on desktop) to drop it from the dropdown.
