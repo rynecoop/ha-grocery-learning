@@ -600,6 +600,11 @@ class LocalListAssistPanel extends LitElement {
     this.updateDraft("quickAdd", value);
     this._suggestOpen = true;
     this._suggestIndex = -1;
+    // _drafts is a plain object, so mutating quickAdd does not by itself
+    // re-render. Without this, the dropdown only refreshes when a reactive
+    // property changes (e.g. _suggestOpen on the first character), leaving the
+    // suggestions frozen on the first letter instead of narrowing as you type.
+    this.requestUpdate();
   }
 
   onQuickAddFocus() {
