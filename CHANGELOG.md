@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.29.0
+- Shopping Mode improvements based on user feedback:
+  - The "add something you forgot" box now has the same Quick Add autocomplete as the List tab, so it suggests items you've added before (with their category) as you type.
+  - Category sections are now collapsible: each header shows its item count (e.g. "Meat (1)") and a chevron — tap it to fold that section away, so you can shrink categories you've already shopped and keep more of the list in view.
+  - Rows are more compact so more items fit on screen at once, with less scrolling, while staying easy to tap.
+- Fixed the autocomplete suggestion text being cut off (e.g. "Bo…") so item names and the "Add … as new item" row are readable, and the suggestions now scroll into view above the on-screen keyboard on mobile when you tap the add field.
+
 ## 0.28.2
 - Fixed Quick Add autocomplete so the suggestions narrow as you type. Previously the dropdown only reflected the first letter and didn't refine as you typed more, so typing "apples" still showed everything starting with "a". It now filters on the full text with every keystroke.
 
