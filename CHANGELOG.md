@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.29.1
+- Fixed the Quick Add autocomplete dropdown on the List tab being too narrow, which cut off longer item names (e.g. "Cantalini ...", "Sweet P..."). The dropdown now spans the full width of the add row like it does in Shopping Mode, so item names and their categories are fully visible.
+
 ## 0.29.0
 - Shopping Mode improvements based on user feedback:
   - The "add something you forgot" box now has the same Quick Add autocomplete as the List tab, so it suggests items you've added before (with their category) as you type.

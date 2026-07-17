@@ -2460,9 +2460,13 @@ class LocalListAssistPanel extends LitElement {
       width: 100%; background: var(--lla-input-bg); color: var(--lla-text);
       border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; font: inherit;
     }
-    .quick-add-row { align-items: stretch; }
+    .quick-add-row { position: relative; align-items: stretch; }
     .quick-add-field { position: relative; flex: 1; min-width: 0; }
     .quick-add-field .input { width: 100%; }
+    /* On the List tab the input shares its row with the Qty box and Add button,
+       so anchor the suggestion dropdown to the whole row instead of the narrow
+       input — it then spans the full width and item names aren't truncated. */
+    .quick-add-row .quick-add-field { position: static; }
     .suggest-dropdown {
       position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 25;
       background: var(--lla-surface); border: 1px solid var(--lla-border); border-radius: 14px;
