@@ -47,6 +47,7 @@ class LocalListAssistPanel extends LitElement {
     _stepsChecked: { state: true },
     _suggestOpen: { state: true },
     _suggestIndex: { state: true },
+    _shopCollapsed: { state: true },
     _weekStart: { state: true },
     _confirmOpen: { state: true },
     _confirmItems: { state: true },
@@ -86,6 +87,7 @@ class LocalListAssistPanel extends LitElement {
     this._stepsChecked = {};
     this._suggestOpen = false;
     this._suggestIndex = -1;
+    this._shopCollapsed = {};
     this._suggestBlurTimer = null;
     this._weekStart = "";
     this._confirmOpen = false;
@@ -609,6 +611,21 @@ class LocalListAssistPanel extends LitElement {
 
   onQuickAddFocus() {
     if ((this._drafts.quickAdd || "").trim()) this._suggestOpen = true;
+    // On mobile the on-screen keyboard covers the lower half of the screen, so
+    // the suggestion dropdown (rendered below the input) can be hidden. Bring
+    // the field toward the top once the keyboard has had a moment to open, so
+    // the dropdown lands in the visible band above the keyboard.
+    window.setTimeout(() => {
+      const field = this.renderRoot?.querySelector(".quick-add-field");
+      if (field && typeof field.scrollIntoView === "function") {
+        field.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+    }, 320);
+  }
+
+  toggleShopCategory(category) {
+    const key = String(category || "");
+    this._shopCollapsed = { ...this._shopCollapsed, [key]: !this._shopCollapsed[key] };
   }
 
   closeSuggest() {
@@ -2108,19 +2125,31 @@ class LocalListAssistPanel extends LitElement {
         </div>
         <div class="shop-progress"><div class="shop-progress-fill" style=${styleMap({ width: pct + "%" })}></div></div>
         <div class="shop-add">
-          <input id="shopAdd" class="input" placeholder="Add something you forgot" .value=${live(this._drafts.quickAdd || "")}
-            @input=${(e) => this.updateDraft("quickAdd", e.target.value)}
-            @keydown=${(e) => { if (e.key === "Enter") { e.preventDefault(); this.addItem(); } }} />
+          <div class="quick-add-field">
+            <input id="shopAdd" class="input" placeholder="Add something you forgot" autocomplete="off" .value=${live(this._drafts.quickAdd || "")}
+              @input=${(e) => this.onQuickAddInput(e.target.value)}
+              @focus=${() => this.onQuickAddFocus()}
+              @blur=${() => this.deferCloseSuggest()}
+              @keydown=${(e) => this.onQuickAddKeydown(e)} />
+            ${this._suggestOpen ? this._suggestDropdown() : nothing}
+          </div>
           <button class="btn primary" @click=${() => this.addItem()}>Add</button>
         </div>
         ${remaining === 0
           ? html`<div class="shop-empty">🎉<div>Everything's checked off.</div>
               <button class="btn" @click=${() => this.exitShopping()}>Back to list</button></div>`
-          : visibleGroups.map((group) => html`
+          : visibleGroups.map((group) => {
+              const collapsed = !!this._shopCollapsed[group.category];
+              return html`
               <div class="shop-section">
-                <div class="shop-cat">${group.title}</div>
-                ${repeat(group.items, (item) => item.item_ref, (item) => this._shoppingItem(item))}
-              </div>`)}
+                <button class="shop-cat" aria-expanded=${collapsed ? "false" : "true"}
+                  @click=${() => this.toggleShopCategory(group.category)}>
+                  <span class="shop-cat-label">${group.title} (${group.items.length})</span>
+                  <span class="shop-cat-chevron ${collapsed ? "collapsed" : ""}" aria-hidden="true">▾</span>
+                </button>
+                ${collapsed ? nothing : repeat(group.items, (item) => item.item_ref, (item) => this._shoppingItem(item))}
+              </div>`;
+            })}
       </div>
       ${this._undo ? html`
         <div class="undo-toast">
@@ -2446,7 +2475,8 @@ class LocalListAssistPanel extends LitElement {
     }
     .suggest-row:last-child { border-bottom: none; }
     .suggest-row:hover, .suggest-row.active { background: color-mix(in srgb, var(--accent) 14%, var(--lla-surface-2)); }
-    .suggest-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .suggest-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; min-width: 0; }
+    .suggest-row .pill { flex: 0 0 auto; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .suggest-new .suggest-name { font-weight: 500; color: var(--lla-text-dim); }
     .qty-input { width: 96px; flex: 0 0 96px; text-align: center; }
     .frequent-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
@@ -2595,11 +2625,15 @@ class LocalListAssistPanel extends LitElement {
     .shop-progress { height: 6px; border-radius: 999px; background: var(--lla-surface-2); overflow: hidden; margin: 4px 2px 14px; }
     .shop-progress-fill { height: 100%; background: var(--accent); transition: width 220ms ease; }
     .shop-add { display: flex; gap: 8px; margin-bottom: 16px; }
-    .shop-section { margin-bottom: 18px; }
-    .shop-cat { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--lla-text-dim); margin: 6px 4px 8px; }
-    .shop-item { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; background: var(--lla-surface-2); border: 1px solid var(--lla-border); border-radius: 16px; padding: 16px; margin-bottom: 10px; color: var(--lla-text); font: inherit; font-size: 18px; cursor: pointer; transition: transform 80ms ease, opacity 120ms ease; }
+    .shop-section { margin-bottom: 14px; }
+    .shop-cat { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+      background: transparent; border: none; text-align: left; cursor: pointer; font: inherit;
+      font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--lla-text-dim); padding: 8px 4px 6px; }
+    .shop-cat-chevron { transition: transform 160ms ease; font-size: 12px; }
+    .shop-cat-chevron.collapsed { transform: rotate(-90deg); }
+    .shop-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--lla-surface-2); border: 1px solid var(--lla-border); border-radius: 12px; padding: 10px 12px; margin-bottom: 6px; color: var(--lla-text); font: inherit; font-size: 16px; cursor: pointer; transition: transform 80ms ease, opacity 120ms ease; }
     .shop-item:active { transform: scale(0.99); }
-    .shop-check { width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 70%, var(--lla-border)); }
+    .shop-check { width: 22px; height: 22px; flex: 0 0 22px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 70%, var(--lla-border)); }
     .shop-name { flex: 1; }
     .shop-empty { text-align: center; padding: 48px 16px; font-size: 44px; color: var(--lla-text-dim); display: flex; flex-direction: column; gap: 16px; align-items: center; }
     .shop-empty div { font-size: 16px; }
