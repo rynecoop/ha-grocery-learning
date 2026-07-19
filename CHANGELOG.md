@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.29.2
+- Fixed the Shop tab scrolling away and hiding the "add something you forgot" box when you tapped it. The Quick Add field no longer force-scrolls itself on focus (which pushed it behind the sticky Shopping Mode header); the browser keeps the focused field in view on its own.
+
 ## 0.29.1
 - Fixed the Quick Add autocomplete dropdown on the List tab being too narrow, which cut off longer item names (e.g. "Cantalini ...", "Sweet P..."). The dropdown now spans the full width of the add row like it does in Shopping Mode, so item names and their categories are fully visible.
 

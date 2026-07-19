@@ -611,16 +611,10 @@ class LocalListAssistPanel extends LitElement {
 
   onQuickAddFocus() {
     if ((this._drafts.quickAdd || "").trim()) this._suggestOpen = true;
-    // On mobile the on-screen keyboard covers the lower half of the screen, so
-    // the suggestion dropdown (rendered below the input) can be hidden. Bring
-    // the field toward the top once the keyboard has had a moment to open, so
-    // the dropdown lands in the visible band above the keyboard.
-    window.setTimeout(() => {
-      const field = this.renderRoot?.querySelector(".quick-add-field");
-      if (field && typeof field.scrollIntoView === "function") {
-        field.scrollIntoView({ block: "start", behavior: "smooth" });
-      }
-    }, 320);
+    // Note: we intentionally do NOT scrollIntoView the field on focus. It
+    // scrolled the input behind the Shop tab's sticky header ("the page scrolls
+    // down and you lose the text box"). Mobile browsers already keep a focused
+    // input visible on their own.
   }
 
   toggleShopCategory(category) {
