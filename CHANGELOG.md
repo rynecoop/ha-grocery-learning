@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.29.3
+- Restored the List tab's auto-scroll when you tap the "Add item" box, so the autocomplete suggestions land in view above the on-screen keyboard again. The 0.29.2 Shop-tab fix had removed this scroll for both tabs; now it's tab-aware — the List tab scrolls (its header isn't sticky) while the Shop tab still doesn't (so its field can't hide behind the sticky Shopping Mode header).
+
 ## 0.29.2
 - Fixed the Shop tab scrolling away and hiding the "add something you forgot" box when you tapped it. The Quick Add field no longer force-scrolls itself on focus (which pushed it behind the sticky Shopping Mode header); the browser keeps the focused field in view on its own.
 
