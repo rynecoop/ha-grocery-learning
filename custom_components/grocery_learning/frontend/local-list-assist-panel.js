@@ -44,6 +44,8 @@ class LocalListAssistPanel extends LitElement {
     _mealConfirmEdits: { state: true },
     _mealEditingKey: { state: true },
     _mealTab: { state: true },
+    _recipeImporting: { state: true },
+    _recipeImportError: { state: true },
     _stepsChecked: { state: true },
     _suggestOpen: { state: true },
     _suggestIndex: { state: true },
@@ -84,6 +86,8 @@ class LocalListAssistPanel extends LitElement {
     this._mealConfirmEdits = {};
     this._mealEditingKey = "";
     this._mealTab = "add";
+    this._recipeImporting = false;
+    this._recipeImportError = "";
     this._stepsChecked = {};
     this._suggestOpen = false;
     this._suggestIndex = -1;
@@ -1526,13 +1530,17 @@ class LocalListAssistPanel extends LitElement {
   }
 
   _mealListTemplate(meals) {
+    // Favorites (for the current Home Assistant user) float to the top, keeping
+    // the backend's name order within each group. A star marks favorited rows.
+    const favs = new Set(this._state?.favorites || []);
+    const ordered = [...meals].sort((a, b) => (favs.has(b.id) ? 1 : 0) - (favs.has(a.id) ? 1 : 0));
     return html`
       <div class="meal-list">
-        ${meals.length
-          ? repeat(meals, (m) => m.id, (m) => html`
+        ${ordered.length
+          ? repeat(ordered, (m) => m.id, (m) => html`
             <button class="meal-row meal-row-button" @click=${() => this.openMealDetail(m.id, "add")}>
               <div class="meal-row-main">
-                <strong>${m.name}</strong>
+                <strong>${favs.has(m.id) ? html`<span class="meal-fav-star" aria-label="Favorite" title="Favorite">★</span> ` : nothing}${m.name}</strong>
                 <div class="small">${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}${m.direction_count ? ` · ${m.direction_count} ${m.direction_count === 1 ? "step" : "steps"}` : ""}</div>
               </div>
               <span class="meal-row-open">Open ›</span>
@@ -1548,6 +1556,21 @@ class LocalListAssistPanel extends LitElement {
   _mealEditorTemplate() {
     const isNew = this._mealEditorId === "new";
     return html`
+      ${isNew ? html`
+        <div class="recipe-import">
+          <div class="label">Import from a recipe link</div>
+          <div class="row recipe-import-row">
+            <input class="input" type="url" inputmode="url" autocomplete="off"
+              placeholder="Paste a recipe URL" .value=${live(this._drafts.recipeUrl || "")}
+              @input=${(e) => this.updateDraft("recipeUrl", e.target.value)}
+              @keydown=${(e) => { if (e.key === "Enter") { e.preventDefault(); this.importRecipe(); } }} />
+            <button class="btn" ?disabled=${this._recipeImporting} @click=${() => this.importRecipe()}>
+              ${this._recipeImporting ? "Importing…" : "Import"}
+            </button>
+          </div>
+          ${this._recipeImportError ? html`<div class="error small">${this._recipeImportError}</div>` : nothing}
+          <div class="small">Pulls the name, ingredients and directions off the page so you can review and tweak them below before saving. Your Home Assistant reads the recipe directly — nothing is sent to any cloud service.</div>
+        </div>` : nothing}
       <div class="grid compact-grid">
         <input class="input" placeholder="Meal name (e.g. Taco Night)" .value=${live(this._drafts.mealName || "")}
           @input=${(e) => this.updateDraft("mealName", e.target.value)} />
@@ -1572,6 +1595,7 @@ class LocalListAssistPanel extends LitElement {
     const ingredients = meal.ingredients || [];
     const directions = meal.directions || [];
     const tab = this._mealTab === "directions" ? "directions" : "add";
+    const isFav = (state?.favorites || []).includes(meal.id);
     return html`
       <div class="overlay-shell" @click=${() => this.closeMealDetail()}>
         <section class="modal-card" role="dialog" aria-label=${meal.name} @click=${(e) => e.stopPropagation()}>
@@ -1586,6 +1610,10 @@ class LocalListAssistPanel extends LitElement {
             <button class=${"meal-tab" + (tab === "add" ? " active" : "")} @click=${() => { this._mealTab = "add"; }}>Add to list</button>
             <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions${directions.length ? ` (${directions.length})` : ""}</button>
             <span class="meal-tab-spacer"></span>
+            <button class=${"btn compact meal-fav-btn" + (isFav ? " fav-on" : "")}
+              aria-pressed=${isFav ? "true" : "false"}
+              title=${isFav ? "Remove from your favorites" : "Add to your favorites"}
+              @click=${() => this.toggleFavorite(meal.id)}>${isFav ? "★ Favorited" : "☆ Favorite"}</button>
             <button class="btn compact" @click=${() => this.openMealEditor(meal.id)}>Edit</button>
             <button class="btn compact danger" @click=${() => this.deleteMeal(meal.id)}>Delete</button>
           </div>
@@ -1840,6 +1868,54 @@ class LocalListAssistPanel extends LitElement {
 
   async deleteMeal(mealId) {
     await this.act({ action: "delete_meal", meal_id: mealId });
+  }
+
+  _recipeImportErrorText(code) {
+    switch (code) {
+      case "missing_url": return "Paste a recipe link first.";
+      case "invalid_url": return "That doesn't look like a public web link.";
+      case "not_a_page": return "That link isn't a web page we can read.";
+      case "no_recipe": return "Couldn't find a recipe on that page. You can still type it in below.";
+      case "fetch_failed":
+      case "fetch_error":
+      default: return "Couldn't reach that link. Check the URL and try again.";
+    }
+  }
+
+  async importRecipe() {
+    const url = (this._drafts.recipeUrl || "").trim();
+    if (!url) return;
+    this._recipeImportError = "";
+    this._recipeImporting = true;
+    this.requestUpdate();
+    try {
+      // import_recipe returns {ok, recipe} (no dashboard), so call the API
+      // directly rather than act(), which would trigger a needless reload.
+      const res = await this.api("action", "POST", { action: "import_recipe", url });
+      if (!res || res.ok === false) {
+        this._recipeImportError = this._recipeImportErrorText(res && res.error);
+        return;
+      }
+      const recipe = res.recipe || {};
+      if (recipe.name) this.updateDraft("mealName", recipe.name);
+      if (Array.isArray(recipe.ingredients) && recipe.ingredients.length) {
+        this.updateDraft("mealIngredients", recipe.ingredients.join("\n"));
+      }
+      if (Array.isArray(recipe.directions) && recipe.directions.length) {
+        this.updateDraft("mealDirections", recipe.directions.join("\n"));
+      }
+      this.updateDraft("recipeUrl", "");
+    } catch (err) {
+      this._recipeImportError = "Couldn't reach that link. Check the URL and try again.";
+    } finally {
+      this._recipeImporting = false;
+      this.requestUpdate();
+    }
+  }
+
+  async toggleFavorite(mealId) {
+    if (!mealId) return;
+    await this.act({ action: "toggle_favorite", meal_id: mealId });
   }
 
   // --- weekly planner (dated) ---
@@ -2506,6 +2582,11 @@ class LocalListAssistPanel extends LitElement {
     .meal-row-main { min-width: 120px; }
     .meal-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .meal-textarea { min-height: 168px; resize: vertical; font: inherit; line-height: 1.5; }
+    .recipe-import { border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; background: var(--lla-surface-2); display: flex; flex-direction: column; gap: 6px; }
+    .recipe-import-row { gap: 8px; align-items: stretch; }
+    .recipe-import-row .input { flex: 1 1 auto; min-width: 0; }
+    .meal-fav-star { color: #e0a12b; }
+    .meal-fav-btn.fav-on { border-color: #e0a12b; color: #e0a12b; }
     .meal-ingredients { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; max-height: 46vh; overflow-y: auto; }
     .meal-ingredient { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px;
       border: 1px solid var(--lla-border); background: var(--lla-surface-2); cursor: pointer; }
