@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.30.1
+- Recipe import now works on the many recipe sites that sit behind bot protection. It previously fetched pages with a bot-style identifier, which food blogs (Cloudflare/WAF) routinely block or answer with a challenge page, so the import found no recipe. It now fetches as an ordinary browser, so real recipe pages come through. Import errors are also clearer now — a blocked site, a share/shortened link, and an unreachable address each get their own guidance.
+
 ## 0.30.0
 - Import a meal from a recipe link. In New Meal, paste a recipe URL and tap Import — your Home Assistant reads the page's structured recipe data and fills in the name, ingredients and directions for you to review and tweak before saving. It works with the major recipe sites that publish schema.org recipe data, and stays fully local: your HA fetches the page itself, nothing is sent to any cloud service.
 - Favorite meals, per person. Each Home Assistant user can star the meals they love; favorites are personal to whoever is signed in, float to the top of the Meals list with a ★, and can be toggled from a meal's detail view.

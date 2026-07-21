@@ -112,10 +112,20 @@ _REQUEST_USER_ID: ContextVar[str] = ContextVar("lla_request_user_id", default=""
 # can't stream us an unbounded body, and a short timeout so a slow site doesn't
 # hang the import.
 _RECIPE_MAX_BYTES = 3_000_000
-_RECIPE_TIMEOUT_SECONDS = 12
+_RECIPE_TIMEOUT_SECONDS = 15
+# Recipe blogs almost universally sit behind bot protection (Cloudflare/WAF)
+# that 403s or serves a JS challenge to anything that self-identifies as a bot,
+# so we fetch as an ordinary desktop browser. Paired with browser-like Accept
+# headers below, this is what actually gets us the real page HTML.
 _RECIPE_USER_AGENT = (
-    "Mozilla/5.0 (compatible; LocalListAssist/1.0; +https://locallistassist.app)"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 )
+_RECIPE_REQUEST_HEADERS = {
+    "User-Agent": _RECIPE_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 PLATFORMS: list[Platform] = []
 
@@ -2028,10 +2038,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             async with asyncio.timeout(_RECIPE_TIMEOUT_SECONDS):
                 resp = await session.get(
                     url,
-                    headers={"User-Agent": _RECIPE_USER_AGENT},
+                    headers=_RECIPE_REQUEST_HEADERS,
                     allow_redirects=True,
                 )
                 if resp.status != 200:
+                    # 403/429/503 are the usual "bot protection turned us away"
+                    # responses; surface those distinctly so the UI can suggest
+                    # a different source rather than "check the URL".
+                    if resp.status in (401, 403, 429, 503):
+                        return {"ok": False, "error": "blocked"}
                     return {"ok": False, "error": "fetch_failed"}
                 content_type = str(resp.headers.get("Content-Type", "")).lower()
                 if content_type and "html" not in content_type and "xml" not in content_type:
