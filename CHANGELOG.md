@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.30.2
+- Fixed recipe import failing with "couldn't find recipe data" on essentially every site. The importer was only reading the first chunk of the page, so the recipe data — which sits further down on real recipe pages — got cut off before it could be read. It now reads the whole page, so importing from a recipe link works as intended.
+
 ## 0.30.1
 - Recipe import now works on the many recipe sites that sit behind bot protection. It previously fetched pages with a bot-style identifier, which food blogs (Cloudflare/WAF) routinely block or answer with a challenge page, so the import found no recipe. It now fetches as an ordinary browser, so real recipe pages come through. Import errors are also clearer now — a blocked site, a share/shortened link, and an unreachable address each get their own guidance.
 

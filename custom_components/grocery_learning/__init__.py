@@ -2051,7 +2051,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 content_type = str(resp.headers.get("Content-Type", "")).lower()
                 if content_type and "html" not in content_type and "xml" not in content_type:
                     return {"ok": False, "error": "not_a_page"}
-                raw = await resp.content.read(_RECIPE_MAX_BYTES + 1)
+                # Refuse an obviously huge body up front (declared, on-the-wire size).
+                if resp.content_length and resp.content_length > _RECIPE_MAX_BYTES:
+                    return {"ok": False, "error": "too_large"}
+                # Read the FULL, decompressed body. resp.content.read(n) returns
+                # only the first buffered chunk (aiohttp's StreamReader.read does
+                # not block for the whole n bytes), which truncated the page
+                # before its recipe JSON-LD and made every import report "no
+                # recipe". resp.read() reads to EOF and handles decompression.
+                raw = await resp.read()
+                charset = resp.charset or "utf-8"
         except (asyncio.TimeoutError, aiohttp.ClientError):
             return {"ok": False, "error": "fetch_error"}
         except Exception:  # pragma: no cover - defensive
@@ -2059,7 +2068,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             return {"ok": False, "error": "fetch_error"}
         if len(raw) > _RECIPE_MAX_BYTES:
             raw = raw[:_RECIPE_MAX_BYTES]
-        html_text = raw.decode("utf-8", errors="replace")
+        try:
+            html_text = raw.decode(charset, errors="replace")
+        except (LookupError, TypeError):
+            html_text = raw.decode("utf-8", errors="replace")
         recipe = _parse_recipe(html_text)
         if not recipe.get("name") and not recipe.get("ingredients"):
             return {"ok": False, "error": "no_recipe"}
