@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.31.0
+- Meals now have a **Notes** field — jot down swaps, who likes it, serving ideas, or tweaks that worked. Notes show as their own tab on the meal, and meals with notes are flagged in the list.
+- **Search your meals** — a search box at the top of the Meals tab filters by name or ingredient as you type.
+- The **New Meal / From current list** buttons moved to the **top** of the Meals tab, so the meal list scrolls freely below them.
+- Fixed the bottom tab bar covering the bottom of a meal's card (e.g. the "Add to list" button) — meal and other pop-up cards now sit above the tab bar.
+
 ## 0.30.2
 - Fixed recipe import failing with "couldn't find recipe data" on essentially every site. The importer was only reading the first chunk of the page, so the recipe data — which sits further down on real recipe pages — got cut off before it could be read. It now reads the whole page, so importing from a recipe link works as intended.
 

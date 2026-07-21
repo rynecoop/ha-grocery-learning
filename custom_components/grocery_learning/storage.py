@@ -311,6 +311,7 @@ class GroceryLearningStore:
                 "name": name,
                 "ingredients": ingredients,
                 "directions": directions,
+                "notes": str(value.get("notes", "")).strip(),
                 "created": str(value.get("created", "")).strip(),
                 "updated": str(value.get("updated", "")).strip(),
             }
