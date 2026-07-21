@@ -1875,6 +1875,7 @@ class LocalListAssistPanel extends LitElement {
       case "missing_url": return "Paste a recipe link first.";
       case "invalid_url": return "That doesn't look like a public recipe link. Paste the recipe page's own web address (not a share or shortened link).";
       case "not_a_page": return "That link isn't a web page we can read.";
+      case "too_large": return "That page is too big to read. Try a different recipe link.";
       case "blocked": return "That site blocked the import. Try a different recipe site, or type the ingredients and directions in below.";
       case "no_recipe": return "Couldn't find recipe data on that page. If you pasted a share or Google link, open it and copy the recipe page's own address instead. Otherwise you can type it in below.";
       case "fetch_failed":
