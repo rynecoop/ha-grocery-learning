@@ -1619,11 +1619,8 @@ class LocalListAssistPanel extends LitElement {
     if (!meal) return nothing;
     const ingredients = meal.ingredients || [];
     const directions = meal.directions || [];
-    const notes = (meal.notes || "").trim();
-    const hasNotes = !!notes;
-    let tab = this._mealTab;
-    if (tab === "notes" && !hasNotes) tab = "add";
-    if (tab !== "directions" && tab !== "notes") tab = "add";
+    const hasNotes = !!(meal.notes || "").trim();
+    const tab = this._mealTab === "directions" ? "directions" : "add";
     const isFav = (state?.favorites || []).includes(meal.id);
     return html`
       <div class="overlay-shell" @click=${() => this.closeMealDetail()}>
@@ -1637,8 +1634,7 @@ class LocalListAssistPanel extends LitElement {
           </div>
           <div class="meal-tabs">
             <button class=${"meal-tab" + (tab === "add" ? " active" : "")} @click=${() => { this._mealTab = "add"; }}>Add to list</button>
-            <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions${directions.length ? ` (${directions.length})` : ""}</button>
-            ${hasNotes ? html`<button class=${"meal-tab" + (tab === "notes" ? " active" : "")} @click=${() => { this._mealTab = "notes"; }}>Notes</button>` : nothing}
+            <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions &amp; notes${directions.length ? ` (${directions.length})` : ""}${hasNotes ? " 📝" : ""}</button>
             <span class="meal-tab-spacer"></span>
             <button class=${"btn compact meal-fav-btn" + (isFav ? " fav-on" : "")}
               aria-pressed=${isFav ? "true" : "false"}
@@ -1649,16 +1645,9 @@ class LocalListAssistPanel extends LitElement {
           </div>
           ${tab === "add"
             ? this._mealAddTab(meal, ingredients)
-            : tab === "notes"
-              ? this._mealNotesTab(notes)
-              : this._mealDirectionsTab(directions)}
+            : this._mealDirectionsTab(meal, directions)}
         </section>
       </div>`;
-  }
-
-  _mealNotesTab(notes) {
-    if (!notes) return html`<div class="empty">No notes yet. Use Edit to add some.</div>`;
-    return html`<div class="meal-notes">${notes}</div>`;
   }
 
   _mealAddTab(meal, ingredients) {
@@ -1752,20 +1741,27 @@ class LocalListAssistPanel extends LitElement {
       </div>`;
   }
 
-  _mealDirectionsTab(directions) {
-    if (!directions.length) {
-      return html`<div class="empty">No directions yet. Use Edit to add the steps, one per line.</div>`;
-    }
+  _mealDirectionsTab(meal, directions) {
     const done = directions.filter((_step, idx) => this._stepsChecked[idx]).length;
     return html`
-      <div class="small">Tap a step to check it off as you cook. ${done} of ${directions.length} done.</div>
-      <ol class="meal-steps">
-        ${directions.map((step, idx) => html`
-          <li class=${"meal-step" + (this._stepsChecked[idx] ? " done" : "")} @click=${() => this.toggleStep(idx)}>
-            <span class="meal-step-num">${idx + 1}</span>
-            <span class="meal-step-text">${step}</span>
-          </li>`)}
-      </ol>`;
+      ${directions.length
+        ? html`
+          <div class="small">Tap a step to check it off as you cook. ${done} of ${directions.length} done.</div>
+          <ol class="meal-steps">
+            ${directions.map((step, idx) => html`
+              <li class=${"meal-step" + (this._stepsChecked[idx] ? " done" : "")} @click=${() => this.toggleStep(idx)}>
+                <span class="meal-step-num">${idx + 1}</span>
+                <span class="meal-step-text">${step}</span>
+              </li>`)}
+          </ol>`
+        : html`<div class="empty">No directions yet. Use Edit to add the steps, one per line.</div>`}
+      <div class="meal-notes-inline">
+        <div class="label">Notes</div>
+        <textarea class="input meal-notes-edit" rows="3"
+          placeholder="Jot a note — swaps, who likes it, a tweak that worked. Saves on its own."
+          .value=${live(meal.notes || "")}
+          @change=${(e) => this.saveMealNotes(meal.id, e.target.value)}></textarea>
+      </div>`;
   }
 
   _menuTemplate(multilist) {
@@ -1911,6 +1907,15 @@ class LocalListAssistPanel extends LitElement {
 
   async deleteMeal(mealId) {
     await this.act({ action: "delete_meal", meal_id: mealId });
+  }
+
+  async saveMealNotes(mealId, notes) {
+    if (!mealId) return;
+    const next = (notes || "").trim();
+    const meal = (this._state?.meals || []).find((m) => m.id === mealId);
+    // Only round-trip when the note actually changed (blur fires either way).
+    if (meal && (meal.notes || "").trim() === next) return;
+    await this.act({ action: "update_meal_notes", meal_id: mealId, notes: next });
   }
 
   _recipeImportErrorText(code) {
@@ -2631,6 +2636,8 @@ class LocalListAssistPanel extends LitElement {
     .meal-search-row { display: flex; gap: 8px; align-items: stretch; margin-bottom: 12px; }
     .meal-search { flex: 1 1 auto; min-width: 0; }
     .meal-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; padding: 6px 2px; }
+    .meal-notes-inline { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--lla-border); }
+    .meal-notes-edit { width: 100%; resize: vertical; font: inherit; line-height: 1.5; min-height: 64px; }
     .recipe-import { border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; background: var(--lla-surface-2); display: flex; flex-direction: column; gap: 6px; }
     .recipe-import-row { gap: 8px; align-items: stretch; }
     .recipe-import-row .input { flex: 1 1 auto; min-width: 0; }

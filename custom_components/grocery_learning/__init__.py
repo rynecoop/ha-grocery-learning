@@ -2894,6 +2894,17 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 await _record_activity("Meal removed", str(removed.get("name", meal_id)).strip() or meal_id, "", "panel")
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
+        if action == "update_meal_notes":
+            meal_id = str(payload.get("meal_id", "")).strip()
+            meals = hass.data[DOMAIN].get("meals", {})
+            meal = meals.get(meal_id) if isinstance(meals, dict) else None
+            if not meal_id or not isinstance(meal, dict):
+                return {"ok": False, "error": "unknown_meal"}
+            meal["notes"] = str(payload.get("notes", "")).strip()
+            meal["updated"] = dt_util.utcnow().isoformat()
+            await _save()
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
         if action == "toggle_favorite":
             user_id = str(payload.get("_request_user_id", "")).strip()
             if not user_id:

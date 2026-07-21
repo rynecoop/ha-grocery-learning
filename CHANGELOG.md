@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.31.1
+- Meal notes now live right alongside the directions (on the "Directions & notes" tab) and are editable in place — just tap the notes box and type; it saves on its own, no need to open the editor first. Handy for notes that go with the steps, like a swap or a timing tweak. A 📝 marks meals that have notes.
+
 ## 0.31.0
 - Meals now have a **Notes** field — jot down swaps, who likes it, serving ideas, or tweaks that worked. Notes show as their own tab on the meal, and meals with notes are flagged in the list.
 - **Search your meals** — a search box at the top of the Meals tab filters by name or ingredient as you type.
