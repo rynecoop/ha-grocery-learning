@@ -44,6 +44,7 @@ class LocalListAssistPanel extends LitElement {
     _mealConfirmEdits: { state: true },
     _mealEditingKey: { state: true },
     _mealTab: { state: true },
+    _mealSearch: { state: true },
     _recipeImporting: { state: true },
     _recipeImportError: { state: true },
     _stepsChecked: { state: true },
@@ -86,6 +87,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealConfirmEdits = {};
     this._mealEditingKey = "";
     this._mealTab = "add";
+    this._mealSearch = "";
     this._recipeImporting = false;
     this._recipeImportError = "";
     this._stepsChecked = {};
@@ -131,6 +133,7 @@ class LocalListAssistPanel extends LitElement {
       mealName: "",
       mealIngredients: "",
       mealDirections: "",
+      mealNotes: "",
     };
     this._lastSeenLiveRevision = "";
     this._wsUnsub = null;
@@ -1529,27 +1532,45 @@ class LocalListAssistPanel extends LitElement {
       </div>`;
   }
 
+  mealMatchesSearch(meal, query) {
+    if (!query) return true;
+    if ((meal.name || "").toLowerCase().includes(query)) return true;
+    return (meal.ingredients || []).some((ing) => (ing.item || "").toLowerCase().includes(query));
+  }
+
   _mealListTemplate(meals) {
     // Favorites (for the current Home Assistant user) float to the top, keeping
     // the backend's name order within each group. A star marks favorited rows.
     const favs = new Set(this._state?.favorites || []);
-    const ordered = [...meals].sort((a, b) => (favs.has(b.id) ? 1 : 0) - (favs.has(a.id) ? 1 : 0));
+    const query = (this._mealSearch || "").trim().toLowerCase();
+    const filtered = meals.filter((m) => this.mealMatchesSearch(m, query));
+    const ordered = [...filtered].sort((a, b) => (favs.has(b.id) ? 1 : 0) - (favs.has(a.id) ? 1 : 0));
     return html`
+      <div class="row meal-actions">
+        <button class="btn primary" @click=${() => this.openMealEditor("new")}>New Meal</button>
+        <button class="btn" @click=${() => this.openMealFromList()}>From current list</button>
+      </div>
+      ${meals.length
+        ? html`<div class="meal-search-row">
+            <input class="input meal-search" type="search" inputmode="search" placeholder="Search meals by name or ingredient"
+              .value=${live(this._mealSearch || "")}
+              @input=${(e) => { this._mealSearch = e.target.value; }} />
+            ${query ? html`<button class="btn compact" @click=${() => { this._mealSearch = ""; }}>Clear</button>` : nothing}
+          </div>`
+        : nothing}
       <div class="meal-list">
         ${ordered.length
           ? repeat(ordered, (m) => m.id, (m) => html`
             <button class="meal-row meal-row-button" @click=${() => this.openMealDetail(m.id, "add")}>
               <div class="meal-row-main">
                 <strong>${favs.has(m.id) ? html`<span class="meal-fav-star" aria-label="Favorite" title="Favorite">★</span> ` : nothing}${m.name}</strong>
-                <div class="small">${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}${m.direction_count ? ` · ${m.direction_count} ${m.direction_count === 1 ? "step" : "steps"}` : ""}</div>
+                <div class="small">${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}${m.direction_count ? ` · ${m.direction_count} ${m.direction_count === 1 ? "step" : "steps"}` : ""}${(m.notes || "").trim() ? " · has notes" : ""}</div>
               </div>
               <span class="meal-row-open">Open ›</span>
             </button>`)
-          : html`<div class="empty">No saved meals yet. Create one with ingredients and directions, then add it to your list with a tap.</div>`}
-      </div>
-      <div class="row">
-        <button class="btn primary" @click=${() => this.openMealEditor("new")}>New Meal</button>
-        <button class="btn" @click=${() => this.openMealFromList()}>From current list</button>
+          : meals.length
+            ? html`<div class="empty">No meals match “${this._mealSearch}”.</div>`
+            : html`<div class="empty">No saved meals yet. Create one with ingredients and directions, then add it to your list with a tap.</div>`}
       </div>`;
   }
 
@@ -1583,6 +1604,10 @@ class LocalListAssistPanel extends LitElement {
       <textarea class="input meal-textarea" rows="7" placeholder="Brown the beef over medium heat&#10;Warm the shells&#10;Assemble with cheese and lettuce"
         .value=${live(this._drafts.mealDirections || "")}
         @input=${(e) => this.updateDraft("mealDirections", e.target.value)}></textarea>
+      <div class="label">Notes</div>
+      <textarea class="input meal-textarea" rows="4" placeholder="Anything you want to remember — swaps, who likes it, serving ideas, tweaks that worked."
+        .value=${live(this._drafts.mealNotes || "")}
+        @input=${(e) => this.updateDraft("mealNotes", e.target.value)}></textarea>
       <div class="row">
         <button class="btn primary" @click=${() => this.saveMeal()}>${isNew ? "Create Meal" : "Save Meal"}</button>
         <button class="btn" @click=${() => this.closeMealEditor()}>Cancel</button>
@@ -1594,7 +1619,11 @@ class LocalListAssistPanel extends LitElement {
     if (!meal) return nothing;
     const ingredients = meal.ingredients || [];
     const directions = meal.directions || [];
-    const tab = this._mealTab === "directions" ? "directions" : "add";
+    const notes = (meal.notes || "").trim();
+    const hasNotes = !!notes;
+    let tab = this._mealTab;
+    if (tab === "notes" && !hasNotes) tab = "add";
+    if (tab !== "directions" && tab !== "notes") tab = "add";
     const isFav = (state?.favorites || []).includes(meal.id);
     return html`
       <div class="overlay-shell" @click=${() => this.closeMealDetail()}>
@@ -1609,6 +1638,7 @@ class LocalListAssistPanel extends LitElement {
           <div class="meal-tabs">
             <button class=${"meal-tab" + (tab === "add" ? " active" : "")} @click=${() => { this._mealTab = "add"; }}>Add to list</button>
             <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions${directions.length ? ` (${directions.length})` : ""}</button>
+            ${hasNotes ? html`<button class=${"meal-tab" + (tab === "notes" ? " active" : "")} @click=${() => { this._mealTab = "notes"; }}>Notes</button>` : nothing}
             <span class="meal-tab-spacer"></span>
             <button class=${"btn compact meal-fav-btn" + (isFav ? " fav-on" : "")}
               aria-pressed=${isFav ? "true" : "false"}
@@ -1617,9 +1647,18 @@ class LocalListAssistPanel extends LitElement {
             <button class="btn compact" @click=${() => this.openMealEditor(meal.id)}>Edit</button>
             <button class="btn compact danger" @click=${() => this.deleteMeal(meal.id)}>Delete</button>
           </div>
-          ${tab === "add" ? this._mealAddTab(meal, ingredients) : this._mealDirectionsTab(directions)}
+          ${tab === "add"
+            ? this._mealAddTab(meal, ingredients)
+            : tab === "notes"
+              ? this._mealNotesTab(notes)
+              : this._mealDirectionsTab(directions)}
         </section>
       </div>`;
+  }
+
+  _mealNotesTab(notes) {
+    if (!notes) return html`<div class="empty">No notes yet. Use Edit to add some.</div>`;
+    return html`<div class="meal-notes">${notes}</div>`;
   }
 
   _mealAddTab(meal, ingredients) {
@@ -1808,6 +1847,7 @@ class LocalListAssistPanel extends LitElement {
     this._drafts.mealName = meal?.name || "";
     this._drafts.mealIngredients = (meal?.ingredients || []).map((i) => i.item).join("\n");
     this._drafts.mealDirections = (meal?.directions || []).join("\n");
+    this._drafts.mealNotes = meal?.notes || "";
     this._mealConfirmId = "";
     this._view = "meals";
     this.requestUpdate();
@@ -1831,6 +1871,7 @@ class LocalListAssistPanel extends LitElement {
     this._drafts.mealName = "";
     this._drafts.mealIngredients = items.join("\n");
     this._drafts.mealDirections = "";
+    this._drafts.mealNotes = "";
     this._mealConfirmId = "";
     this._view = "meals";
     this.requestUpdate();
@@ -1845,6 +1886,7 @@ class LocalListAssistPanel extends LitElement {
     this._drafts.mealName = "";
     this._drafts.mealIngredients = "";
     this._drafts.mealDirections = "";
+    this._drafts.mealNotes = "";
     this.requestUpdate();
   }
 
@@ -1860,7 +1902,8 @@ class LocalListAssistPanel extends LitElement {
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean);
-    const payload = { action: "save_meal", name, ingredients, directions };
+    const notes = (this._drafts.mealNotes || "").trim();
+    const payload = { action: "save_meal", name, ingredients, directions, notes };
     if (this._mealEditorId && this._mealEditorId !== "new") payload.meal_id = this._mealEditorId;
     await this.act(payload);
     this.closeMealEditor();
@@ -2584,6 +2627,10 @@ class LocalListAssistPanel extends LitElement {
     .meal-row-main { min-width: 120px; }
     .meal-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .meal-textarea { min-height: 168px; resize: vertical; font: inherit; line-height: 1.5; }
+    .meal-actions { margin-bottom: 12px; }
+    .meal-search-row { display: flex; gap: 8px; align-items: stretch; margin-bottom: 12px; }
+    .meal-search { flex: 1 1 auto; min-width: 0; }
+    .meal-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; padding: 6px 2px; }
     .recipe-import { border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; background: var(--lla-surface-2); display: flex; flex-direction: column; gap: 6px; }
     .recipe-import-row { gap: 8px; align-items: stretch; }
     .recipe-import-row .input { flex: 1 1 auto; min-width: 0; }
@@ -2645,7 +2692,10 @@ class LocalListAssistPanel extends LitElement {
     .advanced-box { border: 1px solid var(--lla-border); border-radius: 16px; padding: 12px 14px; background: var(--lla-surface-2); }
     .advanced-box summary { cursor: pointer; color: var(--lla-text); font-weight: 600; }
     .advanced-row { margin-top: 12px; }
-    .overlay-shell { position: fixed; inset: 0; background: rgba(3, 8, 14, 0.58); backdrop-filter: blur(4px); z-index: 30; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    /* Above .bottom-nav (z-index 30) so a modal and its backdrop cover the tab
+       bar — otherwise the fixed nav paints over the bottom of the card and hides
+       actions like "Add to list". */
+    .overlay-shell { position: fixed; inset: 0; background: rgba(3, 8, 14, 0.58); backdrop-filter: blur(4px); z-index: 40; display: flex; align-items: center; justify-content: center; padding: 24px; }
     .overlay-drawer { justify-content: flex-end; padding: 0; }
     .modal-card, .side-drawer {
       background: var(--lla-surface); color: var(--lla-text);
