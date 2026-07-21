@@ -340,6 +340,35 @@ class GroceryLearningStore:
                 plan[date_key] = ids
         return plan
 
+    async def load_favorites(self) -> dict[str, list[str]]:
+        """Load favorite meal ids, keyed by Home Assistant user id.
+
+        Each household member (HA user) has their own list of favorited meal
+        ids. Blank user ids, non-list values and duplicate/empty meal ids are
+        dropped so the caller always gets a clean map.
+        """
+        favorites: dict[str, list[str]] = {}
+        data = await self._store.async_load()
+        if not isinstance(data, dict):
+            return favorites
+        raw = data.get("favorites", {})
+        if not isinstance(raw, dict):
+            return favorites
+        for user_id, ids in raw.items():
+            uid = str(user_id).strip()
+            if not uid or not isinstance(ids, list):
+                continue
+            cleaned: list[str] = []
+            seen: set[str] = set()
+            for meal_id in ids:
+                mid = str(meal_id).strip()
+                if mid and mid not in seen:
+                    seen.add(mid)
+                    cleaned.append(mid)
+            if cleaned:
+                favorites[uid] = cleaned
+        return favorites
+
     async def save(
         self,
         terms: LearnedTerms,
@@ -349,6 +378,7 @@ class GroceryLearningStore:
         frequent: dict[str, dict] | None = None,
         meals: dict[str, dict] | None = None,
         meal_plan: dict[str, list[str]] | None = None,
+        favorites: dict[str, list[str]] | None = None,
     ) -> None:
         """Persist data to storage."""
         payload = {
@@ -365,6 +395,8 @@ class GroceryLearningStore:
             payload["meals"] = meals
         if meal_plan is not None:
             payload["meal_plan"] = meal_plan
+        if favorites is not None:
+            payload["favorites"] = favorites
         await self._store.async_save(
             payload
         )

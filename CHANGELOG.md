@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.30.0
+- Import a meal from a recipe link. In New Meal, paste a recipe URL and tap Import — your Home Assistant reads the page's structured recipe data and fills in the name, ingredients and directions for you to review and tweak before saving. It works with the major recipe sites that publish schema.org recipe data, and stays fully local: your HA fetches the page itself, nothing is sent to any cloud service.
+- Favorite meals, per person. Each Home Assistant user can star the meals they love; favorites are personal to whoever is signed in, float to the top of the Meals list with a ★, and can be toggled from a meal's detail view.
+
 ## 0.29.3
 - Restored the List tab's auto-scroll when you tap the "Add item" box, so the autocomplete suggestions land in view above the on-screen keyboard again. The 0.29.2 Shop-tab fix had removed this scroll for both tabs; now it's tab-aware — the List tab scrolls (its header isn't sticky) while the Shop tab still doesn't (so its field can't hide behind the sticky Shopping Mode header).
 

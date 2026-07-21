@@ -6,15 +6,19 @@ import json
 import logging
 import re
 import asyncio
+import ipaddress
 from collections.abc import Mapping
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import voluptuous as vol
+import aiohttp
 from aiohttp import web
 from homeassistant.components import websocket_api
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.components.frontend import async_remove_panel
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.http import StaticPathConfig
@@ -83,6 +87,7 @@ from .item_logic import (
     select_frequent as _select_frequent,
     unique_meal_id as _unique_meal_id,
 )
+from .recipe_parser import parse_recipe as _parse_recipe
 from .storage import GroceryLearningStore, LearnedTerms
 
 _LOGGER = logging.getLogger(__name__)
@@ -97,7 +102,54 @@ LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision"
 # our own services re-enters safely instead of deadlocking on the lock.
 _IN_LOCKED_ACTION: ContextVar[bool] = ContextVar("lla_in_locked_action", default=False)
 
+# The Home Assistant user id behind the request currently being served. Meal
+# favorites are per-user, but the dashboard payload is built by deeply-nested
+# helpers that don't otherwise carry a user; a context var lets the builder see
+# whose favorites to surface without threading the id through every call site.
+_REQUEST_USER_ID: ContextVar[str] = ContextVar("lla_request_user_id", default="")
+
+# Recipe import limits: a generous but bounded read so a hostile or broken URL
+# can't stream us an unbounded body, and a short timeout so a slow site doesn't
+# hang the import.
+_RECIPE_MAX_BYTES = 3_000_000
+_RECIPE_TIMEOUT_SECONDS = 12
+_RECIPE_USER_AGENT = (
+    "Mozilla/5.0 (compatible; LocalListAssist/1.0; +https://locallistassist.app)"
+)
+
 PLATFORMS: list[Platform] = []
+
+
+def _is_safe_recipe_url(url: str) -> bool:
+    """Best-effort guard so recipe import can't be pointed at internal hosts.
+
+    The user pastes their own recipe link, but we still refuse non-HTTP schemes
+    and obvious internal targets (localhost, ``*.local``, and private/loopback
+    IP literals) so the fetch can't be aimed at the Home Assistant host or LAN.
+    """
+    try:
+        parsed = urlparse(url)
+    except (ValueError, TypeError):
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").strip().lower()
+    if not host:
+        return False
+    if host == "localhost" or host.endswith(".local") or host.endswith(".localhost"):
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return True  # a hostname, not an IP literal
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
 
 LEARN_SCHEMA = vol.Schema(
     {
@@ -216,6 +268,10 @@ class GroceryLearningDashboardView(HomeAssistantView):
         }
 
     async def get(self, request):
+        # Scope favorites in the payload to whoever is asking.
+        request_user = request.get("hass_user")
+        user_id = str(getattr(request_user, "id", "") or "").strip()
+        token = _REQUEST_USER_ID.set(user_id)
         try:
             hass = request.app["hass"]
             domain_data = hass.data.get(DOMAIN, {})
@@ -270,6 +326,8 @@ class GroceryLearningDashboardView(HomeAssistantView):
                 return web.json_response(self._empty_payload(str(err)))
             except Exception:
                 return web.Response(status=200, text='{"error":"unknown"}', content_type="application/json")
+        finally:
+            _REQUEST_USER_ID.reset(token)
 
 
 class GroceryLearningActionView(HomeAssistantView):
@@ -527,6 +585,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         except Exception as err:  # pragma: no cover
             _LOGGER.warning("Failed loading grocery meal-plan storage, using empty plan: %s", err)
             meal_plan = {}
+        try:
+            favorites = await store.load_favorites()
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed loading grocery favorites storage, using empty map: %s", err)
+            favorites = {}
 
         data["store"] = store
         data["terms"] = terms
@@ -536,6 +599,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         data["frequent"] = frequent
         data["meals"] = meals
         data["meal_plan"] = meal_plan
+        data["favorites"] = favorites
         data.setdefault("pending_duplicate", {})
         data.setdefault("pending_review", {})
         data["categories"] = list(DEFAULT_CATEGORIES)
@@ -590,6 +654,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN].get("frequent", {}),
             hass.data[DOMAIN].get("meals", {}),
             hass.data[DOMAIN].get("meal_plan", {}),
+            favorites=hass.data[DOMAIN].get("favorites", {}),
         )
         hass.data[DOMAIN]["dashboard_revision"] = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0) + 1
         changed = hass.data[DOMAIN].get("_change_list_id") or "*"
@@ -757,6 +822,22 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 if entries:
                     out[str(date_key)] = entries
         return out
+
+    def _favorites_payload() -> list[str]:
+        # Meal ids the requesting Home Assistant user has favorited. Scoped to
+        # whoever is behind the current request (see _REQUEST_USER_ID) so each
+        # household member sees their own hearts. Deleted meals are filtered out.
+        user_id = _REQUEST_USER_ID.get()
+        if not user_id:
+            return []
+        favorites = hass.data[DOMAIN].get("favorites", {})
+        meals = hass.data[DOMAIN].get("meals", {})
+        if not isinstance(favorites, dict) or not isinstance(meals, dict):
+            return []
+        ids = favorites.get(user_id, [])
+        if not isinstance(ids, list):
+            return []
+        return [str(meal_id) for meal_id in ids if str(meal_id) in meals]
 
     def _suggestions_payload(limit: int = 250) -> list[dict[str, Any]]:
         # Candidate quick-add autocomplete entries, gathered from the frequent
@@ -1724,6 +1805,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "frequent_items": _frequent_payload(exclude_normalized),
             "meals": _meals_payload(),
             "meal_plan": _meal_plan_payload(),
+            "favorites": _favorites_payload(),
             "suggestions": _suggestions_payload(),
             "setup": {
                 "completed": bool(_entry_value(active_entry, CONF_WIZARD_COMPLETED, False)),
@@ -1922,7 +2004,51 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
     async def _handle_dashboard_action(payload: dict[str, Any]) -> dict[str, Any]:
         # Every dashboard action runs under the shared action lock so concurrent
         # requests from multiple devices/users cannot interleave and lose writes.
-        return await _run_locked(lambda: _handle_dashboard_action_impl(payload))
+        # The request user id is published on a context var so payload builders
+        # (which don't otherwise carry a user) can scope per-user favorites.
+        action = str(payload.get("action", "")).strip()
+        token = _REQUEST_USER_ID.set(str(payload.get("_request_user_id", "")).strip())
+        try:
+            if action == "import_recipe":
+                # Read-only network fetch — run it outside the state lock so a
+                # slow recipe site can't block other devices' actions.
+                return await _import_recipe(payload)
+            return await _run_locked(lambda: _handle_dashboard_action_impl(payload))
+        finally:
+            _REQUEST_USER_ID.reset(token)
+
+    async def _import_recipe(payload: dict[str, Any]) -> dict[str, Any]:
+        url = str(payload.get("url", "")).strip()
+        if not url:
+            return {"ok": False, "error": "missing_url"}
+        if not _is_safe_recipe_url(url):
+            return {"ok": False, "error": "invalid_url"}
+        session = async_get_clientsession(hass)
+        try:
+            async with asyncio.timeout(_RECIPE_TIMEOUT_SECONDS):
+                resp = await session.get(
+                    url,
+                    headers={"User-Agent": _RECIPE_USER_AGENT},
+                    allow_redirects=True,
+                )
+                if resp.status != 200:
+                    return {"ok": False, "error": "fetch_failed"}
+                content_type = str(resp.headers.get("Content-Type", "")).lower()
+                if content_type and "html" not in content_type and "xml" not in content_type:
+                    return {"ok": False, "error": "not_a_page"}
+                raw = await resp.content.read(_RECIPE_MAX_BYTES + 1)
+        except (asyncio.TimeoutError, aiohttp.ClientError):
+            return {"ok": False, "error": "fetch_error"}
+        except Exception:  # pragma: no cover - defensive
+            _LOGGER.exception("Unexpected error importing recipe from %s", url)
+            return {"ok": False, "error": "fetch_error"}
+        if len(raw) > _RECIPE_MAX_BYTES:
+            raw = raw[:_RECIPE_MAX_BYTES]
+        html_text = raw.decode("utf-8", errors="replace")
+        recipe = _parse_recipe(html_text)
+        if not recipe.get("name") and not recipe.get("ingredients"):
+            return {"ok": False, "error": "no_recipe"}
+        return {"ok": True, "recipe": recipe, "source_url": url}
 
     async def _handle_dashboard_action_impl(payload: dict[str, Any]) -> dict[str, Any]:
         action = str(payload.get("action", "")).strip()
@@ -2722,8 +2848,46 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             meals = hass.data[DOMAIN].get("meals", {})
             if isinstance(meals, dict) and meal_id in meals:
                 removed = meals.pop(meal_id)
+                # Drop the deleted meal from everyone's favorites so it can't
+                # linger as a dangling id.
+                favorites = hass.data[DOMAIN].get("favorites", {})
+                if isinstance(favorites, dict):
+                    for uid in list(favorites.keys()):
+                        ids = favorites.get(uid)
+                        if isinstance(ids, list) and meal_id in ids:
+                            pruned = [mid for mid in ids if mid != meal_id]
+                            if pruned:
+                                favorites[uid] = pruned
+                            else:
+                                favorites.pop(uid, None)
                 await _save()
                 await _record_activity("Meal removed", str(removed.get("name", meal_id)).strip() or meal_id, "", "panel")
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
+        if action == "toggle_favorite":
+            user_id = str(payload.get("_request_user_id", "")).strip()
+            if not user_id:
+                return {"ok": False, "error": "no_user"}
+            meal_id = str(payload.get("meal_id", "")).strip()
+            meals = hass.data[DOMAIN].get("meals", {})
+            if not meal_id or not isinstance(meals, dict) or meal_id not in meals:
+                return {"ok": False, "error": "unknown_meal"}
+            favorites = hass.data[DOMAIN].get("favorites")
+            if not isinstance(favorites, dict):
+                favorites = {}
+                hass.data[DOMAIN]["favorites"] = favorites
+            current = favorites.get(user_id)
+            if not isinstance(current, list):
+                current = []
+            if meal_id in current:
+                current = [mid for mid in current if mid != meal_id]
+            else:
+                current = current + [meal_id]
+            if current:
+                favorites[user_id] = current
+            else:
+                favorites.pop(user_id, None)
+            await _save()
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
         if action == "add_meal_to_list":
