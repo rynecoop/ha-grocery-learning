@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.33.1
+- Backups now include your meal categories and your per-person favorites. Previously a backup left these out, so restoring on a fresh install could bring meals back showing as uncategorized (and drop everyone's favorites). Restoring an older backup also migrates its meal categories the same way a normal update does.
+
 ## 0.33.0
 - Meal categories are now a set you manage, and a meal can be in several at once. Instead of typing a category on each meal (easy to misspell), you set up your categories once — tap "Manage…" on the Meals tab to add ones that fit how you cook (e.g. Dinner, 30 min or less, One-pot, Sheet-pan). Then, when you create or edit a meal, you just check the ones that apply. The Meals tab has a chip for each category to filter by, and each meal shows all its category tags. Any single categories you set in 0.32.0 carry over automatically.
 

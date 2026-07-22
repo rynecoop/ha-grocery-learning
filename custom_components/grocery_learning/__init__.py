@@ -3138,6 +3138,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "frequent": hass.data[DOMAIN].get("frequent", {}),
                     "meals": hass.data[DOMAIN].get("meals", {}),
                     "meal_plan": hass.data[DOMAIN].get("meal_plan", {}),
+                    "favorites": hass.data[DOMAIN].get("favorites", {}),
+                    "meal_categories": hass.data[DOMAIN].get("meal_categories", []),
                 },
             }
             return {"ok": True, "export": export}
@@ -3153,9 +3155,24 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             raw = await store.load_raw()
             if not isinstance(raw, dict):
                 raw = {}
-            for key in ("terms", "item_meta", "multilist", "frequent", "meals", "meal_plan", "activity"):
+            for key in (
+                "terms", "item_meta", "multilist", "frequent", "meals",
+                "meal_plan", "activity", "favorites", "meal_categories",
+            ):
                 if isinstance(incoming.get(key), (dict, list)):
                     raw[key] = incoming[key]
+            # meal_categories and favorites are meal-coupled (they reference meal
+            # / category ids). When the backup replaces the meal set, they must
+            # come entirely from that backup — otherwise a backup that omits them
+            # leaves this install's stale categories/favorites attached to the
+            # restored meals. So clear the omitted ones; the migration below then
+            # rebuilds categories for a pre-0.33 backup from its meals' legacy
+            # category strings.
+            if isinstance(incoming.get("meals"), dict):
+                if not isinstance(incoming.get("meal_categories"), list):
+                    raw["meal_categories"] = []
+                if not isinstance(incoming.get("favorites"), dict):
+                    raw["favorites"] = {}
             await store.save_raw(raw)
             # Re-load through the storage validators so imported data is cleaned
             # and coerced exactly like a normal boot, then persist the canonical
@@ -3167,6 +3184,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN]["meals"] = await store.load_meals()
             hass.data[DOMAIN]["meal_plan"] = await store.load_meal_plan()
             hass.data[DOMAIN]["activity"] = await store.load_activity()
+            hass.data[DOMAIN]["favorites"] = await store.load_favorites()
+            # Migrate as on boot so an imported pre-0.33 backup (meals with a
+            # legacy single category and no category set) still restores its
+            # categories, and 0.33+ backups keep their id-based categories.
+            hass.data[DOMAIN]["meal_categories"] = _migrate_meal_categories(
+                hass.data[DOMAIN]["meals"], await store.load_meal_categories()
+            )
             _mark_changed_list("*")
             await _save()
             await _record_activity("Data imported", "Restored lists, meals, and learned data from a backup", "", "panel")
