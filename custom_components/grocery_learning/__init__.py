@@ -81,6 +81,7 @@ from .item_logic import (
     merge_meta_records as _merge_meta_records,
     merge_meal_ingredients as _merge_meal_ingredients,
     meta_quantity as _meta_quantity,
+    migrate_meal_categories as _migrate_meal_categories,
     normalize_category as _normalize_category,
     normalize_list_id as _normalize_list_id,
     reorder_category_items as _reorder_category_items,
@@ -600,6 +601,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         except Exception as err:  # pragma: no cover
             _LOGGER.warning("Failed loading grocery favorites storage, using empty map: %s", err)
             favorites = {}
+        try:
+            meal_categories = await store.load_meal_categories()
+        except Exception as err:  # pragma: no cover
+            _LOGGER.warning("Failed loading grocery meal-categories storage, using empty list: %s", err)
+            meal_categories = []
+        # Migrate the pre-0.33 single free-text meal.category into the managed
+        # multi-select category set: seed the set from any legacy labels and
+        # convert each meal to a list of category ids.
+        meal_categories = _migrate_meal_categories(meals, meal_categories)
 
         data["store"] = store
         data["terms"] = terms
@@ -610,6 +620,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         data["meals"] = meals
         data["meal_plan"] = meal_plan
         data["favorites"] = favorites
+        data["meal_categories"] = meal_categories
         data.setdefault("pending_duplicate", {})
         data.setdefault("pending_review", {})
         data["categories"] = list(DEFAULT_CATEGORIES)
@@ -665,6 +676,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             hass.data[DOMAIN].get("meals", {}),
             hass.data[DOMAIN].get("meal_plan", {}),
             favorites=hass.data[DOMAIN].get("favorites", {}),
+            meal_categories=hass.data[DOMAIN].get("meal_categories", []),
         )
         hass.data[DOMAIN]["dashboard_revision"] = int(hass.data[DOMAIN].get("dashboard_revision", 0) or 0) + 1
         changed = hass.data[DOMAIN].get("_change_list_id") or "*"
@@ -767,6 +779,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if not isinstance(meals, dict):
             return []
         terms_obj = hass.data[DOMAIN].get("terms")
+        cat_labels = {
+            str(c.get("id", "")): str(c.get("label", ""))
+            for c in hass.data[DOMAIN].get("meal_categories", []) or []
+            if isinstance(c, dict)
+        }
         out: list[dict[str, Any]] = []
         for meal_id, meal in meals.items():
             if not isinstance(meal, dict):
@@ -800,6 +817,10 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 directions = [str(step).strip() for step in directions_raw if str(step).strip()]
             else:
                 directions = []
+            # Keep only category ids that still exist, in the set's order.
+            meal_cat_ids = [
+                cid for cid in (meal.get("categories") or []) if str(cid) in cat_labels
+            ]
             out.append(
                 {
                     "id": str(meal.get("id", meal_id)).strip() or meal_id,
@@ -809,11 +830,22 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "directions": directions,
                     "direction_count": len(directions),
                     "notes": str(meal.get("notes", "")).strip(),
-                    "category": str(meal.get("category", "")).strip(),
+                    "categories": meal_cat_ids,
+                    "category_labels": [cat_labels[str(cid)] for cid in meal_cat_ids],
                 }
             )
         out.sort(key=lambda meal: meal["name"].lower())
         return out
+
+    def _meal_categories_payload() -> list[dict[str, str]]:
+        cats = hass.data[DOMAIN].get("meal_categories", [])
+        if not isinstance(cats, list):
+            return []
+        return [
+            {"id": str(c.get("id", "")), "label": str(c.get("label", ""))}
+            for c in cats
+            if isinstance(c, dict) and str(c.get("id", "")) and str(c.get("label", ""))
+        ]
 
     def _meal_plan_payload() -> dict[str, list[dict[str, str]]]:
         # Resolve each dated day's meal ids to {meal_id, name}, dropping any ids
@@ -1816,6 +1848,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             "activity": _activity_payload(),
             "frequent_items": _frequent_payload(exclude_normalized),
             "meals": _meals_payload(),
+            "meal_categories": _meal_categories_payload(),
             "meal_plan": _meal_plan_payload(),
             "favorites": _favorites_payload(),
             "suggestions": _suggestions_payload(),
@@ -2807,7 +2840,20 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             else:
                 directions = []
             notes = str(payload.get("notes", "")).strip()
-            category = str(payload.get("category", "")).strip()[:40]
+            # Category ids the meal is filed under — keep only ids that exist in
+            # the managed set, de-duplicated, preserving the request order.
+            known_cat_ids = {
+                str(c.get("id", ""))
+                for c in hass.data[DOMAIN].get("meal_categories", []) or []
+                if isinstance(c, dict)
+            }
+            categories_raw = payload.get("categories", [])
+            categories: list[str] = []
+            if isinstance(categories_raw, list):
+                for cid in categories_raw:
+                    cid = str(cid).strip()
+                    if cid and cid in known_cat_ids and cid not in categories:
+                        categories.append(cid)
             meals = hass.data[DOMAIN].setdefault("meals", {})
             if not isinstance(meals, dict):
                 meals = {}
@@ -2823,7 +2869,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "ingredients": ingredients,
                 "directions": directions,
                 "notes": notes,
-                "category": category,
+                "categories": categories,
                 "created": created,
                 "updated": now,
             }
@@ -2905,6 +2951,61 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 return {"ok": False, "error": "unknown_meal"}
             meal["notes"] = str(payload.get("notes", "")).strip()
             meal["updated"] = dt_util.utcnow().isoformat()
+            await _save()
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
+        if action == "add_meal_category":
+            label = str(payload.get("label", "")).strip()[:40]
+            if not label:
+                return {"ok": False, "error": "missing_label"}
+            cats = hass.data[DOMAIN].setdefault("meal_categories", [])
+            if not isinstance(cats, list):
+                cats = []
+                hass.data[DOMAIN]["meal_categories"] = cats
+            # No duplicate labels (case-insensitive).
+            if any(str(c.get("label", "")).strip().lower() == label.lower() for c in cats if isinstance(c, dict)):
+                return {"ok": False, "error": "duplicate", "dashboard": await _build_dashboard_payload_internal()}
+            cid = _unique_meal_id(label, [str(c.get("id", "")) for c in cats if isinstance(c, dict)])
+            cats.append({"id": cid, "label": label})
+            await _save()
+            return {"ok": True, "category_id": cid, "dashboard": await _build_dashboard_payload_internal()}
+
+        if action == "rename_meal_category":
+            cid = str(payload.get("category_id", "")).strip()
+            label = str(payload.get("label", "")).strip()[:40]
+            cats = hass.data[DOMAIN].get("meal_categories", [])
+            if not cid or not label or not isinstance(cats, list):
+                return {"ok": False, "error": "invalid"}
+            if any(
+                str(c.get("label", "")).strip().lower() == label.lower() and str(c.get("id", "")) != cid
+                for c in cats if isinstance(c, dict)
+            ):
+                return {"ok": False, "error": "duplicate", "dashboard": await _build_dashboard_payload_internal()}
+            found = False
+            for c in cats:
+                if isinstance(c, dict) and str(c.get("id", "")) == cid:
+                    c["label"] = label
+                    found = True
+                    break
+            if not found:
+                return {"ok": False, "error": "unknown_category"}
+            await _save()
+            return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
+
+        if action == "delete_meal_category":
+            cid = str(payload.get("category_id", "")).strip()
+            cats = hass.data[DOMAIN].get("meal_categories", [])
+            if not cid or not isinstance(cats, list):
+                return {"ok": False, "error": "invalid"}
+            hass.data[DOMAIN]["meal_categories"] = [
+                c for c in cats if not (isinstance(c, dict) and str(c.get("id", "")) == cid)
+            ]
+            # Remove the deleted category from every meal.
+            meals = hass.data[DOMAIN].get("meals", {})
+            if isinstance(meals, dict):
+                for meal in meals.values():
+                    if isinstance(meal, dict) and isinstance(meal.get("categories"), list) and cid in meal["categories"]:
+                        meal["categories"] = [x for x in meal["categories"] if x != cid]
             await _save()
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
