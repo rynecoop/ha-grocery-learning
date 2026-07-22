@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.32.0
+- Organize meals into categories. Give a meal a category when you create or edit it — pick from a built-in list (Dinner, Breakfast, Lunch, Dessert, Sides, Snack, Drink) or type your own. The Meals tab gets a row of category chips at the top: tap one to show just those meals (there's an "All" chip and an "Uncategorized" chip too). Each meal shows its category in the list and on its detail view. Works right alongside the search box.
+
 ## 0.31.2
 - On the Plan tab, tap a meal's name to open it (jumps straight to the directions) instead of switching to the Meals tab to find it. The ✕ still removes it from the day.
 - Renamed the meal's "Add to list" tab to "Ingredients" — it's where the ingredient checklist lives, and you still add the checked ones to your list from there.

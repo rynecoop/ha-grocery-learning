@@ -45,6 +45,7 @@ class LocalListAssistPanel extends LitElement {
     _mealEditingKey: { state: true },
     _mealTab: { state: true },
     _mealSearch: { state: true },
+    _mealCategoryFilter: { state: true },
     _recipeImporting: { state: true },
     _recipeImportError: { state: true },
     _stepsChecked: { state: true },
@@ -88,6 +89,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditingKey = "";
     this._mealTab = "add";
     this._mealSearch = "";
+    this._mealCategoryFilter = "";
     this._recipeImporting = false;
     this._recipeImportError = "";
     this._stepsChecked = {};
@@ -134,6 +136,7 @@ class LocalListAssistPanel extends LitElement {
       mealIngredients: "",
       mealDirections: "",
       mealNotes: "",
+      mealCategory: "",
     };
     this._lastSeenLiveRevision = "";
     this._wsUnsub = null;
@@ -1538,12 +1541,38 @@ class LocalListAssistPanel extends LitElement {
     return (meal.ingredients || []).some((ing) => (ing.item || "").toLowerCase().includes(query));
   }
 
+  mealCategoryPresets() {
+    return ["Dinner", "Breakfast", "Lunch", "Dessert", "Sides", "Snack", "Drink"];
+  }
+
+  // The category chips to show: presets that are actually in use plus any custom
+  // categories, in a stable order (preset order first, then custom alphabetically).
+  mealCategoriesInUse(meals) {
+    const presets = this.mealCategoryPresets();
+    const present = new Set();
+    let hasUncategorized = false;
+    for (const m of meals) {
+      const c = (m.category || "").trim();
+      if (c) present.add(c); else hasUncategorized = true;
+    }
+    const ordered = presets.filter((p) => present.has(p));
+    const custom = [...present].filter((c) => !presets.includes(c)).sort((a, b) => a.localeCompare(b));
+    return { cats: [...ordered, ...custom], hasUncategorized };
+  }
+
   _mealListTemplate(meals) {
     // Favorites (for the current Home Assistant user) float to the top, keeping
     // the backend's name order within each group. A star marks favorited rows.
     const favs = new Set(this._state?.favorites || []);
     const query = (this._mealSearch || "").trim().toLowerCase();
-    const filtered = meals.filter((m) => this.mealMatchesSearch(m, query));
+    const catFilter = this._mealCategoryFilter || "";
+    const { cats, hasUncategorized } = this.mealCategoriesInUse(meals);
+    const filtered = meals.filter((m) => {
+      if (!this.mealMatchesSearch(m, query)) return false;
+      if (!catFilter) return true;
+      const c = (m.category || "").trim();
+      return catFilter === "__uncat__" ? !c : c === catFilter;
+    });
     const ordered = [...filtered].sort((a, b) => (favs.has(b.id) ? 1 : 0) - (favs.has(a.id) ? 1 : 0));
     return html`
       <div class="row meal-actions">
@@ -1558,18 +1587,25 @@ class LocalListAssistPanel extends LitElement {
             ${query ? html`<button class="btn compact" @click=${() => { this._mealSearch = ""; }}>Clear</button>` : nothing}
           </div>`
         : nothing}
+      ${cats.length
+        ? html`<div class="meal-cat-row">
+            <button class=${"meal-cat-chip" + (!catFilter ? " active" : "")} @click=${() => { this._mealCategoryFilter = ""; }}>All</button>
+            ${cats.map((c) => html`<button class=${"meal-cat-chip" + (catFilter === c ? " active" : "")} @click=${() => { this._mealCategoryFilter = c; }}>${c}</button>`)}
+            ${hasUncategorized ? html`<button class=${"meal-cat-chip" + (catFilter === "__uncat__" ? " active" : "")} @click=${() => { this._mealCategoryFilter = "__uncat__"; }}>Uncategorized</button>` : nothing}
+          </div>`
+        : nothing}
       <div class="meal-list">
         ${ordered.length
           ? repeat(ordered, (m) => m.id, (m) => html`
             <button class="meal-row meal-row-button" @click=${() => this.openMealDetail(m.id, "add")}>
               <div class="meal-row-main">
                 <strong>${favs.has(m.id) ? html`<span class="meal-fav-star" aria-label="Favorite" title="Favorite">★</span> ` : nothing}${m.name}</strong>
-                <div class="small">${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}${m.direction_count ? ` · ${m.direction_count} ${m.direction_count === 1 ? "step" : "steps"}` : ""}${(m.notes || "").trim() ? " · has notes" : ""}</div>
+                <div class="small">${(m.category || "").trim() ? html`<span class="meal-cat-tag">${m.category}</span> · ` : nothing}${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}${m.direction_count ? ` · ${m.direction_count} ${m.direction_count === 1 ? "step" : "steps"}` : ""}${(m.notes || "").trim() ? " · has notes" : ""}</div>
               </div>
               <span class="meal-row-open">Open ›</span>
             </button>`)
           : meals.length
-            ? html`<div class="empty">No meals match “${this._mealSearch}”.</div>`
+            ? html`<div class="empty">No meals match your filters.</div>`
             : html`<div class="empty">No saved meals yet. Create one with ingredients and directions, then add it to your list with a tap.</div>`}
       </div>`;
   }
@@ -1596,6 +1632,13 @@ class LocalListAssistPanel extends LitElement {
         <input class="input" placeholder="Meal name (e.g. Taco Night)" .value=${live(this._drafts.mealName || "")}
           @input=${(e) => this.updateDraft("mealName", e.target.value)} />
       </div>
+      <div class="label">Category (optional)</div>
+      <input class="input" list="lla-meal-cats" placeholder="Pick one or type your own — e.g. Dinner"
+        .value=${live(this._drafts.mealCategory || "")}
+        @input=${(e) => this.updateDraft("mealCategory", e.target.value)} />
+      <datalist id="lla-meal-cats">
+        ${this.mealCategoryPresets().map((c) => html`<option value=${c}></option>`)}
+      </datalist>
       <div class="label">Ingredients (one per line)</div>
       <textarea class="input meal-textarea" rows="7" placeholder="ground beef&#10;taco shells&#10;shredded cheese&#10;lettuce"
         .value=${live(this._drafts.mealIngredients || "")}
@@ -1629,6 +1672,7 @@ class LocalListAssistPanel extends LitElement {
             <div class="meal-detail-head">
               <button class="btn compact" @click=${() => this.backToMeals()}>‹ Meals</button>
               <div class="title">${meal.name}</div>
+              ${(meal.category || "").trim() ? html`<span class="meal-cat-tag">${meal.category}</span>` : nothing}
             </div>
             <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closeMealDetail()}>×</button>
           </div>
@@ -1844,6 +1888,7 @@ class LocalListAssistPanel extends LitElement {
     this._drafts.mealIngredients = (meal?.ingredients || []).map((i) => i.item).join("\n");
     this._drafts.mealDirections = (meal?.directions || []).join("\n");
     this._drafts.mealNotes = meal?.notes || "";
+    this._drafts.mealCategory = meal?.category || "";
     this._mealConfirmId = "";
     this._view = "meals";
     this.requestUpdate();
@@ -1868,6 +1913,7 @@ class LocalListAssistPanel extends LitElement {
     this._drafts.mealIngredients = items.join("\n");
     this._drafts.mealDirections = "";
     this._drafts.mealNotes = "";
+    this._drafts.mealCategory = "";
     this._mealConfirmId = "";
     this._view = "meals";
     this.requestUpdate();
@@ -1883,6 +1929,7 @@ class LocalListAssistPanel extends LitElement {
     this._drafts.mealIngredients = "";
     this._drafts.mealDirections = "";
     this._drafts.mealNotes = "";
+    this._drafts.mealCategory = "";
     this.requestUpdate();
   }
 
@@ -1899,7 +1946,8 @@ class LocalListAssistPanel extends LitElement {
       .map((line) => line.trim())
       .filter(Boolean);
     const notes = (this._drafts.mealNotes || "").trim();
-    const payload = { action: "save_meal", name, ingredients, directions, notes };
+    const category = (this._drafts.mealCategory || "").trim();
+    const payload = { action: "save_meal", name, ingredients, directions, notes, category };
     if (this._mealEditorId && this._mealEditorId !== "new") payload.meal_id = this._mealEditorId;
     await this.act(payload);
     this.closeMealEditor();
@@ -2635,6 +2683,10 @@ class LocalListAssistPanel extends LitElement {
     .meal-actions { margin-bottom: 12px; }
     .meal-search-row { display: flex; gap: 8px; align-items: stretch; margin-bottom: 12px; }
     .meal-search { flex: 1 1 auto; min-width: 0; }
+    .meal-cat-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .meal-cat-chip { border: 1px solid var(--lla-border); background: var(--lla-surface-2); color: var(--lla-text); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .meal-cat-chip.active { background: color-mix(in srgb, var(--accent, #2c78ba) 18%, transparent); border-color: var(--accent, #2c78ba); color: var(--accent, #2c78ba); }
+    .meal-cat-tag { display: inline-block; border: 1px solid var(--lla-border); border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 600; color: var(--lla-text-dim); }
     .meal-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; padding: 6px 2px; }
     .meal-notes-inline { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--lla-border); }
     .meal-notes-edit { width: 100%; resize: vertical; font: inherit; line-height: 1.5; min-height: 64px; }
