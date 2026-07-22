@@ -809,6 +809,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "directions": directions,
                     "direction_count": len(directions),
                     "notes": str(meal.get("notes", "")).strip(),
+                    "category": str(meal.get("category", "")).strip(),
                 }
             )
         out.sort(key=lambda meal: meal["name"].lower())
@@ -2806,6 +2807,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             else:
                 directions = []
             notes = str(payload.get("notes", "")).strip()
+            category = str(payload.get("category", "")).strip()[:40]
             meals = hass.data[DOMAIN].setdefault("meals", {})
             if not isinstance(meals, dict):
                 meals = {}
@@ -2821,6 +2823,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "ingredients": ingredients,
                 "directions": directions,
                 "notes": notes,
+                "category": category,
                 "created": created,
                 "updated": now,
             }
