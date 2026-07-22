@@ -3161,6 +3161,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             ):
                 if isinstance(incoming.get(key), (dict, list)):
                     raw[key] = incoming[key]
+            # meal_categories and favorites are meal-coupled (they reference meal
+            # / category ids). When the backup replaces the meal set, they must
+            # come entirely from that backup — otherwise a backup that omits them
+            # leaves this install's stale categories/favorites attached to the
+            # restored meals. So clear the omitted ones; the migration below then
+            # rebuilds categories for a pre-0.33 backup from its meals' legacy
+            # category strings.
+            if isinstance(incoming.get("meals"), dict):
+                if not isinstance(incoming.get("meal_categories"), list):
+                    raw["meal_categories"] = []
+                if not isinstance(incoming.get("favorites"), dict):
+                    raw["favorites"] = {}
             await store.save_raw(raw)
             # Re-load through the storage validators so imported data is cleaned
             # and coerced exactly like a normal boot, then persist the canonical
