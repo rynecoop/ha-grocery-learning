@@ -1514,7 +1514,7 @@ class LocalListAssistPanel extends LitElement {
                 ${dayMeals.length
                   ? dayMeals.map((m) => html`
                     <span class="week-chip">
-                      ${m.name}
+                      <button class="week-chip-name" title="Open ${m.name}" @click=${() => this.openMealDetail(m.meal_id, "directions")}>${m.name}</button>
                       <button class="week-chip-x" aria-label="Remove ${m.name}" @click=${() => this.unassignMeal(key, m.meal_id)}>×</button>
                     </span>`)
                   : html`<span class="small">No meals yet</span>`}
@@ -1633,7 +1633,7 @@ class LocalListAssistPanel extends LitElement {
             <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closeMealDetail()}>×</button>
           </div>
           <div class="meal-tabs">
-            <button class=${"meal-tab" + (tab === "add" ? " active" : "")} @click=${() => { this._mealTab = "add"; }}>Add to list</button>
+            <button class=${"meal-tab" + (tab === "add" ? " active" : "")} @click=${() => { this._mealTab = "add"; }}>Ingredients</button>
             <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions &amp; notes${directions.length ? ` (${directions.length})` : ""}${hasNotes ? " 📝" : ""}</button>
             <span class="meal-tab-spacer"></span>
             <button class=${"btn compact meal-fav-btn" + (isFav ? " fav-on" : "")}
@@ -2684,6 +2684,8 @@ class LocalListAssistPanel extends LitElement {
     .week-day-meals { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
     .week-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 5px 6px 5px 12px; font-size: 13px;
       border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--lla-border)); background: color-mix(in srgb, var(--accent) 14%, var(--lla-surface)); }
+    .week-chip-name { border: none; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0; text-align: left; }
+    .week-chip-name:hover { text-decoration: underline; }
     .week-chip-x { border: none; background: transparent; color: var(--lla-text-dim); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; border-radius: 50%; }
     .week-chip-x:hover { color: var(--lla-danger); }
     .week-select { padding: 8px 10px; }

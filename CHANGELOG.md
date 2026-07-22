@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.31.2
+- On the Plan tab, tap a meal's name to open it (jumps straight to the directions) instead of switching to the Meals tab to find it. The ✕ still removes it from the day.
+- Renamed the meal's "Add to list" tab to "Ingredients" — it's where the ingredient checklist lives, and you still add the checked ones to your list from there.
+
 ## 0.31.1
 - Meal notes now live right alongside the directions (on the "Directions & notes" tab) and are editable in place — just tap the notes box and type; it saves on its own, no need to open the editor first. Handy for notes that go with the steps, like a swap or a timing tweak. A 📝 marks meals that have notes.
 
