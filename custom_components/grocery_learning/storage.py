@@ -306,17 +306,53 @@ class GroceryLearningStore:
                 directions = [str(step).strip() for step in directions_raw if str(step).strip()]
             elif isinstance(directions_raw, str):
                 directions = [line.strip() for line in directions_raw.splitlines() if line.strip()]
+            categories_raw = value.get("categories", [])
+            categories: list[str] = []
+            if isinstance(categories_raw, list):
+                seen_cat: set[str] = set()
+                for cat in categories_raw:
+                    cid = str(cat).strip()
+                    if cid and cid not in seen_cat:
+                        seen_cat.add(cid)
+                        categories.append(cid)
             cleaned[meal_id] = {
                 "id": meal_id,
                 "name": name,
                 "ingredients": ingredients,
                 "directions": directions,
                 "notes": str(value.get("notes", "")).strip(),
+                "categories": categories,
+                # Legacy single-category string (pre-0.33); migrated on load.
                 "category": str(value.get("category", "")).strip(),
                 "created": str(value.get("created", "")).strip(),
                 "updated": str(value.get("updated", "")).strip(),
             }
         return cleaned
+
+    async def load_meal_categories(self) -> list[dict[str, str]]:
+        """Load the user-defined meal categories as ordered ``{id, label}`` rows.
+
+        Rows with a blank id or label, or a duplicate id, are dropped so callers
+        always get a clean, unique, ordered list.
+        """
+        out: list[dict[str, str]] = []
+        data = await self._store.async_load()
+        if not isinstance(data, dict):
+            return out
+        raw = data.get("meal_categories", [])
+        if not isinstance(raw, list):
+            return out
+        seen: set[str] = set()
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            cid = str(entry.get("id", "")).strip()
+            label = str(entry.get("label", "")).strip()
+            if not cid or not label or cid in seen:
+                continue
+            seen.add(cid)
+            out.append({"id": cid, "label": label})
+        return out
 
     async def load_meal_plan(self) -> dict[str, list[str]]:
         """Load the meal plan, keyed by ISO date (``YYYY-MM-DD``) -> meal ids.
@@ -381,6 +417,7 @@ class GroceryLearningStore:
         meals: dict[str, dict] | None = None,
         meal_plan: dict[str, list[str]] | None = None,
         favorites: dict[str, list[str]] | None = None,
+        meal_categories: list[dict[str, str]] | None = None,
     ) -> None:
         """Persist data to storage."""
         payload = {
@@ -399,6 +436,8 @@ class GroceryLearningStore:
             payload["meal_plan"] = meal_plan
         if favorites is not None:
             payload["favorites"] = favorites
+        if meal_categories is not None:
+            payload["meal_categories"] = meal_categories
         await self._store.async_save(
             payload
         )

@@ -299,6 +299,47 @@ def unique_meal_id(name: str, existing_ids: Sequence[str]) -> str:
     return meal_id
 
 
+def migrate_meal_categories(meals, meal_categories):
+    """Fold the legacy single ``meal.category`` string into the managed set.
+
+    Seeds the ordered ``{id, label}`` category set from any legacy category
+    labels and rewrites each meal to a list of category ids, dropping the old
+    ``category`` key. Mutates ``meals`` in place; returns the (possibly grown)
+    category list. Idempotent: once meals carry ``categories`` and no legacy
+    ``category``, re-running is a no-op.
+    """
+    order = [
+        {"id": str(c["id"]).strip(), "label": str(c["label"]).strip()}
+        for c in (meal_categories or [])
+        if isinstance(c, dict)
+        and str(c.get("id", "")).strip()
+        and str(c.get("label", "")).strip()
+    ]
+    by_label = {c["label"].lower(): c["id"] for c in order}
+    ids = {c["id"] for c in order}
+
+    def _ensure(label: str) -> str:
+        key = label.lower()
+        if key in by_label:
+            return by_label[key]
+        cid = unique_meal_id(label, ids)
+        ids.add(cid)
+        order.append({"id": cid, "label": label})
+        by_label[key] = cid
+        return cid
+
+    if isinstance(meals, dict):
+        for meal in meals.values():
+            if not isinstance(meal, dict):
+                continue
+            cats = meal.get("categories")
+            if not isinstance(cats, list) or not cats:
+                legacy = str(meal.get("category", "")).strip()
+                meal["categories"] = [_ensure(legacy)] if legacy else []
+            meal.pop("category", None)
+    return order
+
+
 def select_frequent(
     frequent: Mapping[str, Mapping[str, Any]],
     exclude_normalized: set[str],

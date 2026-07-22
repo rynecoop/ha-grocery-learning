@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.33.0
+- Meal categories are now a set you manage, and a meal can be in several at once. Instead of typing a category on each meal (easy to misspell), you set up your categories once — tap "Manage…" on the Meals tab to add ones that fit how you cook (e.g. Dinner, 30 min or less, One-pot, Sheet-pan). Then, when you create or edit a meal, you just check the ones that apply. The Meals tab has a chip for each category to filter by, and each meal shows all its category tags. Any single categories you set in 0.32.0 carry over automatically.
+
 ## 0.32.0
 - Organize meals into categories. Give a meal a category when you create or edit it — pick from a built-in list (Dinner, Breakfast, Lunch, Dessert, Sides, Snack, Drink) or type your own. The Meals tab gets a row of category chips at the top: tap one to show just those meals (there's an "All" chip and an "Uncategorized" chip too). Each meal shows its category in the list and on its detail view. Works right alongside the search box.
 

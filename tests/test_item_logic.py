@@ -516,5 +516,38 @@ class SelectFrequentTests(unittest.TestCase):
         self.assertEqual(result, [{"item": "paper towels", "count": 2}])
 
 
+class MigrateMealCategoriesTests(unittest.TestCase):
+    def test_seeds_set_and_maps_shared_ids(self):
+        meals = {
+            "a": {"id": "a", "name": "Tacos", "category": "Dinner", "categories": []},
+            "b": {"id": "b", "name": "Toast", "category": "Breakfast", "categories": []},
+            "c": {"id": "c", "name": "Pie", "category": "dinner", "categories": []},
+            "d": {"id": "d", "name": "Nada", "category": "", "categories": []},
+        }
+        cats = item_logic.migrate_meal_categories(meals, [])
+        # Two distinct categories (Dinner/dinner collapse by label, case-insensitive).
+        self.assertEqual([c["label"] for c in cats], ["Dinner", "Breakfast"])
+        self.assertEqual(meals["a"]["categories"], meals["c"]["categories"])
+        self.assertEqual(meals["d"]["categories"], [])
+        # Legacy key dropped.
+        self.assertNotIn("category", meals["a"])
+
+    def test_idempotent_second_run(self):
+        meals = {"a": {"id": "a", "name": "X", "category": "Dinner", "categories": []}}
+        cats = item_logic.migrate_meal_categories(meals, [])
+        before = [dict(m) for m in meals.values()]
+        cats2 = item_logic.migrate_meal_categories(meals, cats)
+        self.assertEqual(len(cats2), len(cats))
+        self.assertEqual([dict(m) for m in meals.values()], before)
+
+    def test_preserves_existing_managed_categories(self):
+        meals = {"a": {"id": "a", "name": "X", "category": "Dinner", "categories": []}}
+        seed = [{"id": "din", "label": "Dinner"}]
+        cats = item_logic.migrate_meal_categories(meals, seed)
+        # Reuses the pre-existing id for the matching label.
+        self.assertEqual(meals["a"]["categories"], ["din"])
+        self.assertEqual(len(cats), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
