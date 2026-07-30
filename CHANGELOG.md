@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.34.0
+- Add a meal to a day right from the meal. Open a meal and tap "📅 Add to a day" — pick Today, Tomorrow, or any date — and it's planned onto that day without switching to the Plan tab first. You can add it to several days in a row, and it shows on the Plan tab as usual.
+
 ## 0.33.1
 - Backups now include your meal categories and your per-person favorites. Previously a backup left these out, so restoring on a fresh install could bring meals back showing as uncategorized (and drop everyone's favorites). Restoring an older backup also migrates its meal categories the same way a normal update does.
 

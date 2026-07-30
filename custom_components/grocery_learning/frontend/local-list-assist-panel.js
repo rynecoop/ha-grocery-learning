@@ -47,6 +47,8 @@ class LocalListAssistPanel extends LitElement {
     _mealSearch: { state: true },
     _mealCategoryFilter: { state: true },
     _mealCatManagerOpen: { state: true },
+    _mealPlanPickerOpen: { state: true },
+    _mealPlanAdded: { state: true },
     _recipeImporting: { state: true },
     _recipeImportError: { state: true },
     _stepsChecked: { state: true },
@@ -92,6 +94,8 @@ class LocalListAssistPanel extends LitElement {
     this._mealSearch = "";
     this._mealCategoryFilter = "";
     this._mealCatManagerOpen = false;
+    this._mealPlanPickerOpen = false;
+    this._mealPlanAdded = "";
     this._recipeImporting = false;
     this._recipeImportError = "";
     this._stepsChecked = {};
@@ -1748,6 +1752,8 @@ class LocalListAssistPanel extends LitElement {
             <button class=${"meal-tab" + (tab === "add" ? " active" : "")} @click=${() => { this._mealTab = "add"; }}>Ingredients</button>
             <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions &amp; notes${directions.length ? ` (${directions.length})` : ""}${hasNotes ? " 📝" : ""}</button>
             <span class="meal-tab-spacer"></span>
+            <button class=${"btn compact" + (this._mealPlanPickerOpen ? " active" : "")}
+              @click=${() => { this._mealPlanPickerOpen = !this._mealPlanPickerOpen; this._mealPlanAdded = ""; }}>📅 Add to a day</button>
             <button class=${"btn compact meal-fav-btn" + (isFav ? " fav-on" : "")}
               aria-pressed=${isFav ? "true" : "false"}
               title=${isFav ? "Remove from your favorites" : "Add to your favorites"}
@@ -1755,11 +1761,39 @@ class LocalListAssistPanel extends LitElement {
             <button class="btn compact" @click=${() => this.openMealEditor(meal.id)}>Edit</button>
             <button class="btn compact danger" @click=${() => this.deleteMeal(meal.id)}>Delete</button>
           </div>
+          ${this._mealPlanPickerOpen ? this._mealPlanPickerTemplate(meal) : nothing}
           ${tab === "add"
             ? this._mealAddTab(meal, ingredients)
             : this._mealDirectionsTab(meal, directions)}
         </section>
       </div>`;
+  }
+
+  _mealPlanPickerTemplate(meal) {
+    const today = new Date();
+    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const todayISO = this._toISODate(today);
+    const tomorrowISO = this._toISODate(tomorrow);
+    return html`
+      <div class="meal-plan-picker">
+        <div class="small">Add <strong>${meal.name}</strong> to your plan:</div>
+        <div class="row meal-plan-quick">
+          <button class="btn compact" @click=${() => this.planMealOnDate(todayISO)}>Today</button>
+          <button class="btn compact" @click=${() => this.planMealOnDate(tomorrowISO)}>Tomorrow</button>
+          <input class="input meal-plan-date" type="date" .value=${live(todayISO)}
+            @change=${(e) => { if (e.target.value) this.planMealOnDate(e.target.value); }} />
+        </div>
+        ${this._mealPlanAdded ? html`<div class="small meal-plan-added">✓ Added to ${this._mealPlanAdded}. See it on the Plan tab.</div>` : nothing}
+      </div>`;
+  }
+
+  async planMealOnDate(iso) {
+    const mealId = this._mealConfirmId;
+    if (!iso || !mealId) return;
+    await this.assignMeal(iso, mealId);
+    const label = this._parseISODate(iso).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    this._mealPlanAdded = label;
+    this.requestUpdate();
   }
 
   _mealAddTab(meal, ingredients) {
@@ -2272,16 +2306,22 @@ class LocalListAssistPanel extends LitElement {
     this._mealConfirmId = mealId;
     this._view = "meals";
     this._mealEditorId = "";
+    this._mealPlanPickerOpen = false;
+    this._mealPlanAdded = "";
   }
 
   closeMealDetail() {
     this._mealConfirmId = "";
     this._mealEditingKey = "";
+    this._mealPlanPickerOpen = false;
+    this._mealPlanAdded = "";
   }
 
   backToMeals() {
     this._mealConfirmId = "";
     this._mealEditingKey = "";
+    this._mealPlanPickerOpen = false;
+    this._mealPlanAdded = "";
     this._view = "meals";
   }
 
@@ -2765,6 +2805,10 @@ class LocalListAssistPanel extends LitElement {
     .meal-cat-manage-row { display: flex; gap: 8px; align-items: center; }
     .meal-cat-manage-row .input { flex: 1 1 auto; min-width: 0; }
     .meal-notes { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; padding: 6px 2px; }
+    .meal-plan-picker { border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; background: var(--lla-surface-2); display: flex; flex-direction: column; gap: 8px; }
+    .meal-plan-quick { gap: 8px; align-items: center; flex-wrap: wrap; }
+    .meal-plan-date { flex: 1 1 auto; min-width: 140px; }
+    .meal-plan-added { color: var(--accent, #2c78ba); font-weight: 600; }
     .meal-notes-inline { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--lla-border); }
     .meal-notes-edit { width: 100%; resize: vertical; font: inherit; line-height: 1.5; min-height: 64px; }
     .recipe-import { border: 1px solid var(--lla-border); border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; background: var(--lla-surface-2); display: flex; flex-direction: column; gap: 6px; }
