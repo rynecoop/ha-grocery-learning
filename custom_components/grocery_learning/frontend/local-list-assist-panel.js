@@ -49,6 +49,7 @@ class LocalListAssistPanel extends LitElement {
     _mealCatManagerOpen: { state: true },
     _mealPlanPickerOpen: { state: true },
     _mealPlanAdded: { state: true },
+    _mealPlanError: { state: true },
     _recipeImporting: { state: true },
     _recipeImportError: { state: true },
     _stepsChecked: { state: true },
@@ -96,6 +97,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealCatManagerOpen = false;
     this._mealPlanPickerOpen = false;
     this._mealPlanAdded = "";
+    this._mealPlanError = "";
     this._recipeImporting = false;
     this._recipeImportError = "";
     this._stepsChecked = {};
@@ -1753,7 +1755,7 @@ class LocalListAssistPanel extends LitElement {
             <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions &amp; notes${directions.length ? ` (${directions.length})` : ""}${hasNotes ? " 📝" : ""}</button>
             <span class="meal-tab-spacer"></span>
             <button class=${"btn compact" + (this._mealPlanPickerOpen ? " active" : "")}
-              @click=${() => { this._mealPlanPickerOpen = !this._mealPlanPickerOpen; this._mealPlanAdded = ""; }}>📅 Add to a day</button>
+              @click=${() => { this._mealPlanPickerOpen = !this._mealPlanPickerOpen; this._mealPlanAdded = ""; this._mealPlanError = ""; }}>📅 Add to a day</button>
             <button class=${"btn compact meal-fav-btn" + (isFav ? " fav-on" : "")}
               aria-pressed=${isFav ? "true" : "false"}
               title=${isFav ? "Remove from your favorites" : "Add to your favorites"}
@@ -1784,14 +1786,23 @@ class LocalListAssistPanel extends LitElement {
             @change=${(e) => { if (e.target.value) this.planMealOnDate(e.target.value); }} />
         </div>
         ${this._mealPlanAdded ? html`<div class="small meal-plan-added">✓ Added to ${this._mealPlanAdded}. See it on the Plan tab.</div>` : nothing}
+        ${this._mealPlanError ? html`<div class="small error">${this._mealPlanError}</div>` : nothing}
       </div>`;
   }
 
   async planMealOnDate(iso) {
     const mealId = this._mealConfirmId;
     if (!iso || !mealId) return;
-    await this.assignMeal(iso, mealId);
+    const res = await this.assignMeal(iso, mealId);
+    if (!res || res.ok === false) {
+      // act() returns null on a network/backend error — don't claim success.
+      this._mealPlanAdded = "";
+      this._mealPlanError = "Couldn't add it to that day. Please try again.";
+      this.requestUpdate();
+      return;
+    }
     const label = this._parseISODate(iso).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    this._mealPlanError = "";
     this._mealPlanAdded = label;
     this.requestUpdate();
   }
@@ -2163,8 +2174,8 @@ class LocalListAssistPanel extends LitElement {
 
   async assignMeal(dateKey, mealId) {
     const id = String(mealId || "").trim();
-    if (!id || !dateKey) return;
-    await this.act({ action: "assign_meal", date: dateKey, meal_id: id });
+    if (!id || !dateKey) return null;
+    return await this.act({ action: "assign_meal", date: dateKey, meal_id: id });
   }
 
   async unassignMeal(dateKey, mealId) {
@@ -2308,6 +2319,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditorId = "";
     this._mealPlanPickerOpen = false;
     this._mealPlanAdded = "";
+    this._mealPlanError = "";
   }
 
   closeMealDetail() {
@@ -2315,6 +2327,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditingKey = "";
     this._mealPlanPickerOpen = false;
     this._mealPlanAdded = "";
+    this._mealPlanError = "";
   }
 
   backToMeals() {
@@ -2322,6 +2335,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealEditingKey = "";
     this._mealPlanPickerOpen = false;
     this._mealPlanAdded = "";
+    this._mealPlanError = "";
     this._view = "meals";
   }
 
