@@ -98,6 +98,7 @@ class LocalListAssistPanel extends LitElement {
     this._mealPlanPickerOpen = false;
     this._mealPlanAdded = "";
     this._mealPlanError = "";
+    this._mealPlanReqSeq = 0;
     this._recipeImporting = false;
     this._recipeImportError = "";
     this._stepsChecked = {};
@@ -1793,7 +1794,14 @@ class LocalListAssistPanel extends LitElement {
   async planMealOnDate(iso) {
     const mealId = this._mealConfirmId;
     if (!iso || !mealId) return;
+    // Tag this request so a slow/older response can't write its result into a
+    // different meal's picker or clobber a newer choice: only the latest request
+    // for the still-open meal may update the confirmation.
+    const seq = ++this._mealPlanReqSeq;
     const res = await this.assignMeal(iso, mealId);
+    if (seq !== this._mealPlanReqSeq || this._mealConfirmId !== mealId || !this._mealPlanPickerOpen) {
+      return;
+    }
     if (!res || res.ok === false) {
       // act() returns null on a network/backend error — don't claim success.
       this._mealPlanAdded = "";
