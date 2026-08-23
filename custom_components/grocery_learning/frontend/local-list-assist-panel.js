@@ -410,12 +410,21 @@ class LocalListAssistPanel extends LitElement {
     if (!payload.request_id) payload.request_id = this._newRequestId();
     try {
       const result = await this.api("action", "POST", payload);
-      if (this._applyResult(result, payload)) {
+      // The action view returns HTTP 200 with {ok:false} for handler errors, so
+      // a resolved fetch isn't proof of success — only clear a queued write when
+      // the action actually succeeded.
+      const ok = !!result && result.ok !== false;
+      if (ok && this._applyResult(result, payload)) {
         this._removePending(payload.request_id);
         return result;
       }
       await this.load(true);
-      this._removePending(payload.request_id);
+      if (ok) {
+        this._removePending(payload.request_id);
+      } else {
+        this._error = (result && result.error) || this._error || "Couldn't save that change.";
+      }
+      this.requestUpdate();
       return result;
     } catch (err) {
       this._error = err.message || String(err);
@@ -435,8 +444,17 @@ class LocalListAssistPanel extends LitElement {
     }
     try {
       const result = await this.api("action", "POST", payload);
+      const ok = !!result && result.ok !== false;
       this._applyResult(result, payload);
-      this._removePending(payload.request_id);
+      if (ok) {
+        this._removePending(payload.request_id);
+      } else {
+        // Server reached but the action failed — reconcile and surface the error;
+        // keep any queued copy so a retry isn't discarded as if it succeeded.
+        await this.load(true);
+        this._error = (result && result.error) || this._error || "Couldn't save that change.";
+      }
+      this.requestUpdate();
       return result;
     } catch (err) {
       // Reconcile with the server (rolls back the optimistic edit), then keep the
