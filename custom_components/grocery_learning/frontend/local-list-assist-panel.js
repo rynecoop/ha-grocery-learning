@@ -28,6 +28,7 @@ class LocalListAssistPanel extends LitElement {
   static properties = {
     _state: { state: true },
     _error: { state: true },
+    _pendingRetry: { state: true },
     _loading: { state: true },
     _view: { state: true },
     _narrow: { state: true },
@@ -76,6 +77,7 @@ class LocalListAssistPanel extends LitElement {
     this._panel = null;
     this._state = null;
     this._error = "";
+    this._pendingRetry = null;
     this._loading = false;
     this._view = "list";
     this._narrow = false;
@@ -293,11 +295,31 @@ class LocalListAssistPanel extends LitElement {
 
   // --- API ---
   get _token() {
+    const auth = this._hass?.auth;
+    // Prefer the Auth object's live getter — it reflects a refreshed token.
+    // data.access_token is the canonical snake_case field; the rest are
+    // defensive fallbacks for older/edge hass shapes.
     return (
-      this._hass?.auth?.data?.accessToken ||
+      auth?.accessToken ||
+      auth?.data?.access_token ||
+      auth?.data?.accessToken ||
       this._hass?.connection?.options?.auth?.accessToken ||
       ""
     );
+  }
+
+  async _ensureFreshToken() {
+    // HA access tokens are short-lived; refresh proactively when expired so we
+    // don't send a dead token (the usual cause of intermittent 401s that made
+    // an add/remove silently not take).
+    const auth = this._hass?.auth;
+    if (auth && auth.expired && typeof auth.refreshAccessToken === "function") {
+      try {
+        await auth.refreshAccessToken();
+      } catch (_err) {
+        // Fall through — the request may still succeed, or we retry on 401.
+      }
+    }
   }
 
   _headers() {
@@ -308,13 +330,24 @@ class LocalListAssistPanel extends LitElement {
     return headers;
   }
 
-  async api(path, method = "GET", body = null) {
+  async api(path, method = "GET", body = null, retryOn401 = true) {
+    await this._ensureFreshToken();
     const res = await fetch(`/api/grocery_learning/${path}`, {
       method,
       headers: this._headers(),
       body: body ? JSON.stringify(body) : null,
       credentials: "same-origin",
     });
+    // A 401 usually means the token expired between our check and the server's
+    // validation. Force a refresh and retry once with the fresh token.
+    if (res.status === 401 && retryOn401 && this._hass?.auth?.refreshAccessToken) {
+      try {
+        await this._hass.auth.refreshAccessToken();
+      } catch (_err) {
+        /* retry anyway with whatever token we have */
+      }
+      return this.api(path, method, body, false);
+    }
     const text = await res.text();
     let data = {};
     try {
@@ -366,12 +399,16 @@ class LocalListAssistPanel extends LitElement {
     try {
       const result = await this.api("action", "POST", payload);
       if (this._applyResult(result, payload)) {
+        this._clearPendingRetry();
         return result;
       }
       await this.load(true);
+      this._clearPendingRetry();
       return result;
     } catch (err) {
       this._error = err.message || String(err);
+      // Don't silently lose the change — keep it so the user can retry.
+      this._rememberPendingRetry(payload);
       this.requestUpdate();
       return null;
     }
@@ -386,12 +423,41 @@ class LocalListAssistPanel extends LitElement {
     try {
       const result = await this.api("action", "POST", payload);
       this._applyResult(result, payload);
+      this._clearPendingRetry();
       return result;
     } catch (err) {
-      // Reconcile with the server on failure.
+      // Reconcile with the server on failure (rolls back the optimistic edit),
+      // then keep the change so the user can retry instead of losing it.
       await this.load(true);
+      this._rememberPendingRetry(payload);
+      this.requestUpdate();
       return null;
     }
+  }
+
+  _describeAction(payload) {
+    const a = String(payload?.action || "").replace(/_/g, " ");
+    const label = String(payload?.item || payload?.name || payload?.meal_name || "").trim();
+    return label ? `${a} “${label}”` : (a || "change");
+  }
+
+  _rememberPendingRetry(payload) {
+    // Keep only the most recent failed write; retrying it re-sends the exact
+    // same action once the connection / auth is healthy again.
+    this._pendingRetry = { payload, label: this._describeAction(payload) };
+  }
+
+  _clearPendingRetry() {
+    if (this._pendingRetry) this._pendingRetry = null;
+  }
+
+  async retryPending() {
+    const pending = this._pendingRetry;
+    if (!pending) return;
+    this._pendingRetry = null;
+    this._error = "";
+    this.requestUpdate();
+    await this.act(pending.payload);
   }
 
   // --- drafts ---
@@ -1143,6 +1209,14 @@ class LocalListAssistPanel extends LitElement {
         ${this._mealConfirmId ? this._mealDetailTemplate(state) : nothing}
         ${this._mealCatManagerOpen ? this._mealCategoryManagerTemplate() : nothing}
         ${this._confirmOpen ? this._confirmAddTemplate() : nothing}
+        ${this._pendingRetry ? html`
+          <div class="save-retry" role="alert">
+            <span>Couldn't save your last change (${this._pendingRetry.label}). Check your connection.</span>
+            <div class="save-retry-actions">
+              <button class="btn compact primary" @click=${() => this.retryPending()}>Retry</button>
+              <button class="btn compact" @click=${() => { this._pendingRetry = null; }}>Dismiss</button>
+            </div>
+          </div>` : nothing}
         ${this._bottomBar()}
         ${this._undo ? html`
           <div class="undo-toast">
@@ -2965,6 +3039,16 @@ class LocalListAssistPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); z-index: 40;
     }
     .undo-toast .btn { padding: 6px 12px; }
+    .save-retry {
+      position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%);
+      width: min(560px, calc(100vw - 24px));
+      background: var(--lla-surface); color: var(--lla-text);
+      border: 1px solid var(--lla-danger, #c0392b); border-left-width: 4px;
+      border-radius: 14px; padding: 10px 14px; display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); z-index: 41;
+    }
+    .save-retry-actions { display: flex; gap: 8px; flex: 0 0 auto; }
     .shopping { max-width: 720px; margin: 0 auto; padding: 10px 12px 40px; min-height: 100%; --accent: #2c78ba; }
     .shop-bar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--lla-bg-1); }
     .shop-done { padding: 10px 14px; }
