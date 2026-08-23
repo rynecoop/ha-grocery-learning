@@ -28,7 +28,7 @@ class LocalListAssistPanel extends LitElement {
   static properties = {
     _state: { state: true },
     _error: { state: true },
-    _pendingRetry: { state: true },
+    _pendingWrites: { state: true },
     _loading: { state: true },
     _view: { state: true },
     _narrow: { state: true },
@@ -77,7 +77,7 @@ class LocalListAssistPanel extends LitElement {
     this._panel = null;
     this._state = null;
     this._error = "";
-    this._pendingRetry = null;
+    this._pendingWrites = [];
     this._loading = false;
     this._view = "list";
     this._narrow = false;
@@ -395,26 +395,39 @@ class LocalListAssistPanel extends LitElement {
     return false;
   }
 
+  // A stable per-write id. The server dedupes by it, so retrying a write whose
+  // response we never received can't double-apply (e.g. toggle a favorite twice
+  // or create a duplicate meal). crypto.randomUUID needs a secure context, which
+  // HA panels don't always have, so fall back to a good-enough unique string.
+  _newRequestId() {
+    try {
+      if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    } catch (_e) { /* fall through */ }
+    return `r-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  }
+
   async act(payload) {
+    if (!payload.request_id) payload.request_id = this._newRequestId();
     try {
       const result = await this.api("action", "POST", payload);
       if (this._applyResult(result, payload)) {
-        this._clearPendingRetry();
+        this._removePending(payload.request_id);
         return result;
       }
       await this.load(true);
-      this._clearPendingRetry();
+      this._removePending(payload.request_id);
       return result;
     } catch (err) {
       this._error = err.message || String(err);
-      // Don't silently lose the change — keep it so the user can retry.
-      this._rememberPendingRetry(payload);
+      // Don't silently lose the change — keep it (independently) so it can be retried.
+      this._addPending(payload);
       this.requestUpdate();
       return null;
     }
   }
 
   async actFast(payload, updater = null) {
+    if (!payload.request_id) payload.request_id = this._newRequestId();
     if (typeof updater === "function" && this._state) {
       updater(this._state);
       this.syncDrafts();
@@ -423,13 +436,14 @@ class LocalListAssistPanel extends LitElement {
     try {
       const result = await this.api("action", "POST", payload);
       this._applyResult(result, payload);
-      this._clearPendingRetry();
+      this._removePending(payload.request_id);
       return result;
     } catch (err) {
-      // Reconcile with the server on failure (rolls back the optimistic edit),
-      // then keep the change so the user can retry instead of losing it.
+      // Reconcile with the server (rolls back the optimistic edit), then keep the
+      // change so the user can retry. If it had actually committed server-side,
+      // the retry is deduped by request_id, so it won't double-apply.
       await this.load(true);
-      this._rememberPendingRetry(payload);
+      this._addPending(payload);
       this.requestUpdate();
       return null;
     }
@@ -441,23 +455,26 @@ class LocalListAssistPanel extends LitElement {
     return label ? `${a} “${label}”` : (a || "change");
   }
 
-  _rememberPendingRetry(payload) {
-    // Keep only the most recent failed write; retrying it re-sends the exact
-    // same action once the connection / auth is healthy again.
-    this._pendingRetry = { payload, label: this._describeAction(payload) };
+  _addPending(payload) {
+    const id = payload?.request_id;
+    if (!id || this._pendingWrites.some((w) => w.id === id)) return;
+    this._pendingWrites = [...this._pendingWrites, { id, payload, label: this._describeAction(payload) }];
   }
 
-  _clearPendingRetry() {
-    if (this._pendingRetry) this._pendingRetry = null;
+  _removePending(id) {
+    if (id && this._pendingWrites.some((w) => w.id === id)) {
+      this._pendingWrites = this._pendingWrites.filter((w) => w.id !== id);
+    }
   }
 
   async retryPending() {
-    const pending = this._pendingRetry;
-    if (!pending) return;
-    this._pendingRetry = null;
+    // Snapshot and re-send each failed write; each one clears itself on success
+    // (and a still-failing one stays queued). Sequential to keep list order.
+    const items = [...this._pendingWrites];
     this._error = "";
-    this.requestUpdate();
-    await this.act(pending.payload);
+    for (const item of items) {
+      await this.act(item.payload);
+    }
   }
 
   // --- drafts ---
@@ -1209,12 +1226,14 @@ class LocalListAssistPanel extends LitElement {
         ${this._mealConfirmId ? this._mealDetailTemplate(state) : nothing}
         ${this._mealCatManagerOpen ? this._mealCategoryManagerTemplate() : nothing}
         ${this._confirmOpen ? this._confirmAddTemplate() : nothing}
-        ${this._pendingRetry ? html`
+        ${this._pendingWrites.length ? html`
           <div class="save-retry" role="alert">
-            <span>Couldn't save your last change (${this._pendingRetry.label}). Check your connection.</span>
+            <span>${this._pendingWrites.length === 1
+              ? html`Couldn't save your last change (${this._pendingWrites[0].label}). Check your connection.`
+              : html`${this._pendingWrites.length} changes didn't save. Check your connection.`}</span>
             <div class="save-retry-actions">
               <button class="btn compact primary" @click=${() => this.retryPending()}>Retry</button>
-              <button class="btn compact" @click=${() => { this._pendingRetry = null; }}>Dismiss</button>
+              <button class="btn compact" @click=${() => { this._pendingWrites = []; }}>Dismiss</button>
             </div>
           </div>` : nothing}
         ${this._bottomBar()}

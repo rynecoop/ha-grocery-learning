@@ -2058,9 +2058,32 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 # Read-only network fetch — run it outside the state lock so a
                 # slow recipe site can't block other devices' actions.
                 return await _import_recipe(payload)
-            return await _run_locked(lambda: _handle_dashboard_action_impl(payload))
+            return await _run_locked(lambda: _dispatch_action_idempotent(payload))
         finally:
             _REQUEST_USER_ID.reset(token)
+
+    async def _dispatch_action_idempotent(payload: dict[str, Any]) -> dict[str, Any]:
+        # A client may safely retry a write it never got a response for (dropped
+        # connection after the server committed). To keep non-idempotent actions
+        # (toggle_favorite, save_meal, add_item, …) from double-applying, the
+        # client tags each mutating request with a unique request_id; if we've
+        # already applied it, return a fresh dashboard instead of re-running.
+        # Runs inside the action lock, so concurrent duplicates serialize here.
+        request_id = str(payload.get("request_id", "")).strip()
+        seen = hass.data[DOMAIN].setdefault("_seen_request_ids", {})
+        if not isinstance(seen, dict):
+            seen = {}
+            hass.data[DOMAIN]["_seen_request_ids"] = seen
+        if request_id and request_id in seen:
+            return {"ok": True, "deduped": True, "dashboard": await _build_dashboard_payload_internal()}
+        result = await _handle_dashboard_action_impl(payload)
+        if request_id and isinstance(result, dict) and result.get("ok"):
+            seen[request_id] = True
+            if len(seen) > 200:
+                # Bound the cache; drop the oldest ids (dict preserves order).
+                for stale in list(seen.keys())[: len(seen) - 200]:
+                    seen.pop(stale, None)
+        return result
 
     async def _import_recipe(payload: dict[str, Any]) -> dict[str, Any]:
         url = str(payload.get("url", "")).strip()
