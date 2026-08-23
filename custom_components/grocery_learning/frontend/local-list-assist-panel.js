@@ -28,6 +28,7 @@ class LocalListAssistPanel extends LitElement {
   static properties = {
     _state: { state: true },
     _error: { state: true },
+    _pendingWrites: { state: true },
     _loading: { state: true },
     _view: { state: true },
     _narrow: { state: true },
@@ -76,6 +77,7 @@ class LocalListAssistPanel extends LitElement {
     this._panel = null;
     this._state = null;
     this._error = "";
+    this._pendingWrites = [];
     this._loading = false;
     this._view = "list";
     this._narrow = false;
@@ -293,11 +295,31 @@ class LocalListAssistPanel extends LitElement {
 
   // --- API ---
   get _token() {
+    const auth = this._hass?.auth;
+    // Prefer the Auth object's live getter — it reflects a refreshed token.
+    // data.access_token is the canonical snake_case field; the rest are
+    // defensive fallbacks for older/edge hass shapes.
     return (
-      this._hass?.auth?.data?.accessToken ||
+      auth?.accessToken ||
+      auth?.data?.access_token ||
+      auth?.data?.accessToken ||
       this._hass?.connection?.options?.auth?.accessToken ||
       ""
     );
+  }
+
+  async _ensureFreshToken() {
+    // HA access tokens are short-lived; refresh proactively when expired so we
+    // don't send a dead token (the usual cause of intermittent 401s that made
+    // an add/remove silently not take).
+    const auth = this._hass?.auth;
+    if (auth && auth.expired && typeof auth.refreshAccessToken === "function") {
+      try {
+        await auth.refreshAccessToken();
+      } catch (_err) {
+        // Fall through — the request may still succeed, or we retry on 401.
+      }
+    }
   }
 
   _headers() {
@@ -308,13 +330,24 @@ class LocalListAssistPanel extends LitElement {
     return headers;
   }
 
-  async api(path, method = "GET", body = null) {
+  async api(path, method = "GET", body = null, retryOn401 = true) {
+    await this._ensureFreshToken();
     const res = await fetch(`/api/grocery_learning/${path}`, {
       method,
       headers: this._headers(),
       body: body ? JSON.stringify(body) : null,
       credentials: "same-origin",
     });
+    // A 401 usually means the token expired between our check and the server's
+    // validation. Force a refresh and retry once with the fresh token.
+    if (res.status === 401 && retryOn401 && this._hass?.auth?.refreshAccessToken) {
+      try {
+        await this._hass.auth.refreshAccessToken();
+      } catch (_err) {
+        /* retry anyway with whatever token we have */
+      }
+      return this.api(path, method, body, false);
+    }
     const text = await res.text();
     let data = {};
     try {
@@ -362,22 +395,48 @@ class LocalListAssistPanel extends LitElement {
     return false;
   }
 
+  // A stable per-write id. The server dedupes by it, so retrying a write whose
+  // response we never received can't double-apply (e.g. toggle a favorite twice
+  // or create a duplicate meal). crypto.randomUUID needs a secure context, which
+  // HA panels don't always have, so fall back to a good-enough unique string.
+  _newRequestId() {
+    try {
+      if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    } catch (_e) { /* fall through */ }
+    return `r-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  }
+
   async act(payload) {
+    if (!payload.request_id) payload.request_id = this._newRequestId();
     try {
       const result = await this.api("action", "POST", payload);
-      if (this._applyResult(result, payload)) {
+      // The action view returns HTTP 200 with {ok:false} for handler errors, so
+      // a resolved fetch isn't proof of success — only clear a queued write when
+      // the action actually succeeded.
+      const ok = !!result && result.ok !== false;
+      if (ok && this._applyResult(result, payload)) {
+        this._removePending(payload.request_id);
         return result;
       }
       await this.load(true);
+      if (ok) {
+        this._removePending(payload.request_id);
+      } else {
+        this._error = (result && result.error) || this._error || "Couldn't save that change.";
+      }
+      this.requestUpdate();
       return result;
     } catch (err) {
       this._error = err.message || String(err);
+      // Don't silently lose the change — keep it (independently) so it can be retried.
+      this._addPending(payload);
       this.requestUpdate();
       return null;
     }
   }
 
   async actFast(payload, updater = null) {
+    if (!payload.request_id) payload.request_id = this._newRequestId();
     if (typeof updater === "function" && this._state) {
       updater(this._state);
       this.syncDrafts();
@@ -385,12 +444,54 @@ class LocalListAssistPanel extends LitElement {
     }
     try {
       const result = await this.api("action", "POST", payload);
+      const ok = !!result && result.ok !== false;
       this._applyResult(result, payload);
+      if (ok) {
+        this._removePending(payload.request_id);
+      } else {
+        // Server reached but the action failed — reconcile and surface the error;
+        // keep any queued copy so a retry isn't discarded as if it succeeded.
+        await this.load(true);
+        this._error = (result && result.error) || this._error || "Couldn't save that change.";
+      }
+      this.requestUpdate();
       return result;
     } catch (err) {
-      // Reconcile with the server on failure.
+      // Reconcile with the server (rolls back the optimistic edit), then keep the
+      // change so the user can retry. If it had actually committed server-side,
+      // the retry is deduped by request_id, so it won't double-apply.
       await this.load(true);
+      this._addPending(payload);
+      this.requestUpdate();
       return null;
+    }
+  }
+
+  _describeAction(payload) {
+    const a = String(payload?.action || "").replace(/_/g, " ");
+    const label = String(payload?.item || payload?.name || payload?.meal_name || "").trim();
+    return label ? `${a} “${label}”` : (a || "change");
+  }
+
+  _addPending(payload) {
+    const id = payload?.request_id;
+    if (!id || this._pendingWrites.some((w) => w.id === id)) return;
+    this._pendingWrites = [...this._pendingWrites, { id, payload, label: this._describeAction(payload) }];
+  }
+
+  _removePending(id) {
+    if (id && this._pendingWrites.some((w) => w.id === id)) {
+      this._pendingWrites = this._pendingWrites.filter((w) => w.id !== id);
+    }
+  }
+
+  async retryPending() {
+    // Snapshot and re-send each failed write; each one clears itself on success
+    // (and a still-failing one stays queued). Sequential to keep list order.
+    const items = [...this._pendingWrites];
+    this._error = "";
+    for (const item of items) {
+      await this.act(item.payload);
     }
   }
 
@@ -1143,6 +1244,16 @@ class LocalListAssistPanel extends LitElement {
         ${this._mealConfirmId ? this._mealDetailTemplate(state) : nothing}
         ${this._mealCatManagerOpen ? this._mealCategoryManagerTemplate() : nothing}
         ${this._confirmOpen ? this._confirmAddTemplate() : nothing}
+        ${this._pendingWrites.length ? html`
+          <div class="save-retry" role="alert">
+            <span>${this._pendingWrites.length === 1
+              ? html`Couldn't save your last change (${this._pendingWrites[0].label}). Check your connection.`
+              : html`${this._pendingWrites.length} changes didn't save. Check your connection.`}</span>
+            <div class="save-retry-actions">
+              <button class="btn compact primary" @click=${() => this.retryPending()}>Retry</button>
+              <button class="btn compact" @click=${() => { this._pendingWrites = []; }}>Dismiss</button>
+            </div>
+          </div>` : nothing}
         ${this._bottomBar()}
         ${this._undo ? html`
           <div class="undo-toast">
@@ -2965,6 +3076,16 @@ class LocalListAssistPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); z-index: 40;
     }
     .undo-toast .btn { padding: 6px 12px; }
+    .save-retry {
+      position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%);
+      width: min(560px, calc(100vw - 24px));
+      background: var(--lla-surface); color: var(--lla-text);
+      border: 1px solid var(--lla-danger, #c0392b); border-left-width: 4px;
+      border-radius: 14px; padding: 10px 14px; display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); z-index: 41;
+    }
+    .save-retry-actions { display: flex; gap: 8px; flex: 0 0 auto; }
     .shopping { max-width: 720px; margin: 0 auto; padding: 10px 12px 40px; min-height: 100%; --accent: #2c78ba; }
     .shop-bar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--lla-bg-1); }
     .shop-done { padding: 10px 14px; }

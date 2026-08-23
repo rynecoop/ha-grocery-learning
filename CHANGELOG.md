@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.34.1
+- Fixed the occasional "401 Unauthorized" where an add or remove silently didn't take. The panel was reusing an expired Home Assistant access token; it now refreshes the token before each request and, if a request is still rejected, refreshes and retries once — so those errors should be rare now.
+- Added a safety net so a change is never silently lost: if a save can't reach Home Assistant (e.g. the connection drops), your change is kept and a "Couldn't save your last change — Retry" banner appears so you can send it again once you're back, instead of it just disappearing.
+
 ## 0.34.0
 - Add a meal to a day right from the meal. Open a meal and tap "📅 Add to a day" — pick Today, Tomorrow, or any date — and it's planned onto that day without switching to the Plan tab first. You can add it to several days in a row, and it shows on the Plan tab as usual.
 
