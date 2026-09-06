@@ -2199,6 +2199,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 lines = _split_pasted_items(str(raw))
             if not lines:
                 return {"ok": False, "error": "no_items"}
+            # Keep only lines route_item would actually add. It no-ops on any line
+            # whose canonical form is empty (emoji-only, punctuation like "...",
+            # or non-Latin text such as "牛乳"), so counting those as added would
+            # report success for items that never landed. Filter before the size
+            # cap so those non-items don't push a routable batch over the limit,
+            # and so `added` is honest; if nothing routable remains, say so.
+            lines = [line for line in lines if _normalize_term(_display_item_summary(line) or line)]
+            if not lines:
+                return {"ok": False, "error": "no_items"}
             if len(lines) > _BULK_MAX_ITEMS:
                 # Reject the whole paste rather than truncate it — the caller
                 # would otherwise be told it succeeded while items past the
@@ -2209,14 +2218,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "limit": _BULK_MAX_ITEMS,
                     "count": len(lines),
                 }
-            # Keep only lines route_item would actually add. It no-ops on any line
-            # whose canonical form is empty (emoji-only, punctuation like "...",
-            # or non-Latin text such as "牛乳"), so counting those as added would
-            # report success for items that never landed. Drop them up front so
-            # `added` is honest; if nothing routable remains, say so.
-            lines = [line for line in lines if _normalize_term(_display_item_summary(line) or line)]
-            if not lines:
-                return {"ok": False, "error": "no_items"}
             raw_list_id = str(payload.get("list_id", "")).strip()
             if raw_list_id:
                 # If the caller named a specific list that no longer exists —

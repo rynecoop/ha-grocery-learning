@@ -8,7 +8,9 @@ import {
   matchSuggestions,
   moveItemToCompleted,
   recategorizeItemLocal,
+  itemIsRoutable,
   renameListLocal,
+  routablePastedItems,
   splitPastedItems,
   switchListLocal,
   updateItemLocal,
@@ -200,4 +202,15 @@ test("splitPastedItems: handles CRLF and empty input", () => {
   assert.deepEqual(splitPastedItems("A\r\nB\r\n"), ["A", "B"]);
   assert.deepEqual(splitPastedItems(""), []);
   assert.deepEqual(splitPastedItems("   \n  "), []);
+});
+
+test("itemIsRoutable / routablePastedItems: drop canonically-empty lines", () => {
+  assert.equal(itemIsRoutable("Milk"), true);
+  assert.equal(itemIsRoutable("5-spice"), true);
+  assert.equal(itemIsRoutable("..."), false);
+  assert.equal(itemIsRoutable("🎉"), false);
+  assert.equal(itemIsRoutable("牛乳"), false);
+  assert.equal(itemIsRoutable("the"), false);
+  // routablePastedItems mirrors add_items' server-side filter after marker strip
+  assert.deepEqual(routablePastedItems("Milk\n...\n- Eggs\n🎉\n牛乳\nBread"), ["Milk", "Eggs", "Bread"]);
 });

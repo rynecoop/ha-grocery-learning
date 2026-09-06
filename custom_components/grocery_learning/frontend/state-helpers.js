@@ -213,3 +213,22 @@ export function splitPastedItems(text) {
   }
   return out;
 }
+
+// Mirror of item_logic.canonical_item_phrase's emptiness test (article-strip,
+// then keep only a-z0-9): route_item no-ops on any line whose canonical form is
+// empty (emoji-only, punctuation like "...", or non-Latin text like "牛乳"), so
+// the client count must drop those too or the cap disagrees with the server.
+// Singularization can't empty a non-empty token, so it's irrelevant here.
+export function itemIsRoutable(value) {
+  const words = String(value == null ? "" : value).trim().split(/\s+/).filter(Boolean);
+  while (words.length && (words[0].toLowerCase() === "a" || words[0].toLowerCase() === "an" || words[0].toLowerCase() === "the")) {
+    words.shift();
+  }
+  return words.join(" ").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).some(Boolean);
+}
+
+// Items a paste would actually add: marker-stripped and canonically non-empty,
+// matching add_items' server-side filter so the client count and cap agree.
+export function routablePastedItems(text) {
+  return splitPastedItems(text).filter(itemIsRoutable);
+}

@@ -9,7 +9,7 @@ import {
   groupTitle as deriveGroupTitle,
   matchSuggestions,
   moveItemToCompleted as applyMoveItemToCompleted,
-  splitPastedItems,
+  routablePastedItems,
   switchListLocal as applySwitchListLocal,
   updateItemLocal as applyUpdateItemLocal,
 } from "./state-helpers.js";
@@ -724,10 +724,11 @@ class LocalListAssistPanel extends LitElement {
     });
   }
 
-  // Count items the same way the backend will — after stripping list markers
-  // and dropping marker-only lines — so the cap and preview match what routes.
+  // Count items the same way the backend will — after stripping list markers and
+  // dropping both marker-only and canonically-empty lines — so the cap and
+  // preview match exactly what add_items routes.
   _pasteItemCount(text) {
-    return splitPastedItems(text).length;
+    return routablePastedItems(text).length;
   }
 
   onQuickAddPaste(ev) {
