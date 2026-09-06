@@ -497,7 +497,20 @@ class LocalListAssistPanel extends LitElement {
     const items = [...this._pendingWrites];
     this._error = "";
     for (const item of items) {
-      await this.act(item.payload);
+      const res = await this.act(item.payload);
+      // A bulk paste that was queued while offline can come back rejected once
+      // the connection returns (e.g. it holds more than the server's limit).
+      // It can't just sit in the retry banner forever — the text lives only in
+      // this payload — so pull it from the queue and reopen the paste editor
+      // pre-filled with it, so the user can trim or fix it.
+      if (item.payload?.action === "add_items" && res && res.ok === false) {
+        this._removePending(item.id);
+        const payloadText = item.payload.text
+          || (Array.isArray(item.payload.items) ? item.payload.items.join("\n") : "");
+        this.openPasteList(payloadText);
+        this._pasteError = this._pasteErrorMessage(res);
+        this.requestUpdate();
+      }
     }
   }
 

@@ -2220,6 +2220,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             # the client safely retries the unchanged paste from a clean state.
             snapshot_keys = ("multilist", "item_meta", "frequent", "activity", "terms")
             snapshot = {key: copy.deepcopy(hass.data[DOMAIN].get(key)) for key in snapshot_keys}
+
+            def _rollback_batch() -> None:
+                for key, value in snapshot.items():
+                    hass.data[DOMAIN][key] = value
+                # In-memory state now matches what's on disk (the pre-batch
+                # snapshot), so make sure _run_locked's finally does not flush it.
+                hass.data[DOMAIN]["_save_dirty"] = False
+
             added = 0
             try:
                 for line in lines:
@@ -2243,28 +2251,34 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         context=request_context,
                     )
                     added += 1
+                dashboard = await _build_dashboard_payload_internal(target_list_id or None)
+                # Persist inside the transaction. The nested _save() calls above only
+                # set _save_dirty; the real store write is normally deferred to
+                # _run_locked's finally, which runs *after* _dispatch_action_idempotent
+                # has already cached this request_id as successful. If that deferred
+                # write then failed, the client would see ok:false while the id stayed
+                # cached — a retry would be deduped without persisting, and a fresh
+                # submit would double the quantities. Flushing here means a failed
+                # write is caught below and rolled back, and we only return ok:true
+                # (the signal that caches the id) once the data is actually on disk.
+                await _flush_save()
+                hass.data[DOMAIN]["_save_dirty"] = False
             except asyncio.CancelledError:
                 # Cancellation (shutdown, reload) derives from BaseException, so it
                 # skips the `except Exception` below. Still roll the batch back so a
                 # half-applied paste isn't flushed by _run_locked's finally, then
                 # re-raise to honour the cancellation.
-                for key, value in snapshot.items():
-                    hass.data[DOMAIN][key] = value
+                _rollback_batch()
                 raise
             except Exception:  # noqa: BLE001 - roll back the whole paste on any failure
-                for key, value in snapshot.items():
-                    hass.data[DOMAIN][key] = value
+                _rollback_batch()
                 _LOGGER.exception(
                     "add_items: bulk paste failed after %d of %d items; rolled back",
                     added,
                     len(lines),
                 )
                 return {"ok": False, "error": "add_failed", "added": 0}
-            return {
-                "ok": True,
-                "added": added,
-                "dashboard": await _build_dashboard_payload_internal(target_list_id or None),
-            }
+            return {"ok": True, "added": added, "dashboard": dashboard}
 
         if action == "create_list":
             if not multilist_mode:
