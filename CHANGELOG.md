@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.34.2
+- Adding an item that's already on the list now reliably merges into the existing one (bumping its quantity) instead of creating a second copy. Matching ignores capitalization and plurals ("Toilet paper", "toilet papers", "TOILET PAPER" are the same item), and it no longer has to be in the same category to merge — so an item categorized slightly differently won't slip through as a duplicate anymore. (Items already duplicated on your list won't auto-combine — remove the extra one; new adds will merge.)
+
 ## 0.34.1
 - Fixed the occasional "401 Unauthorized" where an add or remove silently didn't take. The panel was reusing an expired Home Assistant access token; it now refreshes the token before each request and, if a request is still rejected, refreshes and retries once — so those errors should be rare now.
 - Added a safety net so a change is never silently lost: if a save can't reach Home Assistant (e.g. the connection drops), your change is kept and a "Couldn't save your last change — Retry" banner appears so you can send it again once you're back, instead of it just disappearing.

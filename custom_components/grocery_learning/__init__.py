@@ -1917,23 +1917,28 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         if categories and category not in categories:
             category = "other"
 
+        # Merge by normalized name within the list — case- and plural-insensitive
+        # (canonical_item_phrase) and regardless of category, so the same item
+        # never lands twice just because it was categorized differently. When a
+        # match is found we merge into it and keep its existing category.
         duplicate_item = next(
             (
                 item
                 for item in items
                 if str(item.get("status", "")).strip() == "needs_action"
-                and str(item.get("category", "")).strip() == category
                 and _normalize_term(str(item.get("summary", "")).strip()) == normalized
             ),
             None,
         )
         target_entity = _internal_list_entity(category)
         if duplicate_item and not allow_duplicate:
+            dup_category = str(duplicate_item.get("category", "")).strip() or category
+            dup_entity = _internal_list_entity(dup_category)
             duplicate_item["quantity"] = _quantity_for_item(duplicate_item) + quantity
             _record_frequent(display_item, normalized)
-            await _record_item_meta(target_entity, display_item, call, quantity=quantity)
+            await _record_item_meta(dup_entity, display_item, call, quantity=quantity)
             duplicate_item["description"] = _description_with_existing_meta(
-                target_entity,
+                dup_entity,
                 str(duplicate_item.get("summary", "")).strip(),
                 str(duplicate_item.get("description", "")).strip(),
             )
