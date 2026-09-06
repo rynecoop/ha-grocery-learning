@@ -86,6 +86,7 @@ from .item_logic import (
     normalize_list_id as _normalize_list_id,
     reorder_category_items as _reorder_category_items,
     select_frequent as _select_frequent,
+    split_pasted_items as _split_pasted_items,
     unique_meal_id as _unique_meal_id,
 )
 from .recipe_parser import parse_recipe as _parse_recipe
@@ -2173,6 +2174,53 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     context=request_context,
                 )
             return {"ok": True}
+
+        if action == "add_items":
+            # Bulk paste: one item per line, run through the same routing as a
+            # typed add so each is auto-sorted, merged with existing items, and
+            # learned from. Accepts a list of lines or one blob of text.
+            raw = payload.get("items", payload.get("text", ""))
+            if isinstance(raw, list):
+                lines = _split_pasted_items("\n".join(str(x) for x in raw))
+            else:
+                lines = _split_pasted_items(str(raw))
+            if not lines:
+                return {"ok": False, "error": "no_items"}
+            target_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            _mark_changed_list(target_list_id)
+            request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
+            actor_name = str(payload.get("actor_name", "")).strip()
+            if request_user_id and not actor_name:
+                req_user = await hass.auth.async_get_user(request_user_id)
+                actor_name = _display_name_from_user(req_user)
+            request_context = Context(user_id=request_user_id) if request_user_id else None
+            added = 0
+            for line in lines[:200]:  # bound a runaway paste
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_ROUTE_ITEM,
+                    {
+                        "item": line,
+                        # No per-item "review this category" prompts on a bulk paste,
+                        # and no interactive duplicate prompt — just merge quietly.
+                        "review_on_other": False,
+                        "source": "typed",
+                        "interactive_duplicate": False,
+                        "allow_duplicate": False,
+                        "quantity": 1,
+                        "list_id": target_list_id,
+                        "actor_user_id": request_user_id,
+                        "actor_name": actor_name,
+                    },
+                    blocking=True,
+                    context=request_context,
+                )
+                added += 1
+            return {
+                "ok": True,
+                "added": added,
+                "dashboard": await _build_dashboard_payload_internal(target_list_id or None),
+            }
 
         if action == "create_list":
             if not multilist_mode:

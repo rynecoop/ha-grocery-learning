@@ -58,6 +58,33 @@ def display_item_summary(value: str) -> str:
     return re.sub(r"\s+", " ", stripped).strip()
 
 
+# Leading list markers to strip when someone pastes a list: bullets
+# (-, *, •, ·, ▪, ◦, –, —), "1." / "1)" numbering, and "[ ]" / "[x]" checkboxes.
+_BULK_LINE_PREFIX_RE = re.compile(r"^\s*(?:[-*•·▪◦–—]+|\d+[.)]|\[[ xX]?\])\s+")
+
+
+def clean_bulk_line(line: str) -> str:
+    """Clean one pasted line into item text: drop a leading bullet/number/checkbox."""
+    text = str(line).strip()
+    text = _BULK_LINE_PREFIX_RE.sub("", text).strip()
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def split_pasted_items(text: str) -> list[str]:
+    """Split pasted multi-line text into a de-marked list of item strings.
+
+    One item per non-blank line, leading list markers removed. Order is
+    preserved and blank lines are dropped; de-duplication and categorization are
+    left to the normal add path so pasted items behave exactly like typed ones.
+    """
+    out: list[str] = []
+    for raw in re.split(r"[\r\n]+", str(text or "")):
+        cleaned = clean_bulk_line(raw)
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
 def normalize_category(value: str) -> str:
     """Slugify a category name to ``lower_snake`` with no leading/trailing ``_``."""
     return re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip("_")

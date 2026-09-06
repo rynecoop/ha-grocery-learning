@@ -59,6 +59,8 @@ class LocalListAssistPanel extends LitElement {
     _shopCollapsed: { state: true },
     _weekStart: { state: true },
     _confirmOpen: { state: true },
+    _pasteOpen: { state: true },
+    _pasteBusy: { state: true },
     _confirmItems: { state: true },
     _confirmChecked: { state: true },
     _confirmEdits: { state: true },
@@ -109,6 +111,8 @@ class LocalListAssistPanel extends LitElement {
     this._shopCollapsed = {};
     this._suggestBlurTimer = null;
     this._weekStart = "";
+    this._pasteOpen = false;
+    this._pasteBusy = false;
     this._confirmOpen = false;
     this._confirmItems = [];
     this._confirmTitle = "";
@@ -714,6 +718,83 @@ class LocalListAssistPanel extends LitElement {
     });
   }
 
+  // Count non-blank lines the same way the backend will (rough client preview).
+  _pasteItemCount(text) {
+    return String(text || "").split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean).length;
+  }
+
+  onQuickAddPaste(ev) {
+    // If someone pastes multiple lines into the single-item box, route it to the
+    // bulk paste flow instead of mashing it onto one line.
+    const text = ev.clipboardData?.getData("text") || "";
+    if (this._pasteItemCount(text) > 1) {
+      ev.preventDefault();
+      this.openPasteList(text);
+    }
+  }
+
+  openPasteList(prefill = "") {
+    this._pasteOpen = true;
+    if (prefill) this._drafts.pasteText = prefill;
+    this.requestUpdate();
+    this.updateComplete.then(() => {
+      const el = this.renderRoot?.querySelector(".paste-textarea");
+      if (el) el.focus();
+    });
+  }
+
+  closePasteList() {
+    this._pasteOpen = false;
+    this._drafts.pasteText = "";
+    this.requestUpdate();
+  }
+
+  async submitPasteList() {
+    const text = this._drafts.pasteText || "";
+    if (this._pasteItemCount(text) === 0 || this._pasteBusy) return;
+    this._pasteBusy = true;
+    this.requestUpdate();
+    const res = await this.act({
+      action: "add_items",
+      text,
+      list_id: this.currentListId(),
+      actor_user_id: this._hass?.user?.id || "",
+      actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
+    });
+    this._pasteBusy = false;
+    if (res && res.ok !== false) {
+      this.closePasteList();
+    } else {
+      this.requestUpdate();
+    }
+  }
+
+  _pasteListTemplate() {
+    const count = this._pasteItemCount(this._drafts.pasteText || "");
+    return html`
+      <div class="overlay-shell" @click=${() => this.closePasteList()}>
+        <section class="modal-card modal-card-narrow" role="dialog" aria-label="Paste a list" @click=${(e) => e.stopPropagation()}>
+          <div class="modal-head">
+            <div class="title">Paste a list</div>
+            <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closePasteList()}>×</button>
+          </div>
+          <div class="small">One item per line. Paste from a recipe or your notes — bullets, numbers and checkboxes are cleaned off, and each item is auto-sorted and merged with anything already on the list.</div>
+          <textarea class="input paste-textarea" rows="10" placeholder="ground beef&#10;taco shells&#10;shredded cheese&#10;lettuce"
+            .value=${live(this._drafts.pasteText || "")}
+            @input=${(e) => { this._drafts.pasteText = e.target.value; this.requestUpdate(); }}></textarea>
+          <div class="row" style="justify-content: space-between; align-items: center;">
+            <span class="small">${count} ${count === 1 ? "item" : "items"}</span>
+            <div class="row">
+              <button class="btn" @click=${() => this.closePasteList()}>Cancel</button>
+              <button class="btn primary" ?disabled=${count === 0 || this._pasteBusy} @click=${() => this.submitPasteList()}>
+                ${this._pasteBusy ? "Adding…" : `Add ${count || ""} ${count === 1 ? "item" : "items"}`.trim()}
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>`;
+  }
+
   // --- quick-add autocomplete ---
   quickAddSuggestions() {
     return matchSuggestions(this._state?.suggestions || [], this._drafts.quickAdd || "", 6);
@@ -1244,6 +1325,7 @@ class LocalListAssistPanel extends LitElement {
         ${this._mealConfirmId ? this._mealDetailTemplate(state) : nothing}
         ${this._mealCatManagerOpen ? this._mealCategoryManagerTemplate() : nothing}
         ${this._confirmOpen ? this._confirmAddTemplate() : nothing}
+        ${this._pasteOpen ? this._pasteListTemplate() : nothing}
         ${this._pendingWrites.length ? html`
           <div class="save-retry" role="alert">
             <span>${this._pendingWrites.length === 1
@@ -1294,6 +1376,7 @@ class LocalListAssistPanel extends LitElement {
                 @input=${(e) => this.onQuickAddInput(e.target.value)}
                 @focus=${() => this.onQuickAddFocus()}
                 @blur=${() => this.deferCloseSuggest()}
+                @paste=${(e) => this.onQuickAddPaste(e)}
                 @keydown=${(e) => this.onQuickAddKeydown(e)} />
               ${this._suggestOpen ? this._suggestDropdown() : nothing}
             </div>
@@ -1301,6 +1384,10 @@ class LocalListAssistPanel extends LitElement {
               .value=${live(this._drafts.quickAddQty || "1")}
               @input=${(e) => this.updateDraft("quickAddQty", e.target.value)} />
             <button class="btn primary" @click=${() => this.addItem()}>Add</button>
+          </div>
+          <div class="paste-list-row">
+            <button class="btn compact paste-list-btn" @click=${() => this.openPasteList()}>📋 Paste a list</button>
+            <span class="small">Paste from a recipe or notes — one item per line, auto-sorted.</span>
           </div>
           ${this._frequentTemplate(state)}
         </section>
@@ -2922,6 +3009,8 @@ class LocalListAssistPanel extends LitElement {
     .meal-row-main { min-width: 120px; }
     .meal-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .meal-textarea { min-height: 168px; resize: vertical; font: inherit; line-height: 1.5; }
+    .paste-list-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+    .paste-textarea { width: 100%; resize: vertical; font: inherit; line-height: 1.5; min-height: 160px; margin: 10px 0; }
     .meal-actions { margin-bottom: 12px; }
     .meal-search-row { display: flex; gap: 8px; align-items: stretch; margin-bottom: 12px; }
     .meal-search { flex: 1 1 auto; min-width: 0; }
