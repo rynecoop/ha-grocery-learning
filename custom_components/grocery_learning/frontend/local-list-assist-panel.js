@@ -496,20 +496,25 @@ class LocalListAssistPanel extends LitElement {
     // (and a still-failing one stays queued). Sequential to keep list order.
     const items = [...this._pendingWrites];
     this._error = "";
+    let recoveredPaste = false;
     for (const item of items) {
       const res = await this.act(item.payload);
       // A bulk paste that was queued while offline can come back rejected once
       // the connection returns (e.g. it holds more than the server's limit).
       // It can't just sit in the retry banner forever — the text lives only in
-      // this payload — so pull it from the queue and reopen the paste editor
-      // pre-filled with it, so the user can trim or fix it.
-      if (item.payload?.action === "add_items" && res && res.ok === false) {
+      // this payload — so recover it into the paste editor so the user can trim
+      // or fix it. Recover only the first such paste, and only when the editor
+      // isn't already showing a draft: reopening for every rejected paste would
+      // overwrite _drafts.pasteText and lose all but the last. Any further
+      // rejected pastes stay queued in the retry banner for the user to handle.
+      if (item.payload?.action === "add_items" && res && res.ok === false && !recoveredPaste && !this._pasteOpen) {
         this._removePending(item.id);
         const payloadText = item.payload.text
           || (Array.isArray(item.payload.items) ? item.payload.items.join("\n") : "");
         this.openPasteList(payloadText);
         this._pasteError = this._pasteErrorMessage(res);
         this.requestUpdate();
+        recoveredPaste = true;
       }
     }
   }
@@ -760,6 +765,12 @@ class LocalListAssistPanel extends LitElement {
   }
 
   closePasteList() {
+    // Don't let a backdrop/Close/Cancel dismiss the editor while a submit is in
+    // flight — that would clear the draft, and a subsequently-returned ok:false
+    // would have nowhere to show its error or preserve the text. The internal
+    // success/queued paths clear _pasteBusy before calling this, so they close
+    // normally.
+    if (this._pasteBusy) return;
     this._pasteOpen = false;
     this._pasteError = "";
     this._drafts.pasteText = "";
@@ -818,7 +829,7 @@ class LocalListAssistPanel extends LitElement {
         <section class="modal-card modal-card-narrow" role="dialog" aria-label="Paste a list" @click=${(e) => e.stopPropagation()}>
           <div class="modal-head">
             <div class="title">Paste a list</div>
-            <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closePasteList()}>×</button>
+            <button class="btn icon-btn compact" aria-label="Close" ?disabled=${this._pasteBusy} @click=${() => this.closePasteList()}>×</button>
           </div>
           <div class="small">One item per line. Paste from a recipe or your notes — bullets, numbers and checkboxes are cleaned off, and each item is auto-sorted and merged with anything already on the list.</div>
           <textarea class="input paste-textarea" rows="10" placeholder="ground beef&#10;taco shells&#10;shredded cheese&#10;lettuce"
@@ -828,7 +839,7 @@ class LocalListAssistPanel extends LitElement {
           <div class="row" style="justify-content: space-between; align-items: center;">
             <span class="small">${count} ${count === 1 ? "item" : "items"}</span>
             <div class="row">
-              <button class="btn" @click=${() => this.closePasteList()}>Cancel</button>
+              <button class="btn" ?disabled=${this._pasteBusy} @click=${() => this.closePasteList()}>Cancel</button>
               <button class="btn primary" ?disabled=${count === 0 || this._pasteBusy} @click=${() => this.submitPasteList()}>
                 ${this._pasteBusy ? "Adding…" : `Add ${count || ""} ${count === 1 ? "item" : "items"}`.trim()}
               </button>
