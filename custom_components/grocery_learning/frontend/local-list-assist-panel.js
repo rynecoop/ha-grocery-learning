@@ -23,6 +23,9 @@ const TEMPLATE_LABELS = {
 
 const LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision";
 const UNDO_TIMEOUT_MS = 6000;
+// Mirror of the backend's _BULK_MAX_ITEMS: cap a single paste so an oversized
+// one is caught in the editor instead of being sent (or queued offline).
+const PASTE_MAX_ITEMS = 200;
 
 class LocalListAssistPanel extends LitElement {
   static properties = {
@@ -115,10 +118,6 @@ class LocalListAssistPanel extends LitElement {
     this._pasteOpen = false;
     this._pasteBusy = false;
     this._pasteError = "";
-    // Which list a paste submits to. Normally the current list, but a recovered
-    // offline paste keeps the list it was originally created on (see
-    // retryPending) so trimming and resending it can't silently retarget it.
-    this._pasteTargetListId = "";
     this._confirmOpen = false;
     this._confirmItems = [];
     this._confirmTitle = "";
@@ -500,34 +499,8 @@ class LocalListAssistPanel extends LitElement {
     // (and a still-failing one stays queued). Sequential to keep list order.
     const items = [...this._pendingWrites];
     this._error = "";
-    let recoveredPaste = false;
     for (const item of items) {
-      const res = await this.act(item.payload);
-      // A bulk paste that was queued while offline can come back rejected once
-      // the connection returns (e.g. it holds more than the server's limit).
-      // It can't just sit in the retry banner forever — the text lives only in
-      // this payload — so recover it into the paste editor so the user can trim
-      // or fix it. Recover only the first such paste, and only when the editor
-      // isn't already showing a draft: reopening for every rejected paste would
-      // overwrite _drafts.pasteText and lose all but the last. Any further
-      // rejected pastes stay queued in the retry banner for the user to handle.
-      if (item.payload?.action === "add_items" && res && res.ok === false && !recoveredPaste && !this._pasteOpen) {
-        this._removePending(item.id);
-        const payloadText = item.payload.text
-          || (Array.isArray(item.payload.items) ? item.payload.items.join("\n") : "");
-        this.openPasteList(payloadText);
-        // Keep the paste on the list it was originally created on — the user may
-        // have navigated elsewhere since queuing it, and openPasteList reset the
-        // target to the current list, so set it back after opening. But if the
-        // rejection is because that list is gone, leave the target cleared so the
-        // very first Add goes to the current list (the message says it will).
-        if (res.error !== "list_not_found") {
-          this._pasteTargetListId = item.payload.list_id || "";
-        }
-        this._pasteError = this._pasteErrorMessage(res);
-        this.requestUpdate();
-        recoveredPaste = true;
-      }
+      await this.act(item.payload);
     }
   }
 
@@ -768,7 +741,6 @@ class LocalListAssistPanel extends LitElement {
   openPasteList(prefill = "") {
     this._pasteOpen = true;
     this._pasteError = "";
-    this._pasteTargetListId = "";
     if (prefill) this._drafts.pasteText = prefill;
     this.requestUpdate();
     this.updateComplete.then(() => {
@@ -786,21 +758,29 @@ class LocalListAssistPanel extends LitElement {
     if (this._pasteBusy) return;
     this._pasteOpen = false;
     this._pasteError = "";
-    this._pasteTargetListId = "";
     this._drafts.pasteText = "";
     this.requestUpdate();
   }
 
   async submitPasteList() {
     const text = this._drafts.pasteText || "";
-    if (this._pasteItemCount(text) === 0 || this._pasteBusy) return;
+    const count = this._pasteItemCount(text);
+    if (count === 0 || this._pasteBusy) return;
+    // Enforce the server's cap here so an oversized paste is caught before it's
+    // ever sent (and, importantly, before it could be queued offline and get
+    // stuck failing on retry). Keep the modal and text so the user can trim it.
+    if (count > PASTE_MAX_ITEMS) {
+      this._pasteError = `That's ${count} items — too many at once. Please paste ${PASTE_MAX_ITEMS} or fewer.`;
+      this.requestUpdate();
+      return;
+    }
     this._pasteBusy = true;
     this._pasteError = "";
     this.requestUpdate();
     const res = await this.act({
       action: "add_items",
       text,
-      list_id: this._pasteTargetListId || this.currentListId(),
+      list_id: this.currentListId(),
       actor_user_id: this._hass?.user?.id || "",
       actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
     });
@@ -816,14 +796,9 @@ class LocalListAssistPanel extends LitElement {
       // The whole paste committed as one transaction; nothing partial to report.
       this.closePasteList();
     } else {
-      // Server reached but rejected the batch (too many items, or an add failed
-      // and the batch was rolled back so nothing was committed). Keep the modal
-      // and the full text so the user can retry or trim it, and show why.
-      if (res && res.error === "list_not_found") {
-        // The list this paste was bound to is gone; drop the stale target so a
-        // resubmit goes to the current list instead of failing forever.
-        this._pasteTargetListId = "";
-      }
+      // Server reached but rejected the batch (an add failed and the batch was
+      // rolled back so nothing was committed). Keep the modal and the full text
+      // so the user can retry, and show why.
       this._pasteError = this._pasteErrorMessage(res);
       this.requestUpdate();
     }
@@ -832,13 +807,12 @@ class LocalListAssistPanel extends LitElement {
   _pasteErrorMessage(res) {
     const err = (res && res.error) || "";
     if (err === "too_many") {
-      const limit = (res && res.limit) || 200;
+      const limit = (res && res.limit) || PASTE_MAX_ITEMS;
       const count = (res && res.count) || 0;
       return `That's ${count} items — too many at once. Please paste ${limit} or fewer and try again.`;
     }
     if (err === "no_items") return "No items found to add.";
     if (err === "add_failed") return "Something went wrong adding those items — nothing was added. Please try again.";
-    if (err === "list_not_found") return "That list no longer exists — these items will go to your current list. Press Add to continue.";
     return "Couldn't add those items. Please try again.";
   }
 
@@ -857,10 +831,12 @@ class LocalListAssistPanel extends LitElement {
             @input=${(e) => { this._drafts.pasteText = e.target.value; this._pasteError = ""; this.requestUpdate(); }}></textarea>
           ${this._pasteError ? html`<div class="small paste-error" role="alert">${this._pasteError}</div>` : nothing}
           <div class="row" style="justify-content: space-between; align-items: center;">
-            <span class="small">${count} ${count === 1 ? "item" : "items"}</span>
+            <span class="small ${count > PASTE_MAX_ITEMS ? "paste-error" : ""}">
+              ${count} ${count === 1 ? "item" : "items"}${count > PASTE_MAX_ITEMS ? ` · max ${PASTE_MAX_ITEMS}` : ""}
+            </span>
             <div class="row">
               <button class="btn" ?disabled=${this._pasteBusy} @click=${() => this.closePasteList()}>Cancel</button>
-              <button class="btn primary" ?disabled=${count === 0 || this._pasteBusy} @click=${() => this.submitPasteList()}>
+              <button class="btn primary" ?disabled=${count === 0 || count > PASTE_MAX_ITEMS || this._pasteBusy} @click=${() => this.submitPasteList()}>
                 ${this._pasteBusy ? "Adding…" : `Add ${count || ""} ${count === 1 ? "item" : "items"}`.trim()}
               </button>
             </div>

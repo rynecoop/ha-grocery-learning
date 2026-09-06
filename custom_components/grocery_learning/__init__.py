@@ -2086,7 +2086,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             seen = {}
             hass.data[DOMAIN]["_seen_request_ids"] = seen
         if request_id and request_id in seen:
-            return {"ok": True, "deduped": True, "dashboard": await _build_dashboard_payload_internal()}
+            # Build the deduped dashboard for the list the request targeted (when
+            # it named one), so a retried write to a non-default list doesn't
+            # bounce the client back to the default list's view.
+            dedupe_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip()) if str(payload.get("list_id", "")).strip() else None
+            return {"ok": True, "deduped": True, "dashboard": await _build_dashboard_payload_internal(dedupe_list_id)}
         result = await _handle_dashboard_action_impl(payload)
         if request_id and isinstance(result, dict) and result.get("ok"):
             seen[request_id] = True
