@@ -188,3 +188,28 @@ export function matchSuggestions(all, query, limit = 6) {
   }
   return prefix.concat(substring).slice(0, cap);
 }
+
+// Mirror of item_logic.clean_bulk_line / split_pasted_items so the client counts
+// a paste the same way the backend routes it — stripping leading list markers
+// (bullets, "1."/"1)" numbering, "[ ]"/"[x]" checkboxes) one at a time and
+// dropping lines that reduce to nothing. Keep in sync with item_logic.py.
+const BULK_LINE_PREFIX_RE = /^\s*(?:[-*•·▪◦–—]+|\d+[.)]|\[[ xX]?\])(?:\s+|$)/;
+
+export function cleanBulkLine(line) {
+  let text = String(line == null ? "" : line).trim();
+  let prev = null;
+  while (text && text !== prev) {
+    prev = text;
+    text = text.replace(BULK_LINE_PREFIX_RE, "").trim();
+  }
+  return text.replace(/\s+/g, " ").trim();
+}
+
+export function splitPastedItems(text) {
+  const out = [];
+  for (const raw of String(text == null ? "" : text).split(/[\r\n]+/)) {
+    const cleaned = cleanBulkLine(raw);
+    if (cleaned) out.push(cleaned);
+  }
+  return out;
+}

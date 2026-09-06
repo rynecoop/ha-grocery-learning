@@ -9,6 +9,7 @@ import {
   groupTitle as deriveGroupTitle,
   matchSuggestions,
   moveItemToCompleted as applyMoveItemToCompleted,
+  splitPastedItems,
   switchListLocal as applySwitchListLocal,
   updateItemLocal as applyUpdateItemLocal,
 } from "./state-helpers.js";
@@ -723,9 +724,10 @@ class LocalListAssistPanel extends LitElement {
     });
   }
 
-  // Count non-blank lines the same way the backend will (rough client preview).
+  // Count items the same way the backend will — after stripping list markers
+  // and dropping marker-only lines — so the cap and preview match what routes.
   _pasteItemCount(text) {
-    return String(text || "").split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean).length;
+    return splitPastedItems(text).length;
   }
 
   onQuickAddPaste(ev) {
