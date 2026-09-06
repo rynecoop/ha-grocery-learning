@@ -569,6 +569,25 @@ class SplitPastedItemsTests(unittest.TestCase):
         self.assertEqual(item_logic.split_pasted_items(""), [])
         self.assertEqual(item_logic.split_pasted_items("   \n  "), [])
 
+    def test_strips_compound_markdown_checkbox_prefixes(self):
+        # Standard Markdown task-list syntax: bullet AND checkbox together.
+        text = "- [ ] Milk\n* [x] Eggs\n- [X]   Bread\n1. [ ] Flour"
+        self.assertEqual(
+            item_logic.split_pasted_items(text),
+            ["Milk", "Eggs", "Bread", "Flour"],
+        )
+
+    def test_drops_empty_marker_only_lines(self):
+        # A marker with no item text must not survive as a phantom item.
+        self.assertEqual(item_logic.split_pasted_items("- [ ]\n[ ]\n-\n1.\n[x]"), [])
+
+    def test_does_not_over_strip_marker_without_space(self):
+        # A leading "-" glued to text isn't a bullet; keep it intact.
+        self.assertEqual(
+            item_logic.split_pasted_items("-milk\n5-spice powder"),
+            ["-milk", "5-spice powder"],
+        )
+
 
 class MigrateMealCategoriesTests(unittest.TestCase):
     def test_seeds_set_and_maps_shared_ids(self):

@@ -58,15 +58,23 @@ def display_item_summary(value: str) -> str:
     return re.sub(r"\s+", " ", stripped).strip()
 
 
-# Leading list markers to strip when someone pastes a list: bullets
-# (-, *, •, ·, ▪, ◦, –, —), "1." / "1)" numbering, and "[ ]" / "[x]" checkboxes.
-_BULK_LINE_PREFIX_RE = re.compile(r"^\s*(?:[-*•·▪◦–—]+|\d+[.)]|\[[ xX]?\])\s+")
+# One leading list marker to strip when someone pastes a list: bullets
+# (-, *, •, ·, ▪, ◦, –, —), "1." / "1)" numbering, or a "[ ]" / "[x]" checkbox.
+# Applied repeatedly (see clean_bulk_line) so compound Markdown task lists like
+# "- [ ] Milk" get both the bullet *and* the checkbox stripped. The trailing
+# "(?:\s+|$)" also lets a bare marker with no text ("- [ ]") strip down to an
+# empty string so it's dropped rather than left as a phantom "[ ]" item.
+_BULK_LINE_PREFIX_RE = re.compile(r"^\s*(?:[-*•·▪◦–—]+|\d+[.)]|\[[ xX]?\])(?:\s+|$)")
 
 
 def clean_bulk_line(line: str) -> str:
-    """Clean one pasted line into item text: drop a leading bullet/number/checkbox."""
+    """Clean one pasted line into item text: drop leading bullets/numbers/checkboxes."""
     text = str(line).strip()
-    text = _BULK_LINE_PREFIX_RE.sub("", text).strip()
+    # Strip one marker at a time until none remain, so "- [ ] Milk" -> "Milk".
+    prev = None
+    while text and text != prev:
+        prev = text
+        text = _BULK_LINE_PREFIX_RE.sub("", text, count=1).strip()
     return re.sub(r"\s+", " ", text).strip()
 
 
