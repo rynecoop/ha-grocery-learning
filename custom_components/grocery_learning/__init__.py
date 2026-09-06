@@ -2209,7 +2209,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 actor_name = _display_name_from_user(req_user)
             request_context = Context(user_id=request_user_id) if request_user_id else None
             added = 0
-            failed = 0
+            failed_lines: list[str] = []
             for line in lines:
                 # Swallow a single item's failure instead of letting it abort the
                 # whole batch. If a mid-loop raise propagated, the earlier items
@@ -2241,12 +2241,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     )
                     added += 1
                 except Exception:  # noqa: BLE001 - one bad line must not abort the paste
-                    failed += 1
+                    failed_lines.append(line)
                     _LOGGER.exception("add_items: failed to route pasted item %r", line)
             return {
                 "ok": True,
                 "added": added,
-                "failed": failed,
+                "failed": len(failed_lines),
+                # Return the lines that didn't make it so the UI can keep them
+                # available for a retry instead of clearing the user's paste.
+                "failed_items": failed_lines,
                 "dashboard": await _build_dashboard_payload_internal(target_list_id or None),
             }
 

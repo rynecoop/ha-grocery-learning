@@ -774,7 +774,18 @@ class LocalListAssistPanel extends LitElement {
       // which would bypass server-side dedup and double-apply the whole paste.
       this.closePasteList();
     } else if (res && res.ok !== false) {
-      this.closePasteList();
+      const failed = Array.isArray(res.failed_items) ? res.failed_items : [];
+      if (failed.length) {
+        // Some lines were added, some weren't. Keep the modal open with *only*
+        // the failed lines so a retry doesn't re-add (and re-merge) the ones
+        // that already went on the list, and tell the user what happened.
+        const added = Number(res.added) || 0;
+        this._drafts.pasteText = failed.join("\n");
+        this._pasteError = `Added ${added} ${added === 1 ? "item" : "items"}. ${failed.length} couldn't be added — edit and try again.`;
+        this.requestUpdate();
+      } else {
+        this.closePasteList();
+      }
     } else {
       // Server reached but rejected the paste (e.g. too many items). Keep the
       // modal and text so the user can trim it, and show why.
