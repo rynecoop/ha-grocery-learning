@@ -9,6 +9,7 @@ import {
   groupTitle as deriveGroupTitle,
   matchSuggestions,
   moveItemToCompleted as applyMoveItemToCompleted,
+  routablePastedItems,
   switchListLocal as applySwitchListLocal,
   updateItemLocal as applyUpdateItemLocal,
 } from "./state-helpers.js";
@@ -23,6 +24,9 @@ const TEMPLATE_LABELS = {
 
 const LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision";
 const UNDO_TIMEOUT_MS = 6000;
+// Mirror of the backend's _BULK_MAX_ITEMS: cap a single paste so an oversized
+// one is caught in the editor instead of being sent (or queued offline).
+const PASTE_MAX_ITEMS = 200;
 
 class LocalListAssistPanel extends LitElement {
   static properties = {
@@ -59,6 +63,9 @@ class LocalListAssistPanel extends LitElement {
     _shopCollapsed: { state: true },
     _weekStart: { state: true },
     _confirmOpen: { state: true },
+    _pasteOpen: { state: true },
+    _pasteBusy: { state: true },
+    _pasteError: { state: true },
     _confirmItems: { state: true },
     _confirmChecked: { state: true },
     _confirmEdits: { state: true },
@@ -109,6 +116,9 @@ class LocalListAssistPanel extends LitElement {
     this._shopCollapsed = {};
     this._suggestBlurTimer = null;
     this._weekStart = "";
+    this._pasteOpen = false;
+    this._pasteBusy = false;
+    this._pasteError = "";
     this._confirmOpen = false;
     this._confirmItems = [];
     this._confirmTitle = "";
@@ -714,6 +724,135 @@ class LocalListAssistPanel extends LitElement {
     });
   }
 
+  // Count items the same way the backend will — after stripping list markers and
+  // dropping both marker-only and canonically-empty lines — so the cap and
+  // preview match exactly what add_items routes.
+  _pasteItemCount(text) {
+    return routablePastedItems(text).length;
+  }
+
+  onQuickAddPaste(ev) {
+    // If someone pastes multiple lines into the single-item box, route it to the
+    // bulk paste flow instead of mashing it onto one line. Decide on the raw
+    // line structure, not the cleaned item count: a clipboard like
+    // "- Milk\n- [ ]" is multi-line (so it belongs in the bulk editor) even
+    // though it cleans down to a single item.
+    const text = ev.clipboardData?.getData("text") || "";
+    const rawLines = text.split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean);
+    if (rawLines.length > 1) {
+      ev.preventDefault();
+      this.openPasteList(text);
+    }
+  }
+
+  openPasteList(prefill = "") {
+    this._pasteOpen = true;
+    this._pasteError = "";
+    if (prefill) this._drafts.pasteText = prefill;
+    this.requestUpdate();
+    this.updateComplete.then(() => {
+      const el = this.renderRoot?.querySelector(".paste-textarea");
+      if (el) el.focus();
+    });
+  }
+
+  closePasteList() {
+    // Don't let a backdrop/Close/Cancel dismiss the editor while a submit is in
+    // flight — that would clear the draft, and a subsequently-returned ok:false
+    // would have nowhere to show its error or preserve the text. The internal
+    // success/queued paths clear _pasteBusy before calling this, so they close
+    // normally.
+    if (this._pasteBusy) return;
+    this._pasteOpen = false;
+    this._pasteError = "";
+    this._drafts.pasteText = "";
+    this.requestUpdate();
+  }
+
+  async submitPasteList() {
+    const text = this._drafts.pasteText || "";
+    const count = this._pasteItemCount(text);
+    if (count === 0 || this._pasteBusy) return;
+    // Enforce the server's cap here so an oversized paste is caught before it's
+    // ever sent (and, importantly, before it could be queued offline and get
+    // stuck failing on retry). Keep the modal and text so the user can trim it.
+    if (count > PASTE_MAX_ITEMS) {
+      this._pasteError = `That's ${count} items — too many at once. Please paste ${PASTE_MAX_ITEMS} or fewer.`;
+      this.requestUpdate();
+      return;
+    }
+    this._pasteBusy = true;
+    this._pasteError = "";
+    this.requestUpdate();
+    const res = await this.act({
+      action: "add_items",
+      text,
+      list_id: this.currentListId(),
+      actor_user_id: this._hass?.user?.id || "",
+      actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
+    });
+    this._pasteBusy = false;
+    if (res === null) {
+      // The write couldn't reach the server and act() has queued it with a
+      // stable request_id — the global save-retry banner now owns it and will
+      // replay the full paste. Close the modal so the user can't press Add again
+      // and build a *fresh* request_id, which would bypass server-side dedup and
+      // double-apply the whole paste.
+      this.closePasteList();
+    } else if (res && res.ok !== false) {
+      // The whole paste committed as one transaction; nothing partial to report.
+      this.closePasteList();
+    } else {
+      // Server reached but rejected the batch (an add failed and the batch was
+      // rolled back so nothing was committed). Keep the modal and the full text
+      // so the user can retry, and show why.
+      this._pasteError = this._pasteErrorMessage(res);
+      this.requestUpdate();
+    }
+  }
+
+  _pasteErrorMessage(res) {
+    const err = (res && res.error) || "";
+    if (err === "too_many") {
+      const limit = (res && res.limit) || PASTE_MAX_ITEMS;
+      const count = (res && res.count) || 0;
+      return `That's ${count} items — too many at once. Please paste ${limit} or fewer and try again.`;
+    }
+    if (err === "no_items") return "No items found to add.";
+    if (err === "add_failed") return "Something went wrong adding those items — nothing was added. Please try again.";
+    return "Couldn't add those items. Please try again.";
+  }
+
+  _pasteListTemplate() {
+    const count = this._pasteItemCount(this._drafts.pasteText || "");
+    return html`
+      <div class="overlay-shell" @click=${() => this.closePasteList()}>
+        <section class="modal-card modal-card-narrow" role="dialog" aria-label="Paste a list" @click=${(e) => e.stopPropagation()}>
+          <div class="modal-head">
+            <div class="title">Paste a list</div>
+            <button class="btn icon-btn compact" aria-label="Close" ?disabled=${this._pasteBusy} @click=${() => this.closePasteList()}>×</button>
+          </div>
+          <div class="small">One item per line. Paste from a recipe or your notes — bullets, numbers and checkboxes are cleaned off, and each item is auto-sorted and merged with anything already on the list.</div>
+          <textarea class="input paste-textarea" rows="10" placeholder="ground beef&#10;taco shells&#10;shredded cheese&#10;lettuce"
+            ?disabled=${this._pasteBusy}
+            .value=${live(this._drafts.pasteText || "")}
+            @input=${(e) => { this._drafts.pasteText = e.target.value; this._pasteError = ""; this.requestUpdate(); }}></textarea>
+          ${this._pasteError ? html`<div class="small paste-error" role="alert">${this._pasteError}</div>` : nothing}
+          <div class="row" style="justify-content: space-between; align-items: center;">
+            <span class="small ${count > PASTE_MAX_ITEMS ? "paste-error" : ""}">
+              ${count} ${count === 1 ? "item" : "items"}${count > PASTE_MAX_ITEMS ? ` · max ${PASTE_MAX_ITEMS}` : ""}
+            </span>
+            <div class="row">
+              <button class="btn" ?disabled=${this._pasteBusy} @click=${() => this.closePasteList()}>Cancel</button>
+              <button class="btn primary" ?disabled=${count === 0 || count > PASTE_MAX_ITEMS || this._pasteBusy} @click=${() => this.submitPasteList()}>
+                ${this._pasteBusy ? "Adding…" : `Add ${count || ""} ${count === 1 ? "item" : "items"}`.trim()}
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>`;
+  }
+
   // --- quick-add autocomplete ---
   quickAddSuggestions() {
     return matchSuggestions(this._state?.suggestions || [], this._drafts.quickAdd || "", 6);
@@ -1244,6 +1383,7 @@ class LocalListAssistPanel extends LitElement {
         ${this._mealConfirmId ? this._mealDetailTemplate(state) : nothing}
         ${this._mealCatManagerOpen ? this._mealCategoryManagerTemplate() : nothing}
         ${this._confirmOpen ? this._confirmAddTemplate() : nothing}
+        ${this._pasteOpen ? this._pasteListTemplate() : nothing}
         ${this._pendingWrites.length ? html`
           <div class="save-retry" role="alert">
             <span>${this._pendingWrites.length === 1
@@ -1294,6 +1434,7 @@ class LocalListAssistPanel extends LitElement {
                 @input=${(e) => this.onQuickAddInput(e.target.value)}
                 @focus=${() => this.onQuickAddFocus()}
                 @blur=${() => this.deferCloseSuggest()}
+                @paste=${(e) => this.onQuickAddPaste(e)}
                 @keydown=${(e) => this.onQuickAddKeydown(e)} />
               ${this._suggestOpen ? this._suggestDropdown() : nothing}
             </div>
@@ -1301,6 +1442,10 @@ class LocalListAssistPanel extends LitElement {
               .value=${live(this._drafts.quickAddQty || "1")}
               @input=${(e) => this.updateDraft("quickAddQty", e.target.value)} />
             <button class="btn primary" @click=${() => this.addItem()}>Add</button>
+          </div>
+          <div class="paste-list-row">
+            <button class="btn compact paste-list-btn" @click=${() => this.openPasteList()}>📋 Paste a list</button>
+            <span class="small">Paste from a recipe or notes — one item per line, auto-sorted.</span>
           </div>
           ${this._frequentTemplate(state)}
         </section>
@@ -2922,6 +3067,8 @@ class LocalListAssistPanel extends LitElement {
     .meal-row-main { min-width: 120px; }
     .meal-row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .meal-textarea { min-height: 168px; resize: vertical; font: inherit; line-height: 1.5; }
+    .paste-list-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+    .paste-textarea { width: 100%; resize: vertical; font: inherit; line-height: 1.5; min-height: 160px; margin: 10px 0; }
     .meal-actions { margin-bottom: 12px; }
     .meal-search-row { display: flex; gap: 8px; align-items: stretch; margin-bottom: 12px; }
     .meal-search { flex: 1 1 auto; min-width: 0; }
@@ -3086,6 +3233,7 @@ class LocalListAssistPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); z-index: 41;
     }
     .save-retry-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+    .paste-error { color: var(--lla-danger, #c0392b); margin: 4px 0 0; }
     .shopping { max-width: 720px; margin: 0 auto; padding: 10px 12px 40px; min-height: 100%; --accent: #2c78ba; }
     .shop-bar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--lla-bg-1); }
     .shop-done { padding: 10px 14px; }

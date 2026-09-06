@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -86,6 +87,7 @@ from .item_logic import (
     normalize_list_id as _normalize_list_id,
     reorder_category_items as _reorder_category_items,
     select_frequent as _select_frequent,
+    split_pasted_items as _split_pasted_items,
     unique_meal_id as _unique_meal_id,
 )
 from .recipe_parser import parse_recipe as _parse_recipe
@@ -93,6 +95,10 @@ from .storage import GroceryLearningStore, LearnedTerms
 
 _LOGGER = logging.getLogger(__name__)
 MAX_ACTIVITY_ITEMS = 40
+# Upper bound on a single bulk paste. Oversized input is rejected atomically
+# (nothing is added) rather than silently truncated, so the UI can tell the
+# user their paste was too big instead of quietly dropping items.
+_BULK_MAX_ITEMS = 200
 _MEAL_PLAN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 INTENT_LOCAL_LIST_ASSIST_ADD_ITEM = "LocalListAssistAddItem"
 LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision"
@@ -190,6 +196,10 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
         vol.Optional("source", default=""): cv.string,
         vol.Optional("actor_name", default=""): cv.string,
         vol.Optional("actor_user_id", default=""): cv.string,
+        # Internal: a bulk caller (add_items) clears the pending-duplicate state
+        # once up front and sets this so each routed line skips its own clear,
+        # which otherwise repeats ~8 helper writes per item under the lock.
+        vol.Optional("skip_duplicate_clear", default=False): cv.boolean,
     }
 )
 
@@ -1876,7 +1886,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         interactive_duplicate = bool(call.data.get("interactive_duplicate", False))
         source = _source_from_call(call)
         should_prompt_duplicate = interactive_duplicate and source == "typed" and not source_list and not remove_from_source
-        if not should_prompt_duplicate:
+        if not should_prompt_duplicate and not bool(call.data.get("skip_duplicate_clear", False)):
             await _clear_pending_duplicate()
 
         normalized = _normalize_term(display_item)
@@ -2080,7 +2090,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             seen = {}
             hass.data[DOMAIN]["_seen_request_ids"] = seen
         if request_id and request_id in seen:
-            return {"ok": True, "deduped": True, "dashboard": await _build_dashboard_payload_internal()}
+            # Build the deduped dashboard for the list the request targeted (when
+            # it named one), so a retried write to a non-default list doesn't
+            # bounce the client back to the default list's view.
+            dedupe_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip()) if str(payload.get("list_id", "")).strip() else None
+            return {"ok": True, "deduped": True, "dashboard": await _build_dashboard_payload_internal(dedupe_list_id)}
         result = await _handle_dashboard_action_impl(payload)
         if request_id and isinstance(result, dict) and result.get("ok"):
             seen[request_id] = True
@@ -2173,6 +2187,136 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     context=request_context,
                 )
             return {"ok": True}
+
+        if action == "add_items":
+            # Bulk paste: one item per line, run through the same routing as a
+            # typed add so each is auto-sorted, merged with existing items, and
+            # learned from. Accepts a list of lines or one blob of text.
+            raw = payload.get("items", payload.get("text", ""))
+            if isinstance(raw, list):
+                lines = _split_pasted_items("\n".join(str(x) for x in raw))
+            else:
+                lines = _split_pasted_items(str(raw))
+            if not lines:
+                return {"ok": False, "error": "no_items"}
+            # Keep only lines route_item would actually add. It no-ops on any line
+            # whose canonical form is empty (emoji-only, punctuation like "...",
+            # or non-Latin text such as "牛乳"), so counting those as added would
+            # report success for items that never landed. Filter before the size
+            # cap so those non-items don't push a routable batch over the limit,
+            # and so `added` is honest; if nothing routable remains, say so.
+            lines = [line for line in lines if _normalize_term(_display_item_summary(line) or line)]
+            if not lines:
+                return {"ok": False, "error": "no_items"}
+            if len(lines) > _BULK_MAX_ITEMS:
+                # Reject the whole paste rather than truncate it — the caller
+                # would otherwise be told it succeeded while items past the
+                # limit were silently dropped.
+                return {
+                    "ok": False,
+                    "error": "too_many",
+                    "limit": _BULK_MAX_ITEMS,
+                    "count": len(lines),
+                }
+            raw_list_id = str(payload.get("list_id", "")).strip()
+            if raw_list_id:
+                # If the caller named a specific list that no longer exists —
+                # deleted or archived, e.g. while an offline paste sat queued —
+                # reject the batch. Otherwise _internal_list_by_id() would
+                # silently fall back to the active list and add every item to the
+                # wrong place.
+                target_list_id = _normalize_list_id(raw_list_id)
+                _ensure_multilist_model()
+                if target_list_id not in hass.data[DOMAIN]["multilist"].get("lists", {}):
+                    return {"ok": False, "error": "list_not_found", "list_id": target_list_id}
+            else:
+                # No explicit list → the active/current list. Resolve its real id
+                # rather than normalizing "" (which maps to "list" and would
+                # misroute to a stray list literally named "list").
+                target_list_id, _ = _active_internal_list()
+            _mark_changed_list(target_list_id)
+            request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
+            actor_name = str(payload.get("actor_name", "")).strip()
+            if request_user_id and not actor_name:
+                req_user = await hass.auth.async_get_user(request_user_id)
+                actor_name = _display_name_from_user(req_user)
+            request_context = Context(user_id=request_user_id) if request_user_id else None
+            # Run the whole paste as one transaction. A single route_item call can
+            # mutate an item (e.g. bump a duplicate's quantity) *before* a later
+            # await, so if that await raised we'd be left with a half-applied line
+            # that _run_locked's finally would still flush. Reporting such a line
+            # as "failed" and letting the client retry it would then merge it a
+            # second time and inflate its quantity. Instead we snapshot the
+            # mutable state up front and, on any failure, roll the entire batch
+            # back to that snapshot and return ok:false — nothing is committed, so
+            # the client safely retries the unchanged paste from a clean state.
+            snapshot_keys = ("multilist", "item_meta", "frequent", "activity", "terms")
+            snapshot = {key: copy.deepcopy(hass.data[DOMAIN].get(key)) for key in snapshot_keys}
+
+            def _rollback_batch() -> None:
+                for key, value in snapshot.items():
+                    hass.data[DOMAIN][key] = value
+                # In-memory state now matches what's on disk (the pre-batch
+                # snapshot), so make sure _run_locked's finally does not flush it.
+                hass.data[DOMAIN]["_save_dirty"] = False
+
+            added = 0
+            try:
+                # Clear any pending interactive-duplicate prompt once for the whole
+                # batch; each routed line then skips its own clear (see
+                # skip_duplicate_clear), which would otherwise repeat ~8 helper
+                # writes per item under the action lock.
+                await _clear_pending_duplicate()
+                for line in lines:
+                    await hass.services.async_call(
+                        DOMAIN,
+                        SERVICE_ROUTE_ITEM,
+                        {
+                            "item": line,
+                            # No per-item "review this category" prompts on a bulk paste,
+                            # and no interactive duplicate prompt — just merge quietly.
+                            "review_on_other": False,
+                            "source": "typed",
+                            "interactive_duplicate": False,
+                            "allow_duplicate": False,
+                            "skip_duplicate_clear": True,
+                            "quantity": 1,
+                            "list_id": target_list_id,
+                            "actor_user_id": request_user_id,
+                            "actor_name": actor_name,
+                        },
+                        blocking=True,
+                        context=request_context,
+                    )
+                    added += 1
+                dashboard = await _build_dashboard_payload_internal(target_list_id or None)
+                # Persist inside the transaction. The nested _save() calls above only
+                # set _save_dirty; the real store write is normally deferred to
+                # _run_locked's finally, which runs *after* _dispatch_action_idempotent
+                # has already cached this request_id as successful. If that deferred
+                # write then failed, the client would see ok:false while the id stayed
+                # cached — a retry would be deduped without persisting, and a fresh
+                # submit would double the quantities. Flushing here means a failed
+                # write is caught below and rolled back, and we only return ok:true
+                # (the signal that caches the id) once the data is actually on disk.
+                await _flush_save()
+                hass.data[DOMAIN]["_save_dirty"] = False
+            except asyncio.CancelledError:
+                # Cancellation (shutdown, reload) derives from BaseException, so it
+                # skips the `except Exception` below. Still roll the batch back so a
+                # half-applied paste isn't flushed by _run_locked's finally, then
+                # re-raise to honour the cancellation.
+                _rollback_batch()
+                raise
+            except Exception:  # noqa: BLE001 - roll back the whole paste on any failure
+                _rollback_batch()
+                _LOGGER.exception(
+                    "add_items: bulk paste failed after %d of %d items; rolled back",
+                    added,
+                    len(lines),
+                )
+                return {"ok": False, "error": "add_failed", "added": 0}
+            return {"ok": True, "added": added, "dashboard": dashboard}
 
         if action == "create_list":
             if not multilist_mode:

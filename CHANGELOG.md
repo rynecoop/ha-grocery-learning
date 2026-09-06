@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.35.0
+- Paste a whole list at once. Tap "📋 Paste a list" on the List tab (or just paste multiple lines into the Add box) and every line becomes its own item — each one auto-sorted into its category and merged with anything already on the list, exactly like typing them one by one. Bullets, numbers, and checkboxes (-, *, •, "1.", "[ ]") are cleaned off automatically, so pasting straight from a recipe or your notes app just works.
+
 ## 0.34.2
 - Adding an item that's already on the list now reliably merges into the existing one (bumping its quantity) instead of creating a second copy. Matching ignores capitalization and plurals ("Toilet paper", "toilet papers", "TOILET PAPER" are the same item), and it no longer has to be in the same category to merge — so an item categorized slightly differently won't slip through as a duplicate anymore. (Items already duplicated on your list won't auto-combine — remove the extra one; new adds will merge.)
 

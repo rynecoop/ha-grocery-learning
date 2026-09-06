@@ -188,3 +188,47 @@ export function matchSuggestions(all, query, limit = 6) {
   }
   return prefix.concat(substring).slice(0, cap);
 }
+
+// Mirror of item_logic.clean_bulk_line / split_pasted_items so the client counts
+// a paste the same way the backend routes it — stripping leading list markers
+// (bullets, "1."/"1)" numbering, "[ ]"/"[x]" checkboxes) one at a time and
+// dropping lines that reduce to nothing. Keep in sync with item_logic.py.
+const BULK_LINE_PREFIX_RE = /^\s*(?:[-*•·▪◦–—]+|\d+[.)]|\[[ xX]?\])(?:\s+|$)/;
+
+export function cleanBulkLine(line) {
+  let text = String(line == null ? "" : line).trim();
+  let prev = null;
+  while (text && text !== prev) {
+    prev = text;
+    text = text.replace(BULK_LINE_PREFIX_RE, "").trim();
+  }
+  return text.replace(/\s+/g, " ").trim();
+}
+
+export function splitPastedItems(text) {
+  const out = [];
+  for (const raw of String(text == null ? "" : text).split(/[\r\n]+/)) {
+    const cleaned = cleanBulkLine(raw);
+    if (cleaned) out.push(cleaned);
+  }
+  return out;
+}
+
+// Mirror of item_logic.canonical_item_phrase's emptiness test (article-strip,
+// then keep only a-z0-9): route_item no-ops on any line whose canonical form is
+// empty (emoji-only, punctuation like "...", or non-Latin text like "牛乳"), so
+// the client count must drop those too or the cap disagrees with the server.
+// Singularization can't empty a non-empty token, so it's irrelevant here.
+export function itemIsRoutable(value) {
+  const words = String(value == null ? "" : value).trim().split(/\s+/).filter(Boolean);
+  while (words.length && (words[0].toLowerCase() === "a" || words[0].toLowerCase() === "an" || words[0].toLowerCase() === "the")) {
+    words.shift();
+  }
+  return words.join(" ").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).some(Boolean);
+}
+
+// Items a paste would actually add: marker-stripped and canonically non-empty,
+// matching add_items' server-side filter so the client count and cap agree.
+export function routablePastedItems(text) {
+  return splitPastedItems(text).filter(itemIsRoutable);
+}

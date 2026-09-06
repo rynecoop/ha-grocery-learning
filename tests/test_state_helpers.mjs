@@ -8,7 +8,10 @@ import {
   matchSuggestions,
   moveItemToCompleted,
   recategorizeItemLocal,
+  itemIsRoutable,
   renameListLocal,
+  routablePastedItems,
+  splitPastedItems,
   switchListLocal,
   updateItemLocal,
 } from "../custom_components/grocery_learning/frontend/state-helpers.js";
@@ -169,4 +172,45 @@ test("matchSuggestions ignores empty query and exact echoes", () => {
   assert.deepEqual(matchSuggestions(all, "", 6), []);
   // an exact match of the typed text is dropped so the dropdown doesn't just echo it
   assert.deepEqual(matchSuggestions(all, "milk", 6), []);
+});
+
+test("splitPastedItems: one item per line, drops blanks", () => {
+  assert.deepEqual(splitPastedItems("Milk\n\nEggs\n  \nBread\n"), ["Milk", "Eggs", "Bread"]);
+});
+
+test("splitPastedItems: strips bullets, numbers and checkboxes", () => {
+  const text = "- Eggs\n* Bread\n1. Flour\n2) Sugar\n[ ] Butter\n[x] Cheese\n• Bananas\n– Salt";
+  assert.deepEqual(splitPastedItems(text), ["Eggs", "Bread", "Flour", "Sugar", "Butter", "Cheese", "Bananas", "Salt"]);
+});
+
+test("splitPastedItems: strips compound markdown checkbox prefixes", () => {
+  const text = "- [ ] Milk\n* [x] Eggs\n- [X]   Bread\n1. [ ] Flour";
+  assert.deepEqual(splitPastedItems(text), ["Milk", "Eggs", "Bread", "Flour"]);
+});
+
+test("splitPastedItems: drops marker-only lines (matches backend count)", () => {
+  // The client cap must not count "- [ ]" etc. as items; the backend discards them.
+  assert.deepEqual(splitPastedItems("- [ ]\n[ ]\n-\n1.\n[x]"), []);
+  assert.deepEqual(splitPastedItems("Milk\n- [ ]\nEggs"), ["Milk", "Eggs"]);
+});
+
+test("splitPastedItems: does not over-strip a marker glued to text", () => {
+  assert.deepEqual(splitPastedItems("-milk\n5-spice powder"), ["-milk", "5-spice powder"]);
+});
+
+test("splitPastedItems: handles CRLF and empty input", () => {
+  assert.deepEqual(splitPastedItems("A\r\nB\r\n"), ["A", "B"]);
+  assert.deepEqual(splitPastedItems(""), []);
+  assert.deepEqual(splitPastedItems("   \n  "), []);
+});
+
+test("itemIsRoutable / routablePastedItems: drop canonically-empty lines", () => {
+  assert.equal(itemIsRoutable("Milk"), true);
+  assert.equal(itemIsRoutable("5-spice"), true);
+  assert.equal(itemIsRoutable("..."), false);
+  assert.equal(itemIsRoutable("🎉"), false);
+  assert.equal(itemIsRoutable("牛乳"), false);
+  assert.equal(itemIsRoutable("the"), false);
+  // routablePastedItems mirrors add_items' server-side filter after marker strip
+  assert.deepEqual(routablePastedItems("Milk\n...\n- Eggs\n🎉\n牛乳\nBread"), ["Milk", "Eggs", "Bread"]);
 });

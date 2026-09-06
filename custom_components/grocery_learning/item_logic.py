@@ -58,6 +58,41 @@ def display_item_summary(value: str) -> str:
     return re.sub(r"\s+", " ", stripped).strip()
 
 
+# One leading list marker to strip when someone pastes a list: bullets
+# (-, *, •, ·, ▪, ◦, –, —), "1." / "1)" numbering, or a "[ ]" / "[x]" checkbox.
+# Applied repeatedly (see clean_bulk_line) so compound Markdown task lists like
+# "- [ ] Milk" get both the bullet *and* the checkbox stripped. The trailing
+# "(?:\s+|$)" also lets a bare marker with no text ("- [ ]") strip down to an
+# empty string so it's dropped rather than left as a phantom "[ ]" item.
+_BULK_LINE_PREFIX_RE = re.compile(r"^\s*(?:[-*•·▪◦–—]+|\d+[.)]|\[[ xX]?\])(?:\s+|$)")
+
+
+def clean_bulk_line(line: str) -> str:
+    """Clean one pasted line into item text: drop leading bullets/numbers/checkboxes."""
+    text = str(line).strip()
+    # Strip one marker at a time until none remain, so "- [ ] Milk" -> "Milk".
+    prev = None
+    while text and text != prev:
+        prev = text
+        text = _BULK_LINE_PREFIX_RE.sub("", text, count=1).strip()
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def split_pasted_items(text: str) -> list[str]:
+    """Split pasted multi-line text into a de-marked list of item strings.
+
+    One item per non-blank line, leading list markers removed. Order is
+    preserved and blank lines are dropped; de-duplication and categorization are
+    left to the normal add path so pasted items behave exactly like typed ones.
+    """
+    out: list[str] = []
+    for raw in re.split(r"[\r\n]+", str(text or "")):
+        cleaned = clean_bulk_line(raw)
+        if cleaned:
+            out.append(cleaned)
+    return out
+
+
 def normalize_category(value: str) -> str:
     """Slugify a category name to ``lower_snake`` with no leading/trailing ``_``."""
     return re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip("_")
