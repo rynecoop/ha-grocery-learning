@@ -516,6 +516,34 @@ class SelectFrequentTests(unittest.TestCase):
         self.assertEqual(result, [{"item": "paper towels", "count": 2}])
 
 
+class CanonicalItemPhraseMergeTests(unittest.TestCase):
+    """The key used to decide two items are 'the same' for merging."""
+
+    def _same(self, a, b):
+        return item_logic.canonical_item_phrase(a) == item_logic.canonical_item_phrase(b)
+
+    def test_capitalization_does_not_matter(self):
+        self.assertTrue(self._same("Toilet paper", "toilet paper"))
+        self.assertTrue(self._same("TOILET PAPER", "Toilet Paper"))
+
+    def test_plurals_do_not_matter(self):
+        self.assertTrue(self._same("Toilet paper", "toilet papers"))
+        self.assertTrue(self._same("egg", "Eggs"))
+        self.assertTrue(self._same("battery", "batteries"))
+        self.assertTrue(self._same("tomato", "Tomatoes"))
+
+    def test_leading_articles_do_not_matter(self):
+        self.assertTrue(self._same("the milk", "Milk"))
+        self.assertTrue(self._same("a banana", "bananas"))
+
+    def test_extra_whitespace_and_punctuation(self):
+        self.assertTrue(self._same("Greek  Protein Yogurt", "greek protein yogurt"))
+
+    def test_genuinely_different_items_do_not_match(self):
+        self.assertFalse(self._same("toilet paper", "paper towels"))
+        self.assertFalse(self._same("milk", "almond milk"))
+
+
 class MigrateMealCategoriesTests(unittest.TestCase):
     def test_seeds_set_and_maps_shared_ids(self):
         meals = {
