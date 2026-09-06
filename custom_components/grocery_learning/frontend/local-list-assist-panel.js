@@ -115,6 +115,10 @@ class LocalListAssistPanel extends LitElement {
     this._pasteOpen = false;
     this._pasteBusy = false;
     this._pasteError = "";
+    // Which list a paste submits to. Normally the current list, but a recovered
+    // offline paste keeps the list it was originally created on (see
+    // retryPending) so trimming and resending it can't silently retarget it.
+    this._pasteTargetListId = "";
     this._confirmOpen = false;
     this._confirmItems = [];
     this._confirmTitle = "";
@@ -512,6 +516,10 @@ class LocalListAssistPanel extends LitElement {
         const payloadText = item.payload.text
           || (Array.isArray(item.payload.items) ? item.payload.items.join("\n") : "");
         this.openPasteList(payloadText);
+        // Keep the paste on the list it was originally created on — the user may
+        // have navigated elsewhere since queuing it, and openPasteList reset the
+        // target to the current list, so set it back after opening.
+        this._pasteTargetListId = item.payload.list_id || "";
         this._pasteError = this._pasteErrorMessage(res);
         this.requestUpdate();
         recoveredPaste = true;
@@ -756,6 +764,7 @@ class LocalListAssistPanel extends LitElement {
   openPasteList(prefill = "") {
     this._pasteOpen = true;
     this._pasteError = "";
+    this._pasteTargetListId = "";
     if (prefill) this._drafts.pasteText = prefill;
     this.requestUpdate();
     this.updateComplete.then(() => {
@@ -773,6 +782,7 @@ class LocalListAssistPanel extends LitElement {
     if (this._pasteBusy) return;
     this._pasteOpen = false;
     this._pasteError = "";
+    this._pasteTargetListId = "";
     this._drafts.pasteText = "";
     this.requestUpdate();
   }
@@ -786,7 +796,7 @@ class LocalListAssistPanel extends LitElement {
     const res = await this.act({
       action: "add_items",
       text,
-      list_id: this.currentListId(),
+      list_id: this._pasteTargetListId || this.currentListId(),
       actor_user_id: this._hass?.user?.id || "",
       actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
     });
