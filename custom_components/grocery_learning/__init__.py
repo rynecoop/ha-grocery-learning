@@ -94,6 +94,10 @@ from .storage import GroceryLearningStore, LearnedTerms
 
 _LOGGER = logging.getLogger(__name__)
 MAX_ACTIVITY_ITEMS = 40
+# Upper bound on a single bulk paste. Oversized input is rejected atomically
+# (nothing is added) rather than silently truncated, so the UI can tell the
+# user their paste was too big instead of quietly dropping items.
+_BULK_MAX_ITEMS = 200
 _MEAL_PLAN_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 INTENT_LOCAL_LIST_ASSIST_ADD_ITEM = "LocalListAssistAddItem"
 LIVE_REVISION_ENTITY_ID = "sensor.local_list_assist_live_revision"
@@ -2186,6 +2190,16 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 lines = _split_pasted_items(str(raw))
             if not lines:
                 return {"ok": False, "error": "no_items"}
+            if len(lines) > _BULK_MAX_ITEMS:
+                # Reject the whole paste rather than truncate it — the caller
+                # would otherwise be told it succeeded while items past the
+                # limit were silently dropped.
+                return {
+                    "ok": False,
+                    "error": "too_many",
+                    "limit": _BULK_MAX_ITEMS,
+                    "count": len(lines),
+                }
             target_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
             _mark_changed_list(target_list_id)
             request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
@@ -2195,7 +2209,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 actor_name = _display_name_from_user(req_user)
             request_context = Context(user_id=request_user_id) if request_user_id else None
             added = 0
-            for line in lines[:200]:  # bound a runaway paste
+            for line in lines:
                 await hass.services.async_call(
                     DOMAIN,
                     SERVICE_ROUTE_ITEM,

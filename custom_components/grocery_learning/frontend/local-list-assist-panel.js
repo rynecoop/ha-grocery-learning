@@ -61,6 +61,7 @@ class LocalListAssistPanel extends LitElement {
     _confirmOpen: { state: true },
     _pasteOpen: { state: true },
     _pasteBusy: { state: true },
+    _pasteError: { state: true },
     _confirmItems: { state: true },
     _confirmChecked: { state: true },
     _confirmEdits: { state: true },
@@ -113,6 +114,7 @@ class LocalListAssistPanel extends LitElement {
     this._weekStart = "";
     this._pasteOpen = false;
     this._pasteBusy = false;
+    this._pasteError = "";
     this._confirmOpen = false;
     this._confirmItems = [];
     this._confirmTitle = "";
@@ -735,6 +737,7 @@ class LocalListAssistPanel extends LitElement {
 
   openPasteList(prefill = "") {
     this._pasteOpen = true;
+    this._pasteError = "";
     if (prefill) this._drafts.pasteText = prefill;
     this.requestUpdate();
     this.updateComplete.then(() => {
@@ -745,6 +748,7 @@ class LocalListAssistPanel extends LitElement {
 
   closePasteList() {
     this._pasteOpen = false;
+    this._pasteError = "";
     this._drafts.pasteText = "";
     this.requestUpdate();
   }
@@ -753,6 +757,7 @@ class LocalListAssistPanel extends LitElement {
     const text = this._drafts.pasteText || "";
     if (this._pasteItemCount(text) === 0 || this._pasteBusy) return;
     this._pasteBusy = true;
+    this._pasteError = "";
     this.requestUpdate();
     const res = await this.act({
       action: "add_items",
@@ -762,11 +767,31 @@ class LocalListAssistPanel extends LitElement {
       actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
     });
     this._pasteBusy = false;
-    if (res && res.ok !== false) {
+    if (res === null) {
+      // The write couldn't reach the server and act() has queued it with a
+      // stable request_id — the global save-retry banner now owns it. Close the
+      // modal so the user can't press Add again and build a *fresh* request_id,
+      // which would bypass server-side dedup and double-apply the whole paste.
+      this.closePasteList();
+    } else if (res && res.ok !== false) {
       this.closePasteList();
     } else {
+      // Server reached but rejected the paste (e.g. too many items). Keep the
+      // modal and text so the user can trim it, and show why.
+      this._pasteError = this._pasteErrorMessage(res);
       this.requestUpdate();
     }
+  }
+
+  _pasteErrorMessage(res) {
+    const err = (res && res.error) || "";
+    if (err === "too_many") {
+      const limit = (res && res.limit) || 200;
+      const count = (res && res.count) || 0;
+      return `That's ${count} items — too many at once. Please paste ${limit} or fewer and try again.`;
+    }
+    if (err === "no_items") return "No items found to add.";
+    return "Couldn't add those items. Please try again.";
   }
 
   _pasteListTemplate() {
@@ -781,7 +806,8 @@ class LocalListAssistPanel extends LitElement {
           <div class="small">One item per line. Paste from a recipe or your notes — bullets, numbers and checkboxes are cleaned off, and each item is auto-sorted and merged with anything already on the list.</div>
           <textarea class="input paste-textarea" rows="10" placeholder="ground beef&#10;taco shells&#10;shredded cheese&#10;lettuce"
             .value=${live(this._drafts.pasteText || "")}
-            @input=${(e) => { this._drafts.pasteText = e.target.value; this.requestUpdate(); }}></textarea>
+            @input=${(e) => { this._drafts.pasteText = e.target.value; this._pasteError = ""; this.requestUpdate(); }}></textarea>
+          ${this._pasteError ? html`<div class="small paste-error" role="alert">${this._pasteError}</div>` : nothing}
           <div class="row" style="justify-content: space-between; align-items: center;">
             <span class="small">${count} ${count === 1 ? "item" : "items"}</span>
             <div class="row">
@@ -3175,6 +3201,7 @@ class LocalListAssistPanel extends LitElement {
       box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4); z-index: 41;
     }
     .save-retry-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+    .paste-error { color: var(--lla-danger, #c0392b); margin: 4px 0 0; }
     .shopping { max-width: 720px; margin: 0 auto; padding: 10px 12px 40px; min-height: 100%; --accent: #2c78ba; }
     .shop-bar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--lla-bg-1); }
     .shop-done { padding: 10px 14px; }
