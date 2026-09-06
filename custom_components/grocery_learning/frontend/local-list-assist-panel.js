@@ -815,6 +815,11 @@ class LocalListAssistPanel extends LitElement {
       // Server reached but rejected the batch (too many items, or an add failed
       // and the batch was rolled back so nothing was committed). Keep the modal
       // and the full text so the user can retry or trim it, and show why.
+      if (res && res.error === "list_not_found") {
+        // The list this paste was bound to is gone; drop the stale target so a
+        // resubmit goes to the current list instead of failing forever.
+        this._pasteTargetListId = "";
+      }
       this._pasteError = this._pasteErrorMessage(res);
       this.requestUpdate();
     }
@@ -829,6 +834,7 @@ class LocalListAssistPanel extends LitElement {
     }
     if (err === "no_items") return "No items found to add.";
     if (err === "add_failed") return "Something went wrong adding those items — nothing was added. Please try again.";
+    if (err === "list_not_found") return "That list no longer exists — these items will go to your current list. Press Add to continue.";
     return "Couldn't add those items. Please try again.";
   }
 

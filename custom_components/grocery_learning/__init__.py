@@ -2201,7 +2201,17 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "limit": _BULK_MAX_ITEMS,
                     "count": len(lines),
                 }
-            target_list_id = _normalize_list_id(str(payload.get("list_id", "")).strip())
+            raw_list_id = str(payload.get("list_id", "")).strip()
+            target_list_id = _normalize_list_id(raw_list_id)
+            # If the caller named a specific list that no longer exists — deleted
+            # or archived, e.g. while an offline paste sat queued — reject the
+            # batch. Otherwise _internal_list_by_id() would silently fall back to
+            # the active list and add every item to the wrong place. An empty
+            # list_id (the "current list" case) keeps that fallback.
+            if raw_list_id:
+                _ensure_multilist_model()
+                if target_list_id not in hass.data[DOMAIN]["multilist"].get("lists", {}):
+                    return {"ok": False, "error": "list_not_found", "list_id": target_list_id}
             _mark_changed_list(target_list_id)
             request_user_id = str(payload.get("_request_user_id", "")).strip() or str(payload.get("actor_user_id", "")).strip()
             actor_name = str(payload.get("actor_name", "")).strip()
