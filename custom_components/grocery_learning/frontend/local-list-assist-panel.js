@@ -518,8 +518,12 @@ class LocalListAssistPanel extends LitElement {
         this.openPasteList(payloadText);
         // Keep the paste on the list it was originally created on — the user may
         // have navigated elsewhere since queuing it, and openPasteList reset the
-        // target to the current list, so set it back after opening.
-        this._pasteTargetListId = item.payload.list_id || "";
+        // target to the current list, so set it back after opening. But if the
+        // rejection is because that list is gone, leave the target cleared so the
+        // very first Add goes to the current list (the message says it will).
+        if (res.error !== "list_not_found") {
+          this._pasteTargetListId = item.payload.list_id || "";
+        }
         this._pasteError = this._pasteErrorMessage(res);
         this.requestUpdate();
         recoveredPaste = true;
