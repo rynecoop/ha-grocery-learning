@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -2208,18 +2209,20 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 req_user = await hass.auth.async_get_user(request_user_id)
                 actor_name = _display_name_from_user(req_user)
             request_context = Context(user_id=request_user_id) if request_user_id else None
+            # Run the whole paste as one transaction. A single route_item call can
+            # mutate an item (e.g. bump a duplicate's quantity) *before* a later
+            # await, so if that await raised we'd be left with a half-applied line
+            # that _run_locked's finally would still flush. Reporting such a line
+            # as "failed" and letting the client retry it would then merge it a
+            # second time and inflate its quantity. Instead we snapshot the
+            # mutable state up front and, on any failure, roll the entire batch
+            # back to that snapshot and return ok:false — nothing is committed, so
+            # the client safely retries the unchanged paste from a clean state.
+            snapshot_keys = ("multilist", "item_meta", "frequent", "activity", "terms")
+            snapshot = {key: copy.deepcopy(hass.data[DOMAIN].get(key)) for key in snapshot_keys}
             added = 0
-            failed_lines: list[str] = []
-            for line in lines:
-                # Swallow a single item's failure instead of letting it abort the
-                # whole batch. If a mid-loop raise propagated, the earlier items
-                # would already be committed (flushed by _run_locked's finally)
-                # but this action would return failure, so its request_id is never
-                # recorded as seen — a client retry would then replay the whole
-                # paste and re-merge the committed prefix, inflating quantities.
-                # Completing successfully keeps the batch idempotent on retry and
-                # is better UX than losing the good items to one bad line.
-                try:
+            try:
+                for line in lines:
                     await hass.services.async_call(
                         DOMAIN,
                         SERVICE_ROUTE_ITEM,
@@ -2240,16 +2243,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         context=request_context,
                     )
                     added += 1
-                except Exception:  # noqa: BLE001 - one bad line must not abort the paste
-                    failed_lines.append(line)
-                    _LOGGER.exception("add_items: failed to route pasted item %r", line)
+            except Exception:  # noqa: BLE001 - roll back the whole paste on any failure
+                for key, value in snapshot.items():
+                    hass.data[DOMAIN][key] = value
+                _LOGGER.exception(
+                    "add_items: bulk paste failed after %d of %d items; rolled back",
+                    added,
+                    len(lines),
+                )
+                return {"ok": False, "error": "add_failed", "added": 0}
             return {
                 "ok": True,
                 "added": added,
-                "failed": len(failed_lines),
-                # Return the lines that didn't make it so the UI can keep them
-                # available for a retry instead of clearing the user's paste.
-                "failed_items": failed_lines,
                 "dashboard": await _build_dashboard_payload_internal(target_list_id or None),
             }
 

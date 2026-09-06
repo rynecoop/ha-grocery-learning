@@ -769,26 +769,18 @@ class LocalListAssistPanel extends LitElement {
     this._pasteBusy = false;
     if (res === null) {
       // The write couldn't reach the server and act() has queued it with a
-      // stable request_id — the global save-retry banner now owns it. Close the
-      // modal so the user can't press Add again and build a *fresh* request_id,
-      // which would bypass server-side dedup and double-apply the whole paste.
+      // stable request_id — the global save-retry banner now owns it and will
+      // replay the full paste. Close the modal so the user can't press Add again
+      // and build a *fresh* request_id, which would bypass server-side dedup and
+      // double-apply the whole paste.
       this.closePasteList();
     } else if (res && res.ok !== false) {
-      const failed = Array.isArray(res.failed_items) ? res.failed_items : [];
-      if (failed.length) {
-        // Some lines were added, some weren't. Keep the modal open with *only*
-        // the failed lines so a retry doesn't re-add (and re-merge) the ones
-        // that already went on the list, and tell the user what happened.
-        const added = Number(res.added) || 0;
-        this._drafts.pasteText = failed.join("\n");
-        this._pasteError = `Added ${added} ${added === 1 ? "item" : "items"}. ${failed.length} couldn't be added — edit and try again.`;
-        this.requestUpdate();
-      } else {
-        this.closePasteList();
-      }
+      // The whole paste committed as one transaction; nothing partial to report.
+      this.closePasteList();
     } else {
-      // Server reached but rejected the paste (e.g. too many items). Keep the
-      // modal and text so the user can trim it, and show why.
+      // Server reached but rejected the batch (too many items, or an add failed
+      // and the batch was rolled back so nothing was committed). Keep the modal
+      // and the full text so the user can retry or trim it, and show why.
       this._pasteError = this._pasteErrorMessage(res);
       this.requestUpdate();
     }
@@ -802,6 +794,7 @@ class LocalListAssistPanel extends LitElement {
       return `That's ${count} items — too many at once. Please paste ${limit} or fewer and try again.`;
     }
     if (err === "no_items") return "No items found to add.";
+    if (err === "add_failed") return "Something went wrong adding those items — nothing was added. Please try again.";
     return "Couldn't add those items. Please try again.";
   }
 
