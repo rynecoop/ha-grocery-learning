@@ -2209,30 +2209,44 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 actor_name = _display_name_from_user(req_user)
             request_context = Context(user_id=request_user_id) if request_user_id else None
             added = 0
+            failed = 0
             for line in lines:
-                await hass.services.async_call(
-                    DOMAIN,
-                    SERVICE_ROUTE_ITEM,
-                    {
-                        "item": line,
-                        # No per-item "review this category" prompts on a bulk paste,
-                        # and no interactive duplicate prompt — just merge quietly.
-                        "review_on_other": False,
-                        "source": "typed",
-                        "interactive_duplicate": False,
-                        "allow_duplicate": False,
-                        "quantity": 1,
-                        "list_id": target_list_id,
-                        "actor_user_id": request_user_id,
-                        "actor_name": actor_name,
-                    },
-                    blocking=True,
-                    context=request_context,
-                )
-                added += 1
+                # Swallow a single item's failure instead of letting it abort the
+                # whole batch. If a mid-loop raise propagated, the earlier items
+                # would already be committed (flushed by _run_locked's finally)
+                # but this action would return failure, so its request_id is never
+                # recorded as seen — a client retry would then replay the whole
+                # paste and re-merge the committed prefix, inflating quantities.
+                # Completing successfully keeps the batch idempotent on retry and
+                # is better UX than losing the good items to one bad line.
+                try:
+                    await hass.services.async_call(
+                        DOMAIN,
+                        SERVICE_ROUTE_ITEM,
+                        {
+                            "item": line,
+                            # No per-item "review this category" prompts on a bulk paste,
+                            # and no interactive duplicate prompt — just merge quietly.
+                            "review_on_other": False,
+                            "source": "typed",
+                            "interactive_duplicate": False,
+                            "allow_duplicate": False,
+                            "quantity": 1,
+                            "list_id": target_list_id,
+                            "actor_user_id": request_user_id,
+                            "actor_name": actor_name,
+                        },
+                        blocking=True,
+                        context=request_context,
+                    )
+                    added += 1
+                except Exception:  # noqa: BLE001 - one bad line must not abort the paste
+                    failed += 1
+                    _LOGGER.exception("add_items: failed to route pasted item %r", line)
             return {
                 "ok": True,
                 "added": added,
+                "failed": failed,
                 "dashboard": await _build_dashboard_payload_internal(target_list_id or None),
             }
 
