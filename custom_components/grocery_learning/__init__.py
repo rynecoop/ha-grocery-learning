@@ -2243,6 +2243,14 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                         context=request_context,
                     )
                     added += 1
+            except asyncio.CancelledError:
+                # Cancellation (shutdown, reload) derives from BaseException, so it
+                # skips the `except Exception` below. Still roll the batch back so a
+                # half-applied paste isn't flushed by _run_locked's finally, then
+                # re-raise to honour the cancellation.
+                for key, value in snapshot.items():
+                    hass.data[DOMAIN][key] = value
+                raise
             except Exception:  # noqa: BLE001 - roll back the whole paste on any failure
                 for key, value in snapshot.items():
                     hass.data[DOMAIN][key] = value
