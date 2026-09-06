@@ -732,9 +732,13 @@ class LocalListAssistPanel extends LitElement {
 
   onQuickAddPaste(ev) {
     // If someone pastes multiple lines into the single-item box, route it to the
-    // bulk paste flow instead of mashing it onto one line.
+    // bulk paste flow instead of mashing it onto one line. Decide on the raw
+    // line structure, not the cleaned item count: a clipboard like
+    // "- Milk\n- [ ]" is multi-line (so it belongs in the bulk editor) even
+    // though it cleans down to a single item.
     const text = ev.clipboardData?.getData("text") || "";
-    if (this._pasteItemCount(text) > 1) {
+    const rawLines = text.split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean);
+    if (rawLines.length > 1) {
       ev.preventDefault();
       this.openPasteList(text);
     }
@@ -829,6 +833,7 @@ class LocalListAssistPanel extends LitElement {
           </div>
           <div class="small">One item per line. Paste from a recipe or your notes — bullets, numbers and checkboxes are cleaned off, and each item is auto-sorted and merged with anything already on the list.</div>
           <textarea class="input paste-textarea" rows="10" placeholder="ground beef&#10;taco shells&#10;shredded cheese&#10;lettuce"
+            ?disabled=${this._pasteBusy}
             .value=${live(this._drafts.pasteText || "")}
             @input=${(e) => { this._drafts.pasteText = e.target.value; this._pasteError = ""; this.requestUpdate(); }}></textarea>
           ${this._pasteError ? html`<div class="small paste-error" role="alert">${this._pasteError}</div>` : nothing}

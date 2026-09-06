@@ -196,6 +196,10 @@ ROUTE_ITEM_SCHEMA = vol.Schema(
         vol.Optional("source", default=""): cv.string,
         vol.Optional("actor_name", default=""): cv.string,
         vol.Optional("actor_user_id", default=""): cv.string,
+        # Internal: a bulk caller (add_items) clears the pending-duplicate state
+        # once up front and sets this so each routed line skips its own clear,
+        # which otherwise repeats ~8 helper writes per item under the lock.
+        vol.Optional("skip_duplicate_clear", default=False): cv.boolean,
     }
 )
 
@@ -1882,7 +1886,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         interactive_duplicate = bool(call.data.get("interactive_duplicate", False))
         source = _source_from_call(call)
         should_prompt_duplicate = interactive_duplicate and source == "typed" and not source_list and not remove_from_source
-        if not should_prompt_duplicate:
+        if not should_prompt_duplicate and not bool(call.data.get("skip_duplicate_clear", False)):
             await _clear_pending_duplicate()
 
         normalized = _normalize_term(display_item)
@@ -2249,6 +2253,11 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
 
             added = 0
             try:
+                # Clear any pending interactive-duplicate prompt once for the whole
+                # batch; each routed line then skips its own clear (see
+                # skip_duplicate_clear), which would otherwise repeat ~8 helper
+                # writes per item under the action lock.
+                await _clear_pending_duplicate()
                 for line in lines:
                     await hass.services.async_call(
                         DOMAIN,
@@ -2261,6 +2270,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                             "source": "typed",
                             "interactive_duplicate": False,
                             "allow_duplicate": False,
+                            "skip_duplicate_clear": True,
                             "quantity": 1,
                             "list_id": target_list_id,
                             "actor_user_id": request_user_id,
