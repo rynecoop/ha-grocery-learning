@@ -1,18 +1,33 @@
-import { LitElement, html, css, nothing } from "./vendor/lit.js";
-import { repeat } from "./vendor/lit.js";
-import { live } from "./vendor/lit.js";
-import { styleMap } from "./vendor/lit.js";
-import {
-  categoryDisplay as displayCategory,
-  createListLocal as applyCreateListLocal,
-  deleteArchivedListLocal as applyDeleteArchivedListLocal,
-  groupTitle as deriveGroupTitle,
+// Cache-bust the relative module imports with the same ?v= the panel entry was
+// loaded with (set by _frontend_module_url from the manifest version). Browsers
+// and the HA service worker cache modules by URL and do NOT carry a module's
+// query string onto its relative imports, so a static `import ... from
+// "./state-helpers.js"` keeps serving a stale cached copy across updates. When a
+// release adds a new export, the fresh panel.js?v=NEW then imports a name the
+// cached old sub-module lacks and the whole module fails to load — a black panel
+// after an update. import.meta.url carries the entry's ?v=, so we forward it to
+// the sub-imports (via top-level await) to keep them in lockstep with the panel.
+const _moduleQuery = (() => {
+  try {
+    const version = new URL(import.meta.url).searchParams.get("v");
+    return version ? `?v=${encodeURIComponent(version)}` : "";
+  } catch (_err) {
+    return "";
+  }
+})();
+
+const { LitElement, html, css, nothing, repeat, live, styleMap } = await import(`./vendor/lit.js${_moduleQuery}`);
+const {
+  categoryDisplay: displayCategory,
+  createListLocal: applyCreateListLocal,
+  deleteArchivedListLocal: applyDeleteArchivedListLocal,
+  groupTitle: deriveGroupTitle,
   matchSuggestions,
-  moveItemToCompleted as applyMoveItemToCompleted,
+  moveItemToCompleted: applyMoveItemToCompleted,
   routablePastedItems,
-  switchListLocal as applySwitchListLocal,
-  updateItemLocal as applyUpdateItemLocal,
-} from "./state-helpers.js";
+  switchListLocal: applySwitchListLocal,
+  updateItemLocal: applyUpdateItemLocal,
+} = await import(`./state-helpers.js${_moduleQuery}`);
 
 const TEMPLATE_LABELS = {
   flat: "Flat List",
