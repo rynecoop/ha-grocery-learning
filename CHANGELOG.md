@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.35.1
+- Fixed the grocery panel showing up blank/black on some devices after updating to 0.35.0. The panel's shared code file was being served from a stale browser cache that didn't match the updated panel, so it failed to load. The panel now loads all of its parts with the same version tag so an update always fetches a matching set. If you still see a blank panel, a hard refresh (or clearing the app's cache) will clear the old copy.
+
 ## 0.35.0
 - Paste a whole list at once. Tap "📋 Paste a list" on the List tab (or just paste multiple lines into the Add box) and every line becomes its own item — each one auto-sorted into its category and merged with anything already on the list, exactly like typing them one by one. Bullets, numbers, and checkboxes (-, *, •, "1.", "[ ]") are cleaned off automatically, so pasting straight from a recipe or your notes app just works.
 
