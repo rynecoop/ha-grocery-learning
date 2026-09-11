@@ -1986,6 +1986,11 @@ class LocalListAssistPanel extends LitElement {
     if (!file) return;
     const editorId = this._mealEditorId;
     const editVersion = this._photoEditVersion;
+    // A per-selection generation, so if a second photo is picked before this
+    // one's async decode finishes, the slower first selection can't overwrite
+    // the newer one (both share the same editorId/editVersion).
+    const seq = (this._photoSelectSeq = (this._photoSelectSeq || 0) + 1);
+    const isCurrent = () => this._mealEditorId === editorId && this._photoEditVersion === editVersion && this._photoSelectSeq === seq;
     try {
       if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) throw new Error("Choose a JPEG, PNG or WebP image under 8 MB.");
       const bitmap = await createImageBitmap(file);
@@ -1995,22 +2000,24 @@ class LocalListAssistPanel extends LitElement {
       canvas.height = Math.max(1, Math.round(bitmap.height * scale));
       canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       bitmap.close();
-      // Step the quality down like the server does (80/65/45) so a detailed
-      // photo is compressed to fit rather than rejected outright. Measure the
-      // actual decoded byte size against the server's exact 256 KiB output cap
+      // Step the quality down exactly like the server does (80/65/45) so a
+      // detailed photo is compressed to fit rather than rejected outright, and
+      // the highest fitting quality is kept. Measure the actual decoded byte
+      // size against the server's exact 256 KiB output cap
       // (recipe_images.MAX_OUTPUT) — a looser char-length cap would accept
       // images the server then rejects on save.
       let data = "";
-      for (const quality of [0.8, 0.6, 0.45]) {
+      for (const quality of [0.8, 0.65, 0.45]) {
         data = canvas.toDataURL("image/webp", quality);
         if (dataUrlByteLength(data) <= RECIPE_IMAGE_MAX_BYTES) break;
       }
       if (dataUrlByteLength(data) > RECIPE_IMAGE_MAX_BYTES) throw new Error("That photo is too detailed. Try a smaller image.");
-      if (this._mealEditorId !== editorId || this._photoEditVersion !== editVersion) return;
+      if (!isCurrent()) return;
       this._drafts.mealImageData = data;
       this._drafts.mealImageId = "";
       this._recipeImportError = "";
     } catch (error) {
+      if (!isCurrent()) return;
       this._recipeImportError = error.message || "Couldn't read that image.";
     }
     this.requestUpdate();
