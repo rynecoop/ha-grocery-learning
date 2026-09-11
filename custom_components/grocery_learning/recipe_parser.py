@@ -112,6 +112,17 @@ def _extract_directions(recipe: dict) -> list[str]:
     return out
 
 
+def recipe_image(value: Any) -> str:
+    """Select a primary image from URL, ImageObject or array metadata."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        return next((image for item in value if (image := recipe_image(item))), "")
+    if isinstance(value, dict):
+        return recipe_image(value.get("contentUrl") or value.get("url"))
+    return ""
+
+
 def parse_recipe(html: str) -> dict[str, Any]:
     """Return ``{"name", "ingredients", "directions"}`` parsed from page HTML.
 
@@ -148,6 +159,7 @@ def parse_recipe(html: str) -> dict[str, Any]:
             if ingredients or directions:
                 return {
                     "name": candidate_name,
+                    **({"image_url": recipe_image(obj.get("image"))} if recipe_image(obj.get("image")) else {}),
                     "ingredients": ingredients,
                     "directions": directions,
                 }

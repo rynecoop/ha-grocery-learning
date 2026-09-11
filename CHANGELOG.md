@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.36.0
+- Recipe photos: capture the primary image during link import, or upload, replace and remove a local photo in the meal editor.
+- Photos appear in the Meals list and recipe details, are stored locally, and travel with JSON backups. Older backups still restore.
+- Imported meals retain their source URL. Photo download failures preserve the recipe and offer manual upload.
+
+
 ## 0.35.1
 - Fixed the grocery panel showing up blank/black on some devices after updating to 0.35.0. The panel's shared code file was being served from a stale browser cache that didn't match the updated panel, so it failed to load. The panel now loads all of its parts with the same version tag so an update always fetches a matching set. If you still see a blank panel, a hard refresh (or clearing the app's cache) will clear the old copy.
 

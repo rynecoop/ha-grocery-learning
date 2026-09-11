@@ -43,6 +43,31 @@ const UNDO_TIMEOUT_MS = 6000;
 // one is caught in the editor instead of being sent (or queued offline).
 const PASTE_MAX_ITEMS = 200;
 
+// Fetch through HA authentication; image data never goes to third-party hosts.
+class RecipePhoto extends LitElement {
+  static properties = { imageId: {}, label: {}, loader: {}, compact: {type: Boolean}, src: {state: true} };
+  static styles = css`
+    :host { display: block; }
+    img { display: block; max-width: 100%; width: 100%; max-height: 300px; object-fit: contain; border-radius: 10px; }
+    img.compact { width: 64px; height: 64px; object-fit: cover; }
+    span { font-size: 12px; opacity: .7; }
+  `;
+  async updated(changed) {
+    if (!changed.has("imageId")) return;
+    const id = this.imageId;
+    this.src = "";
+    if (!id || !this.loader) return;
+    try {
+      const result = await this.loader(id);
+      if (this.imageId === id) this.src = result?.ok ? result.image_data : "";
+    } catch (_) { /* Missing image never prevents opening the recipe. */ }
+  }
+  render() {
+    return this.src ? html`<img class=${this.compact ? "compact" : ""} src=${this.src} alt=${this.label || "Recipe photo"} />` : html`<span>Photo unavailable</span>`;
+  }
+}
+customElements.define("lla-recipe-photo", RecipePhoto);
+
 class LocalListAssistPanel extends LitElement {
   static properties = {
     _state: { state: true },
@@ -1903,6 +1928,7 @@ class LocalListAssistPanel extends LitElement {
         ${ordered.length
           ? repeat(ordered, (m) => m.id, (m) => html`
             <button class="meal-row meal-row-button" @click=${() => this.openMealDetail(m.id, "add")}>
+              ${this._photoTemplate(m.image_id, m.name, true)}
               <div class="meal-row-main">
                 <strong>${favs.has(m.id) ? html`<span class="meal-fav-star" aria-label="Favorite" title="Favorite">★</span> ` : nothing}${m.name}</strong>
                 <div class="small">${(m.category_labels || []).length ? html`${(m.category_labels).map((l) => html`<span class="meal-cat-tag">${l}</span> `)}· ` : nothing}${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}${m.direction_count ? ` · ${m.direction_count} ${m.direction_count === 1 ? "step" : "steps"}` : ""}${(m.notes || "").trim() ? " · has notes" : ""}</div>
@@ -1945,6 +1971,38 @@ class LocalListAssistPanel extends LitElement {
       </div>`;
   }
 
+  _photoTemplate(imageId, label, compact = false) {
+    return imageId ? html`<lla-recipe-photo .imageId=${imageId} .label=${label} .compact=${compact}
+      .loader=${(id) => this.api("action", "POST", {action: "get_recipe_image", image_id: id})}></lla-recipe-photo>` : nothing;
+  }
+
+  async chooseRecipePhoto(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const editorId = this._mealEditorId;
+    const editVersion = this._photoEditVersion;
+    try {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) throw new Error("Choose a JPEG, PNG or WebP image under 8 MB.");
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const data = canvas.toDataURL("image/webp", 0.8);
+      if (data.length > 360000) throw new Error("That photo is too detailed. Try a smaller image.");
+      if (this._mealEditorId !== editorId || this._photoEditVersion !== editVersion) return;
+      this._drafts.mealImageData = data;
+      this._drafts.mealImageId = "";
+      this._recipeImportError = "";
+    } catch (error) {
+      this._recipeImportError = error.message || "Couldn't read that image.";
+    }
+    this.requestUpdate();
+  }
+
   _mealEditorTemplate() {
     const isNew = this._mealEditorId === "new";
     return html`
@@ -1961,8 +2019,16 @@ class LocalListAssistPanel extends LitElement {
             </button>
           </div>
           ${this._recipeImportError ? html`<div class="error small">${this._recipeImportError}</div>` : nothing}
-          <div class="small">Pulls the name, ingredients and directions off the page so you can review and tweak them below before saving. Your Home Assistant reads the recipe directly — nothing is sent to any cloud service.</div>
+          <div class="small">Pulls the name, ingredients, directions and available photo off the page so you can review and tweak them below before saving. Your Home Assistant reads the recipe directly — nothing is sent to any cloud service.</div>
         </div>` : nothing}
+      <div class="recipe-photo-editor">
+        ${this._drafts.mealImageData ? html`<img style="max-width:100%;max-height:240px;border-radius:10px" src=${this._drafts.mealImageData} alt="Recipe photo preview" />` : this._photoTemplate(this._drafts.mealImageId, this._drafts.mealName)}
+        <label class="label">Recipe photo (optional)
+          <input type="file" accept="image/jpeg,image/png,image/webp" @change=${(e) => this.chooseRecipePhoto(e)} />
+        </label>
+        ${this._drafts.mealImageData || this._drafts.mealImageId ? html`<button class="btn compact" @click=${() => { this._drafts.mealImageData = ""; this._drafts.mealImageId = ""; this.requestUpdate(); }}>Remove photo</button>` : nothing}
+        ${!isNew && this._recipeImportError ? html`<div class="error small">${this._recipeImportError}</div>` : nothing}
+      </div>
       <div class="grid compact-grid">
         <input class="input" placeholder="Meal name (e.g. Taco Night)" .value=${live(this._drafts.mealName || "")}
           @input=${(e) => this.updateDraft("mealName", e.target.value)} />
@@ -2022,6 +2088,8 @@ class LocalListAssistPanel extends LitElement {
             </div>
             <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closeMealDetail()}>×</button>
           </div>
+          ${this._photoTemplate(meal.image_id, meal.name)}
+          ${meal.source_url ? html`<a href=${meal.source_url} target="_blank" rel="noopener noreferrer">View original recipe</a>` : nothing}
           <div class="meal-tabs">
             <button class=${"meal-tab" + (tab === "add" ? " active" : "")} @click=${() => { this._mealTab = "add"; }}>Ingredients</button>
             <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions &amp; notes${directions.length ? ` (${directions.length})` : ""}${hasNotes ? " 📝" : ""}</button>
@@ -2274,9 +2342,14 @@ class LocalListAssistPanel extends LitElement {
   }
 
   openMealEditor(mealId) {
+    this._photoEditVersion = (this._photoEditVersion || 0) + 1;
     const meal = (this._state?.meals || []).find((m) => m.id === mealId) || null;
     this._mealEditorId = mealId || "new";
     this._drafts.mealName = meal?.name || "";
+    this._drafts.mealImageId = meal?.image_id || "";
+    this._drafts.mealImageData = undefined;
+    this._drafts.mealSourceUrl = meal?.source_url || "";
+    this._recipeImportError = "";
     this._drafts.mealIngredients = (meal?.ingredients || []).map((i) => i.item).join("\n");
     this._drafts.mealDirections = (meal?.directions || []).join("\n");
     this._drafts.mealNotes = meal?.notes || "";
@@ -2287,6 +2360,7 @@ class LocalListAssistPanel extends LitElement {
   }
 
   openMealFromList() {
+    this._photoEditVersion = (this._photoEditVersion || 0) + 1;
     const groups = this._state?.groups || [];
     const items = [];
     const seen = new Set();
@@ -2302,6 +2376,10 @@ class LocalListAssistPanel extends LitElement {
     }
     this._mealEditorId = "new";
     this._drafts.mealName = "";
+    this._drafts.mealImageId = "";
+    this._drafts.mealImageData = undefined;
+    this._drafts.mealSourceUrl = "";
+    this._recipeImportError = "";
     this._drafts.mealIngredients = items.join("\n");
     this._drafts.mealDirections = "";
     this._drafts.mealNotes = "";
@@ -2316,8 +2394,13 @@ class LocalListAssistPanel extends LitElement {
   }
 
   closeMealEditor() {
+    this._photoEditVersion = (this._photoEditVersion || 0) + 1;
     this._mealEditorId = "";
     this._drafts.mealName = "";
+    this._drafts.mealImageId = "";
+    this._drafts.mealImageData = undefined;
+    this._drafts.mealSourceUrl = "";
+    this._recipeImportError = "";
     this._drafts.mealIngredients = "";
     this._drafts.mealDirections = "";
     this._drafts.mealNotes = "";
@@ -2340,10 +2423,11 @@ class LocalListAssistPanel extends LitElement {
       .filter(Boolean);
     const notes = (this._drafts.mealNotes || "").trim();
     const categories = [...(this._drafts.mealCategoryIds || [])];
-    const payload = { action: "save_meal", name, ingredients, directions, notes, categories };
+    const payload = { action: "save_meal", name, ingredients, directions, notes, categories, source_url: this._drafts.mealSourceUrl || "" };
+    if (this._drafts.mealImageData !== undefined) payload.image_data = this._drafts.mealImageData;
     if (this._mealEditorId && this._mealEditorId !== "new") payload.meal_id = this._mealEditorId;
-    await this.act(payload);
-    this.closeMealEditor();
+    const result = await this.act(payload);
+    if (result?.ok) this.closeMealEditor();
   }
 
   async deleteMeal(mealId) {
@@ -2378,16 +2462,22 @@ class LocalListAssistPanel extends LitElement {
     if (!url) return;
     this._recipeImportError = "";
     this._recipeImporting = true;
+    const editVersion = this._photoEditVersion;
     this.requestUpdate();
     try {
       // import_recipe returns {ok, recipe} (no dashboard), so call the API
       // directly rather than act(), which would trigger a needless reload.
       const res = await this.api("action", "POST", { action: "import_recipe", url });
+      if (this._photoEditVersion !== editVersion) return;
       if (!res || res.ok === false) {
         this._recipeImportError = this._recipeImportErrorText(res && res.error);
         return;
       }
       const recipe = res.recipe || {};
+      this._drafts.mealImageData = recipe.image_data || "";
+      this._drafts.mealImageId = "";
+      this._drafts.mealSourceUrl = res.source_url || url;
+      this._recipeImportError = res.image_warning || "";
       if (recipe.name) this.updateDraft("mealName", recipe.name);
       if (Array.isArray(recipe.ingredients) && recipe.ingredients.length) {
         this.updateDraft("mealIngredients", recipe.ingredients.join("\n"));
@@ -2783,7 +2873,7 @@ class LocalListAssistPanel extends LitElement {
                 <label class="toggle-row"><input id="settingsDebugMode" type="checkbox" ?checked=${state?.settings?.debug_mode} /> Debug mode</label>
               </div>
               <div class="label" style="margin-top:14px;">Backup</div>
-              <div class="small">Export a local JSON backup of your lists, meals, and learned data — or restore one. Import replaces your current data; run Repair Local Setup afterwards if you use voice.</div>
+              <div class="small">Export a local JSON backup of your lists, meals, photos, and learned data — or restore one. Import replaces your current data; run Repair Local Setup afterwards if you use voice.</div>
               <div class="row advanced-row">
                 <button class="btn" @click=${() => this.exportData()}>Export backup</button>
                 <button class="btn" @click=${() => this.renderRoot?.getElementById("importFileInput")?.click()}>Import backup</button>

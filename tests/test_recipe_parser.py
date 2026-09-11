@@ -174,3 +174,10 @@ class RecipeParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecipeImageMetadataTests(unittest.TestCase):
+    def test_image_shapes(self):
+        for value in ("https://example.com/a.jpg", ["https://example.com/a.jpg"], {"@type": "ImageObject", "contentUrl": "https://example.com/a.jpg"}, [{"url": "https://example.com/a.jpg"}]):
+            parsed = recipe_parser.parse_recipe(_page({"@type": "Recipe", "name": "Dinner", "recipeIngredient": ["rice"], "image": value}))
+            self.assertEqual(parsed["image_url"], "https://example.com/a.jpg")
