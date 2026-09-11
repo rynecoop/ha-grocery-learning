@@ -20,6 +20,7 @@ const { LitElement, html, css, nothing, repeat, live, styleMap } = await import(
 const {
   categoryDisplay: displayCategory,
   createListLocal: applyCreateListLocal,
+  dataUrlByteLength,
   deleteArchivedListLocal: applyDeleteArchivedListLocal,
   groupTitle: deriveGroupTitle,
   matchSuggestions,
@@ -42,6 +43,9 @@ const UNDO_TIMEOUT_MS = 6000;
 // Mirror of the backend's _BULK_MAX_ITEMS: cap a single paste so an oversized
 // one is caught in the editor instead of being sent (or queued offline).
 const PASTE_MAX_ITEMS = 200;
+// Mirror of recipe_images.MAX_OUTPUT: the picker enforces this exact byte cap on
+// its WebP so an accepted photo can't be rejected by the server on save.
+const RECIPE_IMAGE_MAX_BYTES = 256 * 1024;
 
 // Fetch through HA authentication; image data never goes to third-party hosts.
 class RecipePhoto extends LitElement {
@@ -1992,13 +1996,16 @@ class LocalListAssistPanel extends LitElement {
       canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       bitmap.close();
       // Step the quality down like the server does (80/65/45) so a detailed
-      // photo is compressed to fit rather than rejected outright.
+      // photo is compressed to fit rather than rejected outright. Measure the
+      // actual decoded byte size against the server's exact 256 KiB output cap
+      // (recipe_images.MAX_OUTPUT) — a looser char-length cap would accept
+      // images the server then rejects on save.
       let data = "";
       for (const quality of [0.8, 0.6, 0.45]) {
         data = canvas.toDataURL("image/webp", quality);
-        if (data.length <= 360000) break;
+        if (dataUrlByteLength(data) <= RECIPE_IMAGE_MAX_BYTES) break;
       }
-      if (data.length > 360000) throw new Error("That photo is too detailed. Try a smaller image.");
+      if (dataUrlByteLength(data) > RECIPE_IMAGE_MAX_BYTES) throw new Error("That photo is too detailed. Try a smaller image.");
       if (this._mealEditorId !== editorId || this._photoEditVersion !== editVersion) return;
       this._drafts.mealImageData = data;
       this._drafts.mealImageId = "";

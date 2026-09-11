@@ -232,3 +232,15 @@ export function itemIsRoutable(value) {
 export function routablePastedItems(text) {
   return splitPastedItems(text).filter(itemIsRoutable);
 }
+
+// Decoded byte length of a base64 data URL's payload, so the recipe-photo picker
+// can enforce the server's exact byte cap (recipe_images.MAX_OUTPUT) instead of
+// a looser data-URL character count that would accept images the server rejects.
+export function dataUrlByteLength(dataUrl) {
+  const s = String(dataUrl == null ? "" : dataUrl);
+  const comma = s.indexOf(",");
+  const b64 = comma < 0 ? "" : s.slice(comma + 1);
+  if (!b64) return 0;
+  const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor(b64.length * 3 / 4) - padding);
+}
