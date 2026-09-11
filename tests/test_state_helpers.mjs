@@ -11,6 +11,7 @@ import {
   itemIsRoutable,
   renameListLocal,
   routablePastedItems,
+  dataUrlByteLength,
   splitPastedItems,
   switchListLocal,
   updateItemLocal,
@@ -213,4 +214,16 @@ test("itemIsRoutable / routablePastedItems: drop canonically-empty lines", () =>
   assert.equal(itemIsRoutable("the"), false);
   // routablePastedItems mirrors add_items' server-side filter after marker strip
   assert.deepEqual(routablePastedItems("Milk\n...\n- Eggs\n🎉\n牛乳\nBread"), ["Milk", "Eggs", "Bread"]);
+});
+
+test("dataUrlByteLength: decodes the base64 payload's byte size", () => {
+  const bytes = Buffer.alloc(1000, 7);
+  const url = "data:image/webp;base64," + bytes.toString("base64");
+  assert.equal(dataUrlByteLength(url), 1000);
+  // padding cases
+  assert.equal(dataUrlByteLength("data:image/webp;base64," + Buffer.alloc(1).toString("base64")), 1);
+  assert.equal(dataUrlByteLength("data:image/webp;base64," + Buffer.alloc(2).toString("base64")), 2);
+  assert.equal(dataUrlByteLength("data:image/webp;base64," + Buffer.alloc(3).toString("base64")), 3);
+  assert.equal(dataUrlByteLength(""), 0);
+  assert.equal(dataUrlByteLength("notadataurl"), 0);
 });

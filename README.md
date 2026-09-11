@@ -55,6 +55,19 @@ Open `Meals` from the menu (⋯) to define a meal once — a name, its ingredien
 ![Saved Meals detail — Add to list tab](docs/screenshots/meals.png)
 ![Saved Meals detail — Directions cook mode](docs/screenshots/meal-directions.png)
 
+### Recipe Photos
+
+Import a recipe link to capture its primary photo when available, or upload a JPEG,
+PNG or WebP photo (up to 8 MB) while creating or editing a meal. Replace or remove
+photos in the same editor. Photos appear in Meals and recipe details; imported
+meals also retain a link to the source recipe. An unavailable photo never blocks
+recipe import.
+
+Photos are resized to at most 1200 pixels and stored locally in Home Assistant.
+They are served through authenticated requests, survive restarts, and are included
+in JSON backups. Older backups remain supported. Photos increase backup file size;
+Home Assistant or reverse-proxy request limits may limit very large restores.
+
 ### Meal Planner
 In `Meals`, switch to the **This Week** tab for a dated calendar. Each day is a real date (today is highlighted), and you can page between weeks with the ‹ › arrows — nothing ever expires or clears on its own, so past and future weeks stay exactly as you left them. Assign your saved meals to days, then add a single day's ingredients or the whole shown week's to your list in one go — they're combined and de-duplicated across meals and shown in the same confirm checklist, so you just uncheck what you already have. The plan is stored locally and included in backups.
 

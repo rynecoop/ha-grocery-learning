@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from uuid import uuid4
 
 import voluptuous as vol
@@ -67,6 +67,7 @@ from .const import (
     SERVICE_SYNC_HELPERS,
     TARGET_LIST_BY_CATEGORY,
 )
+from . import recipe_images
 from .matching import normalize_voice_list_name, resolve_list_id_from_voice_name
 from .list_templates import categories_for_template, template_presets
 from .multilist_ops import archive_list as apply_archive_list, delete_archived_list as apply_delete_archived_list, restore_archived_list as apply_restore_archived_list
@@ -840,6 +841,8 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "directions": directions,
                     "direction_count": len(directions),
                     "notes": str(meal.get("notes", "")).strip(),
+                    "image_id": meal.get("image_id", ""),
+                    "source_url": meal.get("source_url", "") if recipe_images.public_url(meal.get("source_url", "")) else "",
                     "categories": meal_cat_ids,
                     "category_labels": [cat_labels[str(cid)] for cid in meal_cat_ids],
                 }
@@ -2073,6 +2076,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 # Read-only network fetch — run it outside the state lock so a
                 # slow recipe site can't block other devices' actions.
                 return await _import_recipe(payload)
+            if action == "get_recipe_image":
+                # Read-only image fetch — see _get_recipe_image; kept off the lock.
+                return await _get_recipe_image(payload)
             return await _run_locked(lambda: _dispatch_action_idempotent(payload))
         finally:
             _REQUEST_USER_ID.reset(token)
@@ -2152,7 +2158,36 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
         recipe = _parse_recipe(html_text)
         if not recipe.get("name") and not recipe.get("ingredients"):
             return {"ok": False, "error": "no_recipe"}
-        return {"ok": True, "recipe": recipe, "source_url": url}
+        warning = ""
+        if recipe.get("image_url"):
+            try:
+                raw_image = await recipe_images.download_image(urljoin(str(resp.url), recipe["image_url"]))
+                normalized = await hass.async_add_executor_job(recipe_images.normalize_image, raw_image)
+                recipe["image_data"] = recipe_images.encode_image(normalized)
+            except (ValueError, OSError, aiohttp.ClientError, asyncio.TimeoutError):
+                warning = "Recipe imported, but its photo could not be downloaded. You can upload one below."
+        return {"ok": True, "recipe": recipe, "source_url": url, "image_warning": warning}
+
+    image_directory = Path(hass.config.path(".storage", "grocery_learning_images"))
+
+    async def _cleanup_recipe_images():
+        retained = {m.get("image_id", "") for m in hass.data[DOMAIN].get("meals", {}).values()}
+        try:
+            await hass.async_add_executor_job(recipe_images.cleanup_images, image_directory, retained)
+        except OSError:
+            _LOGGER.warning("Recipe photo cleanup failed; retained saved meal data", exc_info=True)
+
+    async def _get_recipe_image(payload: dict[str, Any]) -> dict[str, Any]:
+        # Read-only fetch: the id is validated and the path confined by
+        # recipe_images. It's served outside the action lock (like import_recipe)
+        # so loading the Meals tab's photos — one request per meal — can't
+        # serialize behind, and stall, list writes.
+        try:
+            image_id = str(payload.get("image_id", ""))
+            image = await hass.async_add_executor_job(recipe_images.read_image, image_directory, image_id)
+            return {"ok": True, "image_data": image}
+        except (ValueError, OSError):
+            return {"ok": False, "error": "Image unavailable"}
 
     async def _handle_dashboard_action_impl(payload: dict[str, Any]) -> dict[str, Any]:
         action = str(payload.get("action", "")).strip()
@@ -3034,6 +3069,15 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             meal_id = _normalize_list_id(str(payload.get("meal_id", "")).strip()) if str(payload.get("meal_id", "")).strip() else ""
             if not meal_id:
                 meal_id = _unique_meal_id(name, list(meals.keys()))
+            image_id = meals.get(meal_id, {}).get("image_id", "")
+            if "image_data" in payload:
+                try:
+                    image_id = await hass.async_add_executor_job(recipe_images.save_image, image_directory, payload["image_data"]) if payload["image_data"] else ""
+                except (ValueError, OSError) as err:
+                    return {"ok": False, "error": str(err)}
+            source_url = str(payload.get("source_url", meals.get(meal_id, {}).get("source_url", "")))
+            if not recipe_images.public_url(source_url):
+                source_url = ""
             created = str(meals.get(meal_id, {}).get("created", "")).strip() or now
             meals[meal_id] = {
                 "id": meal_id,
@@ -3042,10 +3086,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 "directions": directions,
                 "notes": notes,
                 "categories": categories,
+                "image_id": image_id,
+                "source_url": source_url,
                 "created": created,
                 "updated": now,
             }
             await _save()
+            await _cleanup_recipe_images()
             await _record_activity("Meal saved", f"{name} · {len(ingredients)} ingredients", "", "panel")
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
@@ -3112,6 +3159,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                             else:
                                 favorites.pop(uid, None)
                 await _save()
+                await _cleanup_recipe_images()
                 await _record_activity("Meal removed", str(removed.get("name", meal_id)).strip() or meal_id, "", "panel")
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
@@ -3314,6 +3362,13 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     "meal_categories": hass.data[DOMAIN].get("meal_categories", []),
                 },
             }
+            export["data"]["meals"] = copy.deepcopy(export["data"]["meals"])
+            for meal in export["data"]["meals"].values():
+                if meal.get("image_id"):
+                    try:
+                        meal["image_data"] = await hass.async_add_executor_job(recipe_images.read_image, image_directory, meal["image_id"])
+                    except (ValueError, OSError):
+                        return {"ok": False, "error": "A recipe image is missing; replace or remove it before exporting."}
             return {"ok": True, "export": export}
 
         if action == "import_data":
@@ -3324,6 +3379,21 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                     incoming = full["data"]
             if not isinstance(incoming, dict):
                 return {"ok": False, "error": "invalid_backup"}
+            incoming = copy.deepcopy(incoming)
+            try:
+                # Validate every image before replacing any existing meal data.
+                staged = []
+                for meal in (incoming.get("meals") or {}).values():
+                    if isinstance(meal, dict):
+                        data = meal.pop("image_data", "")
+                        meal["image_id"] = ""
+                        if data:
+                            normalized = await hass.async_add_executor_job(recipe_images.decode_image, data)
+                            staged.append((meal, recipe_images.encode_image(normalized)))
+                for meal, data in staged:
+                    meal["image_id"] = await hass.async_add_executor_job(recipe_images.save_image, image_directory, data)
+            except (ValueError, OSError, AttributeError):
+                return {"ok": False, "error": "Invalid image in backup; current data has not been replaced."}
             raw = await store.load_raw()
             if not isinstance(raw, dict):
                 raw = {}
@@ -3365,6 +3435,7 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             )
             _mark_changed_list("*")
             await _save()
+            await _cleanup_recipe_images()
             await _record_activity("Data imported", "Restored lists, meals, and learned data from a backup", "", "panel")
             return {"ok": True, "dashboard": await _build_dashboard_payload_internal()}
 
