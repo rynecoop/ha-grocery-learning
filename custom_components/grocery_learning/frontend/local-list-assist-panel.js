@@ -1986,11 +1986,12 @@ class LocalListAssistPanel extends LitElement {
     if (!file) return;
     const editorId = this._mealEditorId;
     const editVersion = this._photoEditVersion;
-    // A per-selection generation, so if a second photo is picked before this
-    // one's async decode finishes, the slower first selection can't overwrite
-    // the newer one (both share the same editorId/editVersion).
-    const seq = (this._photoSelectSeq = (this._photoSelectSeq || 0) + 1);
-    const isCurrent = () => this._mealEditorId === editorId && this._photoEditVersion === editVersion && this._photoSelectSeq === seq;
+    // A shared photo-operation generation: every photo change (pick, import,
+    // remove) bumps it, and async ones apply their result only if it's still the
+    // latest — so the last-initiated photo change wins no matter which finishes
+    // first (a slower pick can't clobber a newer pick/import/remove).
+    const seq = (this._photoOpSeq = (this._photoOpSeq || 0) + 1);
+    const isCurrent = () => this._mealEditorId === editorId && this._photoEditVersion === editVersion && this._photoOpSeq === seq;
     try {
       if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) throw new Error("Choose a JPEG, PNG or WebP image under 8 MB.");
       const bitmap = await createImageBitmap(file);
@@ -2046,7 +2047,7 @@ class LocalListAssistPanel extends LitElement {
         <label class="label">Recipe photo (optional)
           <input type="file" accept="image/jpeg,image/png,image/webp" @change=${(e) => this.chooseRecipePhoto(e)} />
         </label>
-        ${this._drafts.mealImageData || this._drafts.mealImageId ? html`<button class="btn compact" @click=${() => { this._drafts.mealImageData = ""; this._drafts.mealImageId = ""; this.requestUpdate(); }}>Remove photo</button>` : nothing}
+        ${this._drafts.mealImageData || this._drafts.mealImageId ? html`<button class="btn compact" @click=${() => { this._photoOpSeq = (this._photoOpSeq || 0) + 1; this._drafts.mealImageData = ""; this._drafts.mealImageId = ""; this.requestUpdate(); }}>Remove photo</button>` : nothing}
         ${!isNew && this._recipeImportError ? html`<div class="error small">${this._recipeImportError}</div>` : nothing}
       </div>
       <div class="grid compact-grid">
@@ -2483,6 +2484,9 @@ class LocalListAssistPanel extends LitElement {
     this._recipeImportError = "";
     this._recipeImporting = true;
     const editVersion = this._photoEditVersion;
+    // Claim the shared photo-op generation so a photo the user picks (or removes)
+    // while this import is in flight wins over the imported photo.
+    const photoSeq = (this._photoOpSeq = (this._photoOpSeq || 0) + 1);
     this.requestUpdate();
     try {
       // import_recipe returns {ok, recipe} (no dashboard), so call the API
@@ -2494,10 +2498,13 @@ class LocalListAssistPanel extends LitElement {
         return;
       }
       const recipe = res.recipe || {};
-      this._drafts.mealImageData = recipe.image_data || "";
-      this._drafts.mealImageId = "";
+      // Apply the imported photo only if no later pick/remove superseded it.
+      if (this._photoOpSeq === photoSeq) {
+        this._drafts.mealImageData = recipe.image_data || "";
+        this._drafts.mealImageId = "";
+        this._recipeImportError = res.image_warning || "";
+      }
       this._drafts.mealSourceUrl = res.source_url || url;
-      this._recipeImportError = res.image_warning || "";
       if (recipe.name) this.updateDraft("mealName", recipe.name);
       if (Array.isArray(recipe.ingredients) && recipe.ingredients.length) {
         this.updateDraft("mealIngredients", recipe.ingredients.join("\n"));
