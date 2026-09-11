@@ -1991,7 +1991,13 @@ class LocalListAssistPanel extends LitElement {
       canvas.height = Math.max(1, Math.round(bitmap.height * scale));
       canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       bitmap.close();
-      const data = canvas.toDataURL("image/webp", 0.8);
+      // Step the quality down like the server does (80/65/45) so a detailed
+      // photo is compressed to fit rather than rejected outright.
+      let data = "";
+      for (const quality of [0.8, 0.6, 0.45]) {
+        data = canvas.toDataURL("image/webp", quality);
+        if (data.length <= 360000) break;
+      }
       if (data.length > 360000) throw new Error("That photo is too detailed. Try a smaller image.");
       if (this._mealEditorId !== editorId || this._photoEditVersion !== editVersion) return;
       this._drafts.mealImageData = data;

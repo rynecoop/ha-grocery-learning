@@ -2076,6 +2076,9 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 # Read-only network fetch — run it outside the state lock so a
                 # slow recipe site can't block other devices' actions.
                 return await _import_recipe(payload)
+            if action == "get_recipe_image":
+                # Read-only image fetch — see _get_recipe_image; kept off the lock.
+                return await _get_recipe_image(payload)
             return await _run_locked(lambda: _dispatch_action_idempotent(payload))
         finally:
             _REQUEST_USER_ID.reset(token)
@@ -2173,6 +2176,18 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
             await hass.async_add_executor_job(recipe_images.cleanup_images, image_directory, retained)
         except OSError:
             _LOGGER.warning("Recipe photo cleanup failed; retained saved meal data", exc_info=True)
+
+    async def _get_recipe_image(payload: dict[str, Any]) -> dict[str, Any]:
+        # Read-only fetch: the id is validated and the path confined by
+        # recipe_images. It's served outside the action lock (like import_recipe)
+        # so loading the Meals tab's photos — one request per meal — can't
+        # serialize behind, and stall, list writes.
+        try:
+            image_id = str(payload.get("image_id", ""))
+            image = await hass.async_add_executor_job(recipe_images.read_image, image_directory, image_id)
+            return {"ok": True, "image_data": image}
+        except (ValueError, OSError):
+            return {"ok": False, "error": "Image unavailable"}
 
     async def _handle_dashboard_action_impl(payload: dict[str, Any]) -> dict[str, Any]:
         action = str(payload.get("action", "")).strip()
@@ -3017,14 +3032,6 @@ async def _async_setup_runtime(hass: HomeAssistant) -> None:
                 blocking=True,
             )
             return {"ok": True}
-
-        if action == "get_recipe_image":
-            try:
-                image_id = str(payload.get("image_id", ""))
-                image = await hass.async_add_executor_job(recipe_images.read_image, image_directory, image_id)
-                return {"ok": True, "image_data": image}
-            except (ValueError, OSError):
-                return {"ok": False, "error": "Image unavailable"}
 
         if action == "save_meal":
             name = _display_item_summary(str(payload.get("name", "")).strip()) or str(payload.get("name", "")).strip()
