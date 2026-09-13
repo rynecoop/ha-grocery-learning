@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.35.4
+- Hardened the automatic recovery added in 0.35.3. Closed two timing gaps where a change could still get stuck in the "Couldn't save" banner even though the connection was already back — one where a save failed a split second after the connection was restored, and one where a second change made during an in-progress auto-resend was left behind — so recovery now re-sends reliably in both cases (still de-duplicated, so nothing is added twice). Also stopped the app from endlessly re-trying a change the server has actually rejected (for example, editing an item that someone else already removed): it now shows the error once and moves on instead of resending it on every update.
+
 ## 0.35.3
 - Made the app recover on its own from a brief connection drop. After 0.35.2 moved saving onto Home Assistant's realtime connection, a save attempted in the split second while the app was reconnecting (for example, right after unlocking your phone or switching back to the app) could fail with a "Home Assistant connection not ready" error and sit in the "Couldn't save your last change" banner until you tapped Retry. Now the app waits a moment for the connection to come back before giving up, and any change that still couldn't go through is re-sent automatically the instant the connection returns — so those blips heal themselves without the error banner or a manual retry. (Re-sends are de-duplicated, so nothing gets added twice.)
 

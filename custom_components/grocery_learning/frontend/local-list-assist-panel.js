@@ -43,6 +43,24 @@ const UNDO_TIMEOUT_MS = 6000;
 // one is caught in the editor instead of being sent (or queued offline).
 const PASTE_MAX_ITEMS = 200;
 
+// Backend action errors ({ok:false, error}) that a retry can never fix — the
+// request was understood and permanently declined (bad input, target gone,
+// feature off). A queued write that comes back with one of these is dropped from
+// the auto-retry queue so it isn't resent (and the dashboard reloaded) on every
+// hass update forever. Anything NOT listed here (e.g. "not_ready" while the
+// runtime is still starting, "entry_not_loaded", or a raw exception string) is
+// treated as transient and stays queued to retry when the connection recovers.
+// Keep in sync with the {ok:false} returns in __init__.py's action handlers.
+const TERMINAL_ACTION_ERRORS = new Set([
+  "missing_url", "invalid_url", "no_recipe", "not_a_page", "too_large", "blocked",
+  "no_items", "too_many",
+  "list_not_found", "list_exists", "multilist_disabled", "cannot_move_default",
+  "invalid_color", "invalid_order", "missing_name",
+  "missing_item_reference", "item_not_found", "item_summary_missing",
+  "unknown_meal", "missing_label", "duplicate", "invalid", "unknown_category",
+  "no_user", "invalid_backup", "unknown_action",
+]);
+
 class LocalListAssistPanel extends LitElement {
   static properties = {
     _state: { state: true },
@@ -358,17 +376,33 @@ class LocalListAssistPanel extends LitElement {
     return this._hass;
   }
 
+  _connectionDown() {
+    return !!(this._hass?.connection && this._hass.connection.connected === false);
+  }
+
   // Re-send writes that failed during a connection gap once hass is back. Each
   // one is idempotent (deduped server-side by request_id) and clears itself on
   // success, so this is safe to call whenever the connection looks healthy.
   async _flushPendingWrites() {
-    if (this._flushing || !this._pendingWrites.length) return;
-    // Don't hammer a socket we know is down; a present-but-disconnected hass
-    // will get another shot on the next hass update (or on live reconnect).
-    if (this._hass?.connection && this._hass.connection.connected === false) return;
+    if (this._flushing) return;
     this._flushing = true;
     try {
-      await this.retryPending();
+      // Drain in a loop so a write enqueued *while* a drain is in flight (its
+      // request rejected mid-pass) still gets sent: retryPending() only works a
+      // snapshot, so without this the newcomer would sit in the banner until an
+      // unrelated hass update. Stop when the queue is empty, the socket is known
+      // down, or a full pass made no progress (everything still failing) — so a
+      // genuinely-down connection waits for the next hass update instead of
+      // busy-looping.
+      while (this._pendingWrites.length && !this._connectionDown()) {
+        const attempted = new Set(this._pendingWrites.map((w) => w.id));
+        await this.retryPending();
+        const remaining = this._pendingWrites;
+        const noProgress =
+          remaining.length === attempted.size &&
+          remaining.every((w) => attempted.has(w.id));
+        if (noProgress) break;
+      }
     } finally {
       this._flushing = false;
     }
@@ -443,6 +477,14 @@ class LocalListAssistPanel extends LitElement {
       if (ok) {
         this._removePending(payload.request_id);
       } else {
+        // Server was reached and returned an error. Only drop the queued write on
+        // a terminal rejection (retrying can't fix it — e.g. the item was removed
+        // elsewhere); otherwise it would resend + reload on every hass update
+        // forever. Transient errors (runtime not ready, an exception) stay queued
+        // so recovery retries them. The reload above reconciles state either way.
+        if (this._isTerminalActionError(result)) {
+          this._removePending(payload.request_id);
+        }
         this._error = (result && result.error) || this._error || "Couldn't save that change.";
       }
       this.requestUpdate();
@@ -470,8 +512,13 @@ class LocalListAssistPanel extends LitElement {
       if (ok) {
         this._removePending(payload.request_id);
       } else {
-        // Server reached but the action failed — reconcile and surface the error;
-        // keep any queued copy so a retry isn't discarded as if it succeeded.
+        // Server was reached and returned an error — reconcile and surface it.
+        // Drop the queued write only on a terminal rejection (an auto-retry can't
+        // fix it and would resend + reload every hass update); keep transient
+        // errors (runtime not ready, an exception) queued to retry on recovery.
+        if (this._isTerminalActionError(result)) {
+          this._removePending(payload.request_id);
+        }
         await this.load(true);
         this._error = (result && result.error) || this._error || "Couldn't save that change.";
       }
@@ -494,10 +541,23 @@ class LocalListAssistPanel extends LitElement {
     return label ? `${a} “${label}”` : (a || "change");
   }
 
+  // A server {ok:false} whose error is a known terminal rejection — a retry of
+  // the same write can never succeed, so it should leave the auto-retry queue.
+  _isTerminalActionError(result) {
+    return TERMINAL_ACTION_ERRORS.has(String(result?.error || ""));
+  }
+
   _addPending(payload) {
     const id = payload?.request_id;
     if (!id || this._pendingWrites.some((w) => w.id === id)) return;
     this._pendingWrites = [...this._pendingWrites, { id, payload, label: this._describeAction(payload) }];
+    // A write can be enqueued after the last hass update — e.g. a request on the
+    // old connection rejects only after the reconnect setter already ran, so
+    // nothing else would trigger a drain. Schedule one on a microtask (so the
+    // current act()/actFast() finishes first); it no-ops if the socket is down.
+    if (this._hass && !this._connectionDown()) {
+      Promise.resolve().then(() => this._flushPendingWrites());
+    }
   }
 
   _removePending(id) {
@@ -506,9 +566,14 @@ class LocalListAssistPanel extends LitElement {
     }
   }
 
+  // Internal: one drain pass over a snapshot of the queue. MUST only be called
+  // from _flushPendingWrites, which serializes drains behind the _flushing guard
+  // — running two passes at once lets an attempt on the old connection re-add an
+  // id right after another attempt on the new connection removed it, so no drain
+  // can trust the queue it observes. Each write clears itself on success (or a
+  // terminal rejection); a transient failure stays queued. Sequential to keep
+  // list order.
   async retryPending() {
-    // Snapshot and re-send each failed write; each one clears itself on success
-    // (and a still-failing one stays queued). Sequential to keep list order.
     const items = [...this._pendingWrites];
     this._error = "";
     for (const item of items) {
@@ -1401,7 +1466,7 @@ class LocalListAssistPanel extends LitElement {
               ? html`Couldn't save your last change (${this._pendingWrites[0].label}). Check your connection.`
               : html`${this._pendingWrites.length} changes didn't save. Check your connection.`}</span>
             <div class="save-retry-actions">
-              <button class="btn compact primary" @click=${() => this.retryPending()}>Retry</button>
+              <button class="btn compact primary" @click=${() => this._flushPendingWrites()}>Retry</button>
               <button class="btn compact" @click=${() => { this._pendingWrites = []; }}>Dismiss</button>
             </div>
           </div>` : nothing}
