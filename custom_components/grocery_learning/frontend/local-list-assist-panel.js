@@ -318,72 +318,30 @@ class LocalListAssistPanel extends LitElement {
     return this._state?.system?.active_list_id || this.getPreferredListId() || "default";
   }
 
-  // --- API ---
-  get _token() {
-    const auth = this._hass?.auth;
-    // Prefer the Auth object's live getter — it reflects a refreshed token.
-    // data.access_token is the canonical snake_case field; the rest are
-    // defensive fallbacks for older/edge hass shapes.
-    return (
-      auth?.accessToken ||
-      auth?.data?.access_token ||
-      auth?.data?.accessToken ||
-      this._hass?.connection?.options?.auth?.accessToken ||
-      ""
-    );
+  // --- API (WebSocket) ---
+  // Reads and writes go over Home Assistant's authenticated WebSocket
+  // connection — the same channel live updates use. HA keeps that connection's
+  // token fresh for us, so this avoids the stale-bearer-token 401s that
+  // long-lived app webviews hit against the /api REST endpoints.
+  async _callWS(message) {
+    const hass = this._hass;
+    if (!hass) throw new Error("Home Assistant connection not ready");
+    if (typeof hass.callWS === "function") {
+      return hass.callWS(message);
+    }
+    const conn = hass.connection;
+    if (conn && typeof conn.sendMessagePromise === "function") {
+      return conn.sendMessagePromise(message);
+    }
+    throw new Error("Home Assistant WebSocket unavailable");
   }
 
-  async _ensureFreshToken() {
-    // HA access tokens are short-lived; refresh proactively when expired so we
-    // don't send a dead token (the usual cause of intermittent 401s that made
-    // an add/remove silently not take).
-    const auth = this._hass?.auth;
-    if (auth && auth.expired && typeof auth.refreshAccessToken === "function") {
-      try {
-        await auth.refreshAccessToken();
-      } catch (_err) {
-        // Fall through — the request may still succeed, or we retry on 401.
-      }
-    }
+  async apiDashboard(listId) {
+    return this._callWS({ type: "grocery_learning/dashboard", list_id: listId });
   }
 
-  _headers() {
-    const headers = { "Content-Type": "application/json" };
-    if (this._token) {
-      headers.Authorization = `Bearer ${this._token}`;
-    }
-    return headers;
-  }
-
-  async api(path, method = "GET", body = null, retryOn401 = true) {
-    await this._ensureFreshToken();
-    const res = await fetch(`/api/grocery_learning/${path}`, {
-      method,
-      headers: this._headers(),
-      body: body ? JSON.stringify(body) : null,
-      credentials: "same-origin",
-    });
-    // A 401 usually means the token expired between our check and the server's
-    // validation. Force a refresh and retry once with the fresh token.
-    if (res.status === 401 && retryOn401 && this._hass?.auth?.refreshAccessToken) {
-      try {
-        await this._hass.auth.refreshAccessToken();
-      } catch (_err) {
-        /* retry anyway with whatever token we have */
-      }
-      return this.api(path, method, body, false);
-    }
-    const text = await res.text();
-    let data = {};
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch (_err) {
-      data = { error: text || `HTTP ${res.status}` };
-    }
-    if (!res.ok) {
-      throw new Error(data.error || text || `HTTP ${res.status}`);
-    }
-    return data;
+  async apiAction(payload) {
+    return this._callWS({ type: "grocery_learning/action", payload });
   }
 
   async load(_forceRender = false) {
@@ -393,7 +351,7 @@ class LocalListAssistPanel extends LitElement {
     this._loading = true;
     try {
       const requestedListId = this.getPreferredListId() || "default";
-      const state = await this.api(`dashboard?list_id=${encodeURIComponent(requestedListId)}`);
+      const state = await this.apiDashboard(requestedListId);
       this._state = state;
       this.setPreferredListId(state?.system?.active_list_id || requestedListId);
       this.syncDrafts();
@@ -434,9 +392,9 @@ class LocalListAssistPanel extends LitElement {
   async act(payload) {
     if (!payload.request_id) payload.request_id = this._newRequestId();
     try {
-      const result = await this.api("action", "POST", payload);
-      // The action view returns HTTP 200 with {ok:false} for handler errors, so
-      // a resolved fetch isn't proof of success — only clear a queued write when
+      const result = await this.apiAction(payload);
+      // The action command resolves with {ok:false} for handler errors, so a
+      // resolved call isn't proof of success — only clear a queued write when
       // the action actually succeeded.
       const ok = !!result && result.ok !== false;
       if (ok && this._applyResult(result, payload)) {
@@ -468,7 +426,7 @@ class LocalListAssistPanel extends LitElement {
       this.requestUpdate();
     }
     try {
-      const result = await this.api("action", "POST", payload);
+      const result = await this.apiAction(payload);
       const ok = !!result && result.ok !== false;
       this._applyResult(result, payload);
       if (ok) {
@@ -1194,7 +1152,7 @@ class LocalListAssistPanel extends LitElement {
 
   async exportData() {
     try {
-      const result = await this.api("action", "POST", { action: "export_data" });
+      const result = await this.apiAction({ action: "export_data" });
       const backup = result?.export;
       if (!backup) {
         this._error = "Export failed.";
@@ -2382,7 +2340,7 @@ class LocalListAssistPanel extends LitElement {
     try {
       // import_recipe returns {ok, recipe} (no dashboard), so call the API
       // directly rather than act(), which would trigger a needless reload.
-      const res = await this.api("action", "POST", { action: "import_recipe", url });
+      const res = await this.apiAction({ action: "import_recipe", url });
       if (!res || res.ok === false) {
         this._recipeImportError = this._recipeImportErrorText(res && res.error);
         return;

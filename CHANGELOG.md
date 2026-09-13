@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.35.2
+- Fixed the outage where the app stopped saving for everyone — adds, removes, and edits failed with an authentication error while the list still displayed. The panel had been talking to Home Assistant over a channel that used a short-lived access token, and in long-running app sessions that token could go stale faster than it was refreshed, so writes were rejected. The panel now sends every read and write over Home Assistant's built-in realtime connection — the same always-authenticated channel it already used for live updates — which Home Assistant keeps signed in for you. That removes the stale-token failure entirely. No setup or re-login needed; just update.
+
 ## 0.35.1
 - Fixed the grocery panel showing up blank/black on some devices after updating to 0.35.0. The panel's shared code file was being served from a stale browser cache that didn't match the updated panel, so it failed to load. The panel now loads all of its parts with the same version tag so an update always fetches a matching set. If you still see a blank panel, a hard refresh (or clearing the app's cache) will clear the old copy.
 
