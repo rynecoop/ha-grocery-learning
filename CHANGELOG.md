@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.35.3
+- Made the app recover on its own from a brief connection drop. After 0.35.2 moved saving onto Home Assistant's realtime connection, a save attempted in the split second while the app was reconnecting (for example, right after unlocking your phone or switching back to the app) could fail with a "Home Assistant connection not ready" error and sit in the "Couldn't save your last change" banner until you tapped Retry. Now the app waits a moment for the connection to come back before giving up, and any change that still couldn't go through is re-sent automatically the instant the connection returns — so those blips heal themselves without the error banner or a manual retry. (Re-sends are de-duplicated, so nothing gets added twice.)
+
 ## 0.35.2
 - Fixed the outage where the app stopped saving for everyone — adds, removes, and edits failed with an authentication error while the list still displayed. The panel had been talking to Home Assistant over a channel that used a short-lived access token, and in long-running app sessions that token could go stale faster than it was refreshed, so writes were rejected. The panel now sends every read and write over Home Assistant's built-in realtime connection — the same always-authenticated channel it already used for live updates — which Home Assistant keeps signed in for you. That removes the stale-token failure entirely. No setup or re-login needed; just update.
 
