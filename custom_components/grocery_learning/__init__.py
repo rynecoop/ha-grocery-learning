@@ -250,6 +250,37 @@ DUPLICATE_STATUS_SOURCE_ENTITY = "sensor.grocery_duplicate_source"
 CONF_WIZARD_COMPLETED = "wizard_completed"
 
 
+def _apply_dashboard_payload_defaults(payload: dict[str, Any]) -> dict[str, Any]:
+    """Fill in any missing top-level keys the panel expects.
+
+    Shared by the REST dashboard view and the WebSocket ``dashboard`` command so
+    both transports return an identically-shaped payload.
+    """
+    payload.setdefault("categories", ["other"])
+    payload.setdefault("groups", [])
+    payload.setdefault("completed", [])
+    payload.setdefault("lists", [])
+    payload.setdefault("pending_review", {"pending": False, "item": "", "source_list": ""})
+    payload.setdefault("pending_duplicate", {"pending": False, "item": "", "target": ""})
+    payload.setdefault(
+        "settings",
+        {
+            "categories": [],
+            "inbox_entity": "todo.grocery_inbox",
+            "auto_route_inbox": True,
+            "auto_provision": True,
+            "experimental_multilist": False,
+            "default_grocery_categories": True,
+            "debug_mode": False,
+        },
+    )
+    payload.setdefault("system", {"missing_lists": [], "runtime_ready": False})
+    payload.setdefault("activity", [])
+    payload.setdefault("setup", {"completed": False})
+    payload.setdefault("error", "")
+    return payload
+
+
 class GroceryLearningDashboardView(HomeAssistantView):
     """Return dashboard payload for Local List Assist app."""
 
@@ -318,29 +349,7 @@ class GroceryLearningDashboardView(HomeAssistantView):
             if not isinstance(payload, dict):
                 return web.json_response(self._empty_payload("invalid_payload"))
 
-            payload.setdefault("categories", ["other"])
-            payload.setdefault("groups", [])
-            payload.setdefault("completed", [])
-            payload.setdefault("lists", [])
-            payload.setdefault("pending_review", {"pending": False, "item": "", "source_list": ""})
-            payload.setdefault("pending_duplicate", {"pending": False, "item": "", "target": ""})
-            payload.setdefault(
-                "settings",
-                {
-                    "categories": [],
-                    "inbox_entity": "todo.grocery_inbox",
-                    "auto_route_inbox": True,
-                    "auto_provision": True,
-                    "experimental_multilist": False,
-                    "default_grocery_categories": True,
-                    "debug_mode": False,
-                },
-            )
-            payload.setdefault("system", {"missing_lists": [], "runtime_ready": False})
-            payload.setdefault("activity", [])
-            payload.setdefault("setup", {"completed": False})
-            payload.setdefault("error", "")
-            return web.json_response(payload)
+            return web.json_response(_apply_dashboard_payload_defaults(payload))
         except Exception as err:  # pragma: no cover
             _LOGGER.exception("Failed to build Grocery dashboard payload")
             try:
@@ -4126,6 +4135,103 @@ lists:
             _forward(int(hass_inner.data.get(DOMAIN, {}).get("dashboard_revision", 0) or 0), "*")
 
         websocket_api.async_register_command(hass, _ws_subscribe_updates)
+
+        # Reads over the always-authenticated WebSocket channel. HA keeps the WS
+        # connection's token fresh, so this avoids the stale-bearer-token 401s
+        # that the /api REST endpoints hit in long-lived app webviews.
+        @websocket_api.websocket_command(
+            {
+                vol.Required("type"): "grocery_learning/dashboard",
+                vol.Optional("list_id"): vol.Any(str, None),
+            }
+        )
+        @websocket_api.async_response
+        async def _ws_dashboard(hass_inner, connection, msg):
+            # Scope favorites in the payload to whoever is asking.
+            user_id = str(getattr(connection.user, "id", "") or "").strip()
+            token = _REQUEST_USER_ID.set(user_id)
+            try:
+                domain_data = hass_inner.data.get(DOMAIN, {})
+                builder = (
+                    domain_data.get("build_dashboard_payload")
+                    if isinstance(domain_data, Mapping)
+                    else None
+                )
+                if not callable(builder):
+                    await _async_setup_runtime(hass_inner)
+                    domain_data = hass_inner.data.get(DOMAIN, {})
+                    builder = (
+                        domain_data.get("build_dashboard_payload")
+                        if isinstance(domain_data, Mapping)
+                        else None
+                    )
+                if not callable(builder):
+                    connection.send_result(
+                        msg["id"],
+                        GroceryLearningDashboardView._empty_payload("not_ready"),
+                    )
+                    return
+
+                # Use the shared slug normalizer so the dashboard and the action
+                # handlers agree on list-id canonicalization (empty stays empty
+                # so the builder falls back to the active list).
+                requested_list_id = _normalize_category(str(msg.get("list_id") or ""))
+                try:
+                    payload = await builder(requested_list_id or None)
+                except TypeError:
+                    payload = await builder()
+                if not isinstance(payload, dict):
+                    connection.send_result(
+                        msg["id"],
+                        GroceryLearningDashboardView._empty_payload("invalid_payload"),
+                    )
+                    return
+                connection.send_result(
+                    msg["id"], _apply_dashboard_payload_defaults(payload)
+                )
+            except Exception as err:  # pragma: no cover
+                _LOGGER.exception("Failed to build Grocery dashboard payload (ws)")
+                connection.send_result(
+                    msg["id"], GroceryLearningDashboardView._empty_payload(str(err))
+                )
+            finally:
+                _REQUEST_USER_ID.reset(token)
+
+        websocket_api.async_register_command(hass, _ws_dashboard)
+
+        # Writes over the same authenticated WebSocket channel.
+        @websocket_api.websocket_command(
+            {
+                vol.Required("type"): "grocery_learning/action",
+                vol.Required("payload"): dict,
+            }
+        )
+        @websocket_api.async_response
+        async def _ws_action(hass_inner, connection, msg):
+            domain_data = hass_inner.data.get(DOMAIN, {})
+            handler = (
+                domain_data.get("handle_dashboard_action")
+                if isinstance(domain_data, Mapping)
+                else None
+            )
+            if handler is None:
+                await _async_setup_runtime(hass_inner)
+                handler = hass_inner.data.get(DOMAIN, {}).get("handle_dashboard_action")
+            if handler is None:
+                connection.send_result(msg["id"], {"ok": False, "error": "not_ready"})
+                return
+            try:
+                payload = dict(msg["payload"])
+                payload["_request_user_id"] = str(
+                    getattr(connection.user, "id", "") or ""
+                ).strip()
+                result = await handler(payload)
+                connection.send_result(msg["id"], result)
+            except Exception as err:  # pragma: no cover
+                _LOGGER.exception("Failed Grocery dashboard action (ws)")
+                connection.send_result(msg["id"], {"ok": False, "error": str(err)})
+
+        websocket_api.async_register_command(hass, _ws_action)
         data["ws_registered"] = True
 
     if not data.get("panel_registered"):
