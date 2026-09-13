@@ -180,6 +180,7 @@ class LocalListAssistPanel extends LitElement {
     this._wsActive = false;
     this._wsSubscribing = false;
     this._disconnected = false;
+    this._flushing = false;
   }
 
   // --- Home Assistant provided properties ---
@@ -197,6 +198,12 @@ class LocalListAssistPanel extends LitElement {
         this._lastSeenLiveRevision = nextRevision;
         this.load(true);
       }
+    }
+    // hass is (re)available: if a write failed during a connection gap, drain
+    // the queue now so the user doesn't have to tap Retry for a blip that has
+    // already healed.
+    if (hass && this._pendingWrites?.length) {
+      this._flushPendingWrites();
     }
   }
 
@@ -324,7 +331,14 @@ class LocalListAssistPanel extends LitElement {
   // token fresh for us, so this avoids the stale-bearer-token 401s that
   // long-lived app webviews hit against the /api REST endpoints.
   async _callWS(message) {
-    const hass = this._hass;
+    // hass can briefly go away when the app is resumed or the socket is
+    // reconnecting. Rather than fail a tap that lands in that gap, wait a
+    // moment for HA to hand us a fresh hass; a still-missing one after that
+    // falls through to the retry queue (and auto-flushes when hass returns).
+    let hass = this._hass;
+    if (!hass) {
+      hass = await this._waitForHass();
+    }
     if (!hass) throw new Error("Home Assistant connection not ready");
     if (typeof hass.callWS === "function") {
       return hass.callWS(message);
@@ -334,6 +348,30 @@ class LocalListAssistPanel extends LitElement {
       return conn.sendMessagePromise(message);
     }
     throw new Error("Home Assistant WebSocket unavailable");
+  }
+
+  async _waitForHass(timeoutMs = 3000) {
+    const start = Date.now();
+    while (!this._hass && Date.now() - start < timeoutMs) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return this._hass;
+  }
+
+  // Re-send writes that failed during a connection gap once hass is back. Each
+  // one is idempotent (deduped server-side by request_id) and clears itself on
+  // success, so this is safe to call whenever the connection looks healthy.
+  async _flushPendingWrites() {
+    if (this._flushing || !this._pendingWrites.length) return;
+    // Don't hammer a socket we know is down; a present-but-disconnected hass
+    // will get another shot on the next hass update (or on live reconnect).
+    if (this._hass?.connection && this._hass.connection.connected === false) return;
+    this._flushing = true;
+    try {
+      await this.retryPending();
+    } finally {
+      this._flushing = false;
+    }
   }
 
   async apiDashboard(listId) {
