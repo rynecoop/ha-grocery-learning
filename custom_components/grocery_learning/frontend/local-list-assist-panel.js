@@ -1,11 +1,11 @@
-// Entry wrapper for Local List Assist 0.35.5.
+// Entry wrapper for Local List Assist 0.35.6.
 //
 // The real panel implementation is kept in local-list-assist-panel-core.js.
-// This wrapper loads it, then hardens retry behavior for writes that were
-// queued during a transport failure but later reach the backend and receive a
-// permanent rejection (for example item_not_found). Those requests must leave
-// the retry queue or the error banner will remain forever and Retry will resend
-// an operation that can never succeed.
+// This wrapper keeps REST reads/writes independent of the frontend WebSocket,
+// but delegates authentication to Home Assistant's official hass.callApi helper.
+// That helper owns token refresh and authenticated request construction inside
+// both the browser and companion-app webviews, avoiding stale/manual bearer
+// token handling that can otherwise produce intermittent 401 responses.
 
 const _moduleQuery = (() => {
   try {
@@ -30,6 +30,31 @@ const TERMINAL_ACTION_ERRORS = new Set([
 
 const Panel = customElements.get("local-list-assist-panel");
 if (Panel) {
+  // Do not manually read Home Assistant's access token. The companion app and
+  // long-lived browser sessions may refresh/replace it behind the panel. Using
+  // hass.callApi follows the same authenticated REST path as HA's own frontend.
+  Panel.prototype.api = async function (path, method = "GET", body = null) {
+    const hass = this._hass;
+    if (!hass || typeof hass.callApi !== "function") {
+      throw new Error("Home Assistant API unavailable");
+    }
+
+    try {
+      return await hass.callApi(
+        method,
+        `grocery_learning/${path}`,
+        body == null ? undefined : body
+      );
+    } catch (err) {
+      const message =
+        err?.message ||
+        err?.body?.message ||
+        err?.body?.error ||
+        (typeof err === "string" ? err : "Home Assistant API request failed");
+      throw new Error(message);
+    }
+  };
+
   Panel.prototype._isTerminalActionError = function (result) {
     return TERMINAL_ACTION_ERRORS.has(String(result?.error || ""));
   };
