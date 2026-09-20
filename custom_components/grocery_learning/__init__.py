@@ -462,8 +462,8 @@ def _admin_dashboard_name(entry: ConfigEntry | None) -> str:
     return f"{_dashboard_name(entry)} Admin"
 
 
-def _frontend_module_url() -> str:
-    """Return the frontend module URL with a version query for cache busting."""
+def _frontend_version() -> str:
+    """Return the installed integration version used for frontend cache busting."""
     version = "dev"
     try:
         manifest_path = Path(__file__).resolve().parent / "manifest.json"
@@ -471,7 +471,24 @@ def _frontend_module_url() -> str:
         version = str(manifest.get("version", version)).strip() or version
     except Exception:  # pragma: no cover - defensive fallback
         _LOGGER.debug("Could not read manifest version for frontend cache busting", exc_info=True)
-    return f"/grocery_learning-panel/local-list-assist-panel.js?v={version}"
+    return version
+
+
+def _frontend_static_url_prefix() -> str:
+    """Return a versioned static URL prefix so stale panel modules cannot survive updates."""
+    version = re.sub(r"[^A-Za-z0-9_-]+", "-", _frontend_version()).strip("-") or "dev"
+    return f"/grocery_learning-panel-{version}"
+
+
+def _frontend_module_url() -> str:
+    """Return the frontend module URL on a versioned path.
+
+    Query-string cache busting alone is not sufficient in every Home Assistant
+    companion-app/Safari cache layer. Changing the URL path itself guarantees a
+    new ES module request after an integration update.
+    """
+    version = _frontend_version()
+    return f"{_frontend_static_url_prefix()}/local-list-assist-panel.js?v={version}"
 
 
 async def _register_sidebar_panel(hass: HomeAssistant, title: str, *, replace_existing: bool = False) -> None:
@@ -4237,8 +4254,9 @@ lists:
     if not data.get("panel_registered"):
         panel_dir = Path(__file__).resolve().parent / "frontend"
         if not data.get("panel_assets_registered"):
+            static_url_prefix = await hass.async_add_executor_job(_frontend_static_url_prefix)
             await hass.http.async_register_static_paths(
-                [StaticPathConfig("/grocery_learning-panel", str(panel_dir), False)]
+                [StaticPathConfig(static_url_prefix, str(panel_dir), False)]
             )
             data["panel_assets_registered"] = True
         await _register_sidebar_panel(hass, "Local List Assist")
