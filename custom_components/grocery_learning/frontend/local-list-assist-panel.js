@@ -29,8 +29,46 @@ const TERMINAL_ACTION_ERRORS = new Set([
 
 const Panel = customElements.get("local-list-assist-panel");
 if (Panel) {
+  // Home Assistant can assign .hass before the custom element is upgraded.
+  // In that case an own "hass" property shadows the prototype setter, so the
+  // core panel never receives _hass and every transport reports "connection
+  // not ready" even though HA is visibly rendering the panel. Normalize that
+  // pre-upgrade property into the real setter before any API work.
+  Panel.prototype._resolveHass = function () {
+    if (this._hass) return this._hass;
+
+    if (Object.prototype.hasOwnProperty.call(this, "hass")) {
+      const preUpgradeHass = this.hass;
+      try {
+        delete this.hass;
+      } catch (_err) {
+        // If deletion fails, we can still use the captured object below.
+      }
+
+      if (preUpgradeHass) {
+        try {
+          const descriptor = Object.getOwnPropertyDescriptor(Panel.prototype, "hass");
+          if (descriptor?.set) {
+            descriptor.set.call(this, preUpgradeHass);
+          } else {
+            this._hass = preUpgradeHass;
+          }
+        } catch (_err) {
+          this._hass = preUpgradeHass;
+        }
+      }
+    }
+
+    return this._hass || null;
+  };
+
+  const _originalConnectedCallback = Panel.prototype.connectedCallback;
+  Panel.prototype.connectedCallback = function () {
+    this._resolveHass();
+    return _originalConnectedCallback?.call(this);
+  };
   Panel.prototype._callLlaWS = async function (message) {
-    const hass = this._hass;
+    const hass = this._resolveHass();
     if (!hass) throw new Error("Home Assistant connection not ready");
 
     if (typeof hass.callWS === "function") {
@@ -46,7 +84,7 @@ if (Panel) {
   };
 
   Panel.prototype._callLlaRest = async function (path, method = "GET", body = null, retryOn401 = true) {
-    const hass = this._hass;
+    const hass = this._resolveHass();
     if (!hass) throw new Error("Home Assistant connection not ready");
 
     if (typeof hass.callApi === "function") {
