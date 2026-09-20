@@ -1,8 +1,10 @@
-// Entry wrapper for Local List Assist 0.35.7.
+// Entry wrapper for Local List Assist 0.35.9.
 //
-// Keep panel reads/writes on REST so a frontend WebSocket outage does not take
-// the list down, but use Home Assistant's live Auth object whenever the custom
-// panel hass object does not expose hass.callApi directly.
+// Transport strategy:
+// 1) Prefer Home Assistant's authenticated WebSocket for reads/writes.
+// 2) If the socket is temporarily unavailable, fall back to authenticated REST.
+// This avoids both failure modes seen in the field: stale/missing REST auth helpers
+// and transient WebSocket disconnects.
 
 const _moduleQuery = (() => {
   try {
@@ -27,47 +29,43 @@ const TERMINAL_ACTION_ERRORS = new Set([
 
 const Panel = customElements.get("local-list-assist-panel");
 if (Panel) {
-  Panel.prototype.api = async function (path, method = "GET", body = null, retryOn401 = true) {
+  Panel.prototype._callLlaWS = async function (message) {
     const hass = this._hass;
-    if (!hass) {
-      throw new Error("Home Assistant connection not ready");
+    if (!hass) throw new Error("Home Assistant connection not ready");
+
+    if (typeof hass.callWS === "function") {
+      return hass.callWS(message);
     }
 
-    // Full Home Assistant objects expose callApi. Prefer it when available.
+    const connection = hass.connection;
+    if (connection && typeof connection.sendMessagePromise === "function") {
+      return connection.sendMessagePromise(message);
+    }
+
+    throw new Error("Home Assistant WebSocket unavailable");
+  };
+
+  Panel.prototype._callLlaRest = async function (path, method = "GET", body = null, retryOn401 = true) {
+    const hass = this._hass;
+    if (!hass) throw new Error("Home Assistant connection not ready");
+
     if (typeof hass.callApi === "function") {
-      try {
-        return await hass.callApi(
-          method,
-          `grocery_learning/${path}`,
-          body == null ? undefined : body
-        );
-      } catch (err) {
-        const message =
-          err?.message ||
-          err?.body?.message ||
-          err?.body?.error ||
-          err?.error ||
-          (typeof err === "string" ? err : "Home Assistant API request failed");
-        throw new Error(message);
-      }
+      return hass.callApi(
+        method,
+        `grocery_learning/${path}`,
+        body == null ? undefined : body
+      );
     }
 
-    // Custom-panel hass objects in some HA/companion-app contexts omit callApi
-    // but still carry the live Auth object on the connection. Mirror HA's own
-    // fetchWithAuth behavior using that object instead of caching a bearer token.
     const auth = hass.auth || hass.connection?.options?.auth;
-    if (!auth) {
-      throw new Error("Home Assistant authentication unavailable");
-    }
+    if (!auth) throw new Error("Home Assistant authentication unavailable");
 
     if (auth.expired && typeof auth.refreshAccessToken === "function") {
       await auth.refreshAccessToken();
     }
 
     const headers = { "Content-Type": "application/json;charset=UTF-8" };
-    if (auth.accessToken) {
-      headers.Authorization = `Bearer ${auth.accessToken}`;
-    }
+    if (auth.accessToken) headers.Authorization = `Bearer ${auth.accessToken}`;
 
     const res = await fetch(`/api/grocery_learning/${path}`, {
       method,
@@ -78,7 +76,7 @@ if (Panel) {
 
     if (res.status === 401 && retryOn401 && typeof auth.refreshAccessToken === "function") {
       await auth.refreshAccessToken();
-      return this.api(path, method, body, false);
+      return this._callLlaRest(path, method, body, false);
     }
 
     const text = await res.text();
@@ -93,6 +91,43 @@ if (Panel) {
       throw new Error(data?.error || data?.message || text || `HTTP ${res.status}`);
     }
     return data;
+  };
+
+  Panel.prototype.api = async function (path, method = "GET", body = null) {
+    let wsError = null;
+
+    try {
+      if (path.startsWith("dashboard")) {
+        const query = path.includes("?") ? path.slice(path.indexOf("?") + 1) : "";
+        const params = new URLSearchParams(query);
+        const listId = params.get("list_id") || undefined;
+        return await this._callLlaWS({
+          type: "grocery_learning/dashboard",
+          ...(listId ? { list_id: listId } : {}),
+        });
+      }
+
+      if (path === "action" && method === "POST") {
+        return await this._callLlaWS({
+          type: "grocery_learning/action",
+          payload: body || {},
+        });
+      }
+    } catch (err) {
+      wsError = err;
+    }
+
+    try {
+      return await this._callLlaRest(path, method, body);
+    } catch (restErr) {
+      const wsMessage = wsError?.message || (wsError ? String(wsError) : "");
+      const restMessage = restErr?.message || String(restErr);
+      throw new Error(
+        wsMessage
+          ? `Home Assistant connection failed (WebSocket: ${wsMessage}; REST: ${restMessage})`
+          : restMessage
+      );
+    }
   };
 
   Panel.prototype._isTerminalActionError = function (result) {
