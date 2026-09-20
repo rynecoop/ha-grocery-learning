@@ -1,11 +1,8 @@
-// Entry wrapper for Local List Assist 0.35.6.
+// Entry wrapper for Local List Assist 0.35.7.
 //
-// The real panel implementation is kept in local-list-assist-panel-core.js.
-// This wrapper keeps REST reads/writes independent of the frontend WebSocket,
-// but delegates authentication to Home Assistant's official hass.callApi helper.
-// That helper owns token refresh and authenticated request construction inside
-// both the browser and companion-app webviews, avoiding stale/manual bearer
-// token handling that can otherwise produce intermittent 401 responses.
+// Keep panel reads/writes on REST so a frontend WebSocket outage does not take
+// the list down, but use Home Assistant's live Auth object whenever the custom
+// panel hass object does not expose hass.callApi directly.
 
 const _moduleQuery = (() => {
   try {
@@ -30,40 +27,78 @@ const TERMINAL_ACTION_ERRORS = new Set([
 
 const Panel = customElements.get("local-list-assist-panel");
 if (Panel) {
-  // Do not manually read Home Assistant's access token. The companion app and
-  // long-lived browser sessions may refresh/replace it behind the panel. Using
-  // hass.callApi follows the same authenticated REST path as HA's own frontend.
-  Panel.prototype.api = async function (path, method = "GET", body = null) {
+  Panel.prototype.api = async function (path, method = "GET", body = null, retryOn401 = true) {
     const hass = this._hass;
-    if (!hass || typeof hass.callApi !== "function") {
-      throw new Error("Home Assistant API unavailable");
+    if (!hass) {
+      throw new Error("Home Assistant connection not ready");
     }
 
-    try {
-      return await hass.callApi(
-        method,
-        `grocery_learning/${path}`,
-        body == null ? undefined : body
-      );
-    } catch (err) {
-      const message =
-        err?.message ||
-        err?.body?.message ||
-        err?.body?.error ||
-        (typeof err === "string" ? err : "Home Assistant API request failed");
-      throw new Error(message);
+    // Full Home Assistant objects expose callApi. Prefer it when available.
+    if (typeof hass.callApi === "function") {
+      try {
+        return await hass.callApi(
+          method,
+          `grocery_learning/${path}`,
+          body == null ? undefined : body
+        );
+      } catch (err) {
+        const message =
+          err?.message ||
+          err?.body?.message ||
+          err?.body?.error ||
+          err?.error ||
+          (typeof err === "string" ? err : "Home Assistant API request failed");
+        throw new Error(message);
+      }
     }
+
+    // Custom-panel hass objects in some HA/companion-app contexts omit callApi
+    // but still carry the live Auth object on the connection. Mirror HA's own
+    // fetchWithAuth behavior using that object instead of caching a bearer token.
+    const auth = hass.auth || hass.connection?.options?.auth;
+    if (!auth) {
+      throw new Error("Home Assistant authentication unavailable");
+    }
+
+    if (auth.expired && typeof auth.refreshAccessToken === "function") {
+      await auth.refreshAccessToken();
+    }
+
+    const headers = { "Content-Type": "application/json;charset=UTF-8" };
+    if (auth.accessToken) {
+      headers.Authorization = `Bearer ${auth.accessToken}`;
+    }
+
+    const res = await fetch(`/api/grocery_learning/${path}`, {
+      method,
+      headers,
+      body: body == null ? undefined : JSON.stringify(body),
+      credentials: "same-origin",
+    });
+
+    if (res.status === 401 && retryOn401 && typeof auth.refreshAccessToken === "function") {
+      await auth.refreshAccessToken();
+      return this.api(path, method, body, false);
+    }
+
+    const text = await res.text();
+    let data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (_err) {
+      data = { error: text || `HTTP ${res.status}` };
+    }
+
+    if (!res.ok) {
+      throw new Error(data?.error || data?.message || text || `HTTP ${res.status}`);
+    }
+    return data;
   };
 
   Panel.prototype._isTerminalActionError = function (result) {
     return TERMINAL_ACTION_ERRORS.has(String(result?.error || ""));
   };
 
-  // The core REST transport intentionally keeps failed writes queued so they can
-  // be retried safely using the same request_id. A later retry that reaches the
-  // server can still be rejected permanently because state changed while the
-  // client was offline (e.g. another client already removed the item). Clear
-  // only those terminal failures; transient runtime/startup errors stay queued.
   Panel.prototype.retryPending = async function () {
     const items = [...this._pendingWrites];
     this._error = "";
