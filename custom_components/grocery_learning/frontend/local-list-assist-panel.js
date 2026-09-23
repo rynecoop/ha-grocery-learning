@@ -1,4 +1,4 @@
-// Entry wrapper for Local List Assist 0.35.9.
+// Entry wrapper for Local List Assist 0.35.11.
 //
 // Transport strategy:
 // 1) Prefer Home Assistant's authenticated WebSocket for reads/writes.
@@ -29,6 +29,39 @@ const TERMINAL_ACTION_ERRORS = new Set([
 
 const Panel = customElements.get("local-list-assist-panel");
 if (Panel) {
+  const _baseHassDescriptor = Object.getOwnPropertyDescriptor(Panel.prototype, "hass");
+  const _baseHassSetter = _baseHassDescriptor?.set;
+  const _baseHassGetter = _baseHassDescriptor?.get;
+  const _baseConnectedCallback = Panel.prototype.connectedCallback;
+  const _baseDisconnectedCallback = Panel.prototype.disconnectedCallback;
+  const _baseLoad = Panel.prototype.load;
+
+  Panel.prototype._scheduleInitialSync = function (delay = 250) {
+    if (this._disconnected) return;
+    if (this._initialSyncTimer) window.clearTimeout(this._initialSyncTimer);
+    this._initialSyncTimer = window.setTimeout(async () => {
+      this._initialSyncTimer = null;
+      if (this._disconnected || !this._resolveHass()) return;
+
+      if (!this._wsActive && !this._wsSubscribing) {
+        this.subscribeLiveUpdates();
+      }
+
+      if (!this._state || this._error) {
+        await this.load(true);
+      }
+    }, delay);
+  };
+
+  Panel.prototype._scheduleReconnectRetry = function () {
+    if (this._disconnected || (this._state && !this._error)) {
+      this._initialSyncRetryMs = 250;
+      return;
+    }
+    const delay = Math.min(Number(this._initialSyncRetryMs || 250), 5000);
+    this._initialSyncRetryMs = Math.min(delay * 2, 5000);
+    this._scheduleInitialSync(delay);
+  };
   // Home Assistant can assign .hass before the custom element is upgraded.
   // In that case an own "hass" property shadows the prototype setter, so the
   // core panel never receives _hass and every transport reports "connection
@@ -47,9 +80,8 @@ if (Panel) {
 
       if (preUpgradeHass) {
         try {
-          const descriptor = Object.getOwnPropertyDescriptor(Panel.prototype, "hass");
-          if (descriptor?.set) {
-            descriptor.set.call(this, preUpgradeHass);
+          if (_baseHassSetter) {
+            _baseHassSetter.call(this, preUpgradeHass);
           } else {
             this._hass = preUpgradeHass;
           }
@@ -62,10 +94,50 @@ if (Panel) {
     return this._hass || null;
   };
 
-  const _originalConnectedCallback = Panel.prototype.connectedCallback;
+  Object.defineProperty(Panel.prototype, "hass", {
+    configurable: true,
+    enumerable: _baseHassDescriptor?.enumerable ?? false,
+    get: function () {
+      return _baseHassGetter ? _baseHassGetter.call(this) : this._hass;
+    },
+    set: function (hass) {
+      if (_baseHassSetter) {
+        _baseHassSetter.call(this, hass);
+      } else {
+        this._hass = hass;
+      }
+      if (!this._wsActive && !this._wsSubscribing) {
+        this.subscribeLiveUpdates();
+      }
+      if (!this._state || this._error) {
+        this._scheduleInitialSync(100);
+      }
+    },
+  });
+
   Panel.prototype.connectedCallback = function () {
+    this._disconnected = false;
     this._resolveHass();
-    return _originalConnectedCallback?.call(this);
+    const result = _baseConnectedCallback?.call(this);
+    this._scheduleInitialSync(100);
+    return result;
+  };
+
+  Panel.prototype.disconnectedCallback = function () {
+    if (this._initialSyncTimer) {
+      window.clearTimeout(this._initialSyncTimer);
+      this._initialSyncTimer = null;
+    }
+    return _baseDisconnectedCallback?.call(this);
+  };
+
+  Panel.prototype.load = async function (...args) {
+    await _baseLoad.apply(this, args);
+    if (this._state && !this._error) {
+      this._initialSyncRetryMs = 250;
+    } else {
+      this._scheduleReconnectRetry();
+    }
   };
   Panel.prototype._callLlaWS = async function (message) {
     const hass = this._resolveHass();
