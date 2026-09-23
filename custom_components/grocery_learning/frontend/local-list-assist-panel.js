@@ -47,14 +47,14 @@ if (Panel) {
         this.subscribeLiveUpdates();
       }
 
-      if (!this._state || this._error) {
+      if (!this._state) {
         await this.load(true);
       }
     }, delay);
   };
 
   Panel.prototype._scheduleReconnectRetry = function () {
-    if (this._disconnected || (this._state && !this._error)) {
+    if (this._disconnected || this._state) {
       this._initialSyncRetryMs = 250;
       return;
     }
@@ -109,7 +109,7 @@ if (Panel) {
       if (!this._wsActive && !this._wsSubscribing) {
         this.subscribeLiveUpdates();
       }
-      if (!this._state || this._error) {
+      if (!this._state) {
         this._scheduleInitialSync(100);
       }
     },
@@ -133,7 +133,7 @@ if (Panel) {
 
   Panel.prototype.load = async function (...args) {
     await _baseLoad.apply(this, args);
-    if (this._state && !this._error) {
+    if (this._state) {
       this._initialSyncRetryMs = 250;
     } else {
       this._scheduleReconnectRetry();
