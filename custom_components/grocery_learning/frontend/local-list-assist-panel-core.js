@@ -43,12 +43,24 @@ const UNDO_TIMEOUT_MS = 6000;
 // one is caught in the editor instead of being sent (or queued offline).
 const PASTE_MAX_ITEMS = 200;
 
+const TERMINAL_ACTION_ERRORS = new Set([
+  "missing_url", "invalid_url", "no_recipe", "not_a_page", "too_large", "blocked",
+  "no_items", "too_many",
+  "list_not_found", "list_exists", "multilist_disabled", "cannot_move_default",
+  "invalid_color", "invalid_order", "missing_name",
+  "missing_item_reference", "item_not_found", "item_summary_missing",
+  "unknown_meal", "missing_label", "duplicate", "invalid", "unknown_category",
+  "no_user", "invalid_backup", "unknown_action",
+]);
+
 class LocalListAssistPanel extends LitElement {
   static properties = {
     _state: { state: true },
     _error: { state: true },
     _pendingWrites: { state: true },
     _loading: { state: true },
+    _syncStatus: { state: true },
+    _loadError: { state: true },
     _view: { state: true },
     _narrow: { state: true },
     _configOpen: { state: true },
@@ -179,25 +191,40 @@ class LocalListAssistPanel extends LitElement {
     this._wsUnsub = null;
     this._wsActive = false;
     this._wsSubscribing = false;
-    this._disconnected = false;
+    this._disconnected = true;
+    this._connection = null;
+    this._syncEpoch = 0;
+    this._syncTimer = null;
+    this._syncRetryMs = 250;
+    this._needsRefresh = true;
+    this._loadError = "";
+    this._syncStatus = "Connecting…";
+    this._onConnectionReady = () => this._retrySync();
+    this._onConnectionLost = () => this._updateSyncStatus();
   }
 
   // --- Home Assistant provided properties ---
   set hass(hass) {
     const first = !this._hass;
     this._hass = hass;
-    if (first) {
-      this._lastSeenLiveRevision = this.currentLiveRevision();
-      this.subscribeLiveUpdates();
-      this.load();
+    if (this._disconnected || !this.isConnected) return;
+    const changed = this._bindConnection();
+    if (first || changed) {
+      this._retrySync();
     } else if (!this._wsActive) {
-      // Fallback path: diff the revision sensor when the WebSocket push isn't active.
+      // Revision sensor remains a fallback when push is unavailable.
       const nextRevision = this.currentLiveRevision();
       if (nextRevision && nextRevision !== this._lastSeenLiveRevision) {
         this._lastSeenLiveRevision = nextRevision;
         this.load(true);
       }
+      // Don't reset a pending retry on every unrelated hass update.
+      this._scheduleSync();
     }
+  }
+
+  _resolveHass() {
+    return this._hass;
   }
 
   get hass() {
@@ -216,51 +243,136 @@ class LocalListAssistPanel extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._disconnected = false;
-    if (this._hass && !this._wsUnsub) {
-      this.subscribeLiveUpdates();
+    // Properties assigned before custom-element upgrade shadow the setter.
+    if (Object.prototype.hasOwnProperty.call(this, "hass")) {
+      const hass = this.hass;
+      delete this.hass;
+      this._hass = hass;
     }
+    this._bindConnection();
+    this._retrySync();
   }
 
   disconnectedCallback() {
-    super.disconnectedCallback();
     this._disconnected = true;
-    if (this._wsUnsub) {
-      try {
-        this._wsUnsub();
-      } catch (_err) {
-        // ignore teardown errors
-      }
-      this._wsUnsub = null;
-    }
-    this._wsActive = false;
+    this._releaseConnection();
+    super.disconnectedCallback();
     if (this._undoTimer) {
       window.clearTimeout(this._undoTimer);
       this._undoTimer = null;
     }
   }
 
-  // --- live updates ---
-  async subscribeLiveUpdates() {
-    if (this._wsUnsub || this._wsSubscribing || !this._hass?.connection?.subscribeMessage) {
+  _unsubscribe(unsub) {
+    // HA's unsubscribe can reject asynchronously during a disconnect.
+    try { Promise.resolve(unsub()).catch(() => {}); } catch (_err) { /* already closed */ }
+  }
+
+  _releaseConnection() {
+    this._syncEpoch += 1;
+    window.clearTimeout(this._syncTimer);
+    this._syncTimer = null;
+    this._connection?.removeEventListener?.("ready", this._onConnectionReady);
+    this._connection?.removeEventListener?.("disconnected", this._onConnectionLost);
+    this._connection?.removeEventListener?.("reconnect-error", this._onConnectionLost);
+    if (this._wsUnsub) this._unsubscribe(this._wsUnsub);
+    this._connection = null;
+    this._wsUnsub = null;
+    this._wsActive = false;
+    this._wsSubscribing = false;
+    this._loading = false;
+  }
+
+  _bindConnection() {
+    const connection = this._hass?.connection || null;
+    if (connection === this._connection) return false;
+    this._releaseConnection();
+    this._connection = connection;
+    connection?.addEventListener?.("ready", this._onConnectionReady);
+    connection?.addEventListener?.("disconnected", this._onConnectionLost);
+    connection?.addEventListener?.("reconnect-error", this._onConnectionLost);
+    return true;
+  }
+
+  _updateSyncStatus() {
+    this._syncStatus = !this._hass || this._connection?.connected === false
+      ? "Reconnecting…"
+      : this._loadError
+        ? "Unable to refresh. Retrying…"
+        : !this._wsActive ? "Connecting live updates…" : "";
+  }
+
+  _retrySync() {
+    window.clearTimeout(this._syncTimer);
+    this._syncTimer = null;
+    this._syncRetryMs = 250;
+    this._needsRefresh = true;
+    this._runSync();
+  }
+
+  _runSync() {
+    if (this._disconnected || !this._hass) return;
+    // HA owns transport reconnection and re-establishes existing subscriptions.
+    // Only retry subscriptions that have never been established for this lifecycle.
+    if (!this._wsActive && !this._wsSubscribing) this.subscribeLiveUpdates();
+    if (this._needsRefresh && !this._loading) this.load(true);
+    this._updateSyncStatus();
+  }
+
+  _scheduleSync() {
+    if (this._disconnected || !this._hass) return;
+    const pending = (this._needsRefresh && !this._loading)
+      || (!this._wsActive && !this._wsSubscribing);
+    if (!pending) {
+      if (!this._needsRefresh && this._wsActive) {
+        window.clearTimeout(this._syncTimer);
+        this._syncTimer = null;
+        this._syncRetryMs = 250;
+      }
       return;
     }
+    if (this._syncTimer !== null) return;
+    const delay = this._syncRetryMs;
+    this._syncRetryMs = Math.min(delay * 2, 5000);
+    this._syncTimer = window.setTimeout(() => {
+      this._syncTimer = null;
+      this._runSync();
+    }, delay);
+  }
+
+  // --- live updates ---
+  async subscribeLiveUpdates() {
+    if (this._disconnected || this._wsUnsub || this._wsSubscribing) return;
+    const connection = this._connection;
+    if (!connection?.subscribeMessage || connection.connected === false) {
+      this._scheduleSync();
+      return;
+    }
+    const epoch = this._syncEpoch;
     this._wsSubscribing = true;
     try {
-      const unsub = await this._hass.connection.subscribeMessage(
-        (event) => this.onLiveUpdate(event),
+      const unsub = await connection.subscribeMessage(
+        (event) => {
+          if (!this._disconnected && epoch === this._syncEpoch) this.onLiveUpdate(event);
+        },
         { type: "grocery_learning/subscribe_updates" }
       );
-      if (this._disconnected) {
-        try { unsub(); } catch (_e) {}
+      if (this._disconnected || epoch !== this._syncEpoch) {
+        this._unsubscribe(unsub);
         return;
       }
       this._wsUnsub = unsub;
       this._wsActive = true;
     } catch (_err) {
+      if (epoch !== this._syncEpoch) return;
       this._wsActive = false;
       this._wsUnsub = null;
     } finally {
-      this._wsSubscribing = false;
+      if (epoch === this._syncEpoch) {
+        this._wsSubscribing = false;
+        this._updateSyncStatus();
+        this._scheduleSync();
+      }
     }
   }
 
@@ -318,61 +430,57 @@ class LocalListAssistPanel extends LitElement {
     return this._state?.system?.active_list_id || this.getPreferredListId() || "default";
   }
 
-  // --- API ---
-  get _token() {
-    const auth = this._hass?.auth;
-    // Prefer the Auth object's live getter — it reflects a refreshed token.
-    // data.access_token is the canonical snake_case field; the rest are
-    // defensive fallbacks for older/edge hass shapes.
-    return (
-      auth?.accessToken ||
-      auth?.data?.access_token ||
-      auth?.data?.accessToken ||
-      this._hass?.connection?.options?.auth?.accessToken ||
-      ""
-    );
-  }
+  // --- API: authenticated WebSocket with REST fallback ---
+  async _callLlaWS(message) {
+    const hass = this._resolveHass();
+    if (!hass) throw new Error("Home Assistant connection not ready");
 
-  async _ensureFreshToken() {
-    // HA access tokens are short-lived; refresh proactively when expired so we
-    // don't send a dead token (the usual cause of intermittent 401s that made
-    // an add/remove silently not take).
-    const auth = this._hass?.auth;
-    if (auth && auth.expired && typeof auth.refreshAccessToken === "function") {
-      try {
-        await auth.refreshAccessToken();
-      } catch (_err) {
-        // Fall through — the request may still succeed, or we retry on 401.
-      }
+    if (typeof hass.callWS === "function") {
+      return hass.callWS(message);
     }
-  }
 
-  _headers() {
-    const headers = { "Content-Type": "application/json" };
-    if (this._token) {
-      headers.Authorization = `Bearer ${this._token}`;
+    const connection = hass.connection;
+    if (connection && typeof connection.sendMessagePromise === "function") {
+      return connection.sendMessagePromise(message);
     }
-    return headers;
+
+    throw new Error("Home Assistant WebSocket unavailable");
   }
 
-  async api(path, method = "GET", body = null, retryOn401 = true) {
-    await this._ensureFreshToken();
+  async _callLlaRest(path, method = "GET", body = null, retryOn401 = true) {
+    const hass = this._resolveHass();
+    if (!hass) throw new Error("Home Assistant connection not ready");
+
+    if (typeof hass.callApi === "function") {
+      return hass.callApi(
+        method,
+        `grocery_learning/${path}`,
+        body == null ? undefined : body
+      );
+    }
+
+    const auth = hass.auth || hass.connection?.options?.auth;
+    if (!auth) throw new Error("Home Assistant authentication unavailable");
+
+    if (auth.expired && typeof auth.refreshAccessToken === "function") {
+      await auth.refreshAccessToken();
+    }
+
+    const headers = { "Content-Type": "application/json;charset=UTF-8" };
+    if (auth.accessToken) headers.Authorization = `Bearer ${auth.accessToken}`;
+
     const res = await fetch(`/api/grocery_learning/${path}`, {
       method,
-      headers: this._headers(),
-      body: body ? JSON.stringify(body) : null,
+      headers,
+      body: body == null ? undefined : JSON.stringify(body),
       credentials: "same-origin",
     });
-    // A 401 usually means the token expired between our check and the server's
-    // validation. Force a refresh and retry once with the fresh token.
-    if (res.status === 401 && retryOn401 && this._hass?.auth?.refreshAccessToken) {
-      try {
-        await this._hass.auth.refreshAccessToken();
-      } catch (_err) {
-        /* retry anyway with whatever token we have */
-      }
-      return this.api(path, method, body, false);
+
+    if (res.status === 401 && retryOn401 && typeof auth.refreshAccessToken === "function") {
+      await auth.refreshAccessToken();
+      return this._callLlaRest(path, method, body, false);
     }
+
     const text = await res.text();
     let data = {};
     try {
@@ -380,30 +488,83 @@ class LocalListAssistPanel extends LitElement {
     } catch (_err) {
       data = { error: text || `HTTP ${res.status}` };
     }
+
     if (!res.ok) {
-      throw new Error(data.error || text || `HTTP ${res.status}`);
+      throw new Error(data?.error || data?.message || text || `HTTP ${res.status}`);
     }
     return data;
   }
 
+  async api(path, method = "GET", body = null) {
+    let wsError = null;
+
+    try {
+      if (path.startsWith("dashboard")) {
+        const query = path.includes("?") ? path.slice(path.indexOf("?") + 1) : "";
+        const params = new URLSearchParams(query);
+        const listId = params.get("list_id") || undefined;
+        return await this._callLlaWS({
+          type: "grocery_learning/dashboard",
+          ...(listId ? { list_id: listId } : {}),
+        });
+      }
+
+      if (path === "action" && method === "POST") {
+        return await this._callLlaWS({
+          type: "grocery_learning/action",
+          payload: body || {},
+        });
+      }
+    } catch (err) {
+      wsError = err;
+    }
+
+    try {
+      return await this._callLlaRest(path, method, body);
+    } catch (restErr) {
+      const wsMessage = wsError?.message || (wsError ? String(wsError) : "");
+      const restMessage = restErr?.message || String(restErr);
+      throw new Error(
+        wsMessage
+          ? `Home Assistant connection failed (WebSocket: ${wsMessage}; REST: ${restMessage})`
+          : restMessage
+      );
+    }
+  }
+
   async load(_forceRender = false) {
-    if (!this._hass || this._loading) {
+    if (this._disconnected || !this._hass) return;
+    if (this._loading) {
+      // A live update during a request needs one follow-up read.
+      this._needsRefresh = true;
       return;
     }
+    const epoch = this._syncEpoch;
+    this._needsRefresh = false;
     this._loading = true;
     try {
       const requestedListId = this.getPreferredListId() || "default";
       const state = await this.api(`dashboard?list_id=${encodeURIComponent(requestedListId)}`);
+      if (this._disconnected || epoch !== this._syncEpoch) return;
+      if (!state || typeof state !== "object" || state.error) {
+        throw new Error(state?.error || "No dashboard data returned");
+      }
       this._state = state;
       this.setPreferredListId(state?.system?.active_list_id || requestedListId);
       this.syncDrafts();
-      this._error = state?.error || "";
+      this._loadError = state?.error || "";
       this.rememberRevisionFromState();
     } catch (err) {
-      this._error = err.message || String(err);
+      if (epoch !== this._syncEpoch) return;
+      this._loadError = err.message || String(err);
+      this._needsRefresh = true;
     } finally {
-      this._loading = false;
-      this.requestUpdate();
+      if (epoch === this._syncEpoch) {
+        this._loading = false;
+        this._updateSyncStatus();
+        this._scheduleSync();
+        this.requestUpdate();
+      }
     }
   }
 
@@ -510,14 +671,20 @@ class LocalListAssistPanel extends LitElement {
     }
   }
 
+  _isTerminalActionError(result) {
+    return TERMINAL_ACTION_ERRORS.has(String(result?.error || ""));
+  }
+
   async retryPending() {
-    // Snapshot and re-send each failed write; each one clears itself on success
-    // (and a still-failing one stays queued). Sequential to keep list order.
     const items = [...this._pendingWrites];
     this._error = "";
     for (const item of items) {
-      await this.act(item.payload);
+      const result = await this.act(item.payload);
+      if (result && result.ok === false && this._isTerminalActionError(result)) {
+        this._removePending(item.id);
+      }
     }
+    this.requestUpdate();
   }
 
   // --- drafts ---
@@ -1366,8 +1533,11 @@ class LocalListAssistPanel extends LitElement {
   // --- templates ---
   render() {
     const state = this._state;
-    if (!state && this._loading) {
-      return html`<div class="app"><div class="app-scroll"><div class="wrap"><section class="hero"><div class="empty">Loading…</div></section></div></div></div>`;
+    if (!state) {
+      return html`<div class="app"><div class="app-scroll"><div class="wrap"><section class="hero">
+        <div class="empty" role="status">${this._loadError ? "Unable to load your lists. Retrying…" : "Connecting…"}</div>
+        <button class="btn" ?disabled=${this._loading} @click=${() => this._retrySync()}>Retry now</button>
+      </section></div></div></div>`;
     }
     const multilist = !!state?.settings?.experimental_multilist;
     const dashboardName = state?.settings?.dashboard_name || "Local List Assist";
@@ -1389,7 +1559,13 @@ class LocalListAssistPanel extends LitElement {
 
     return html`
       <div class="app" style=${styleMap({ "--accent": activeListColor })} @keydown=${(e) => this._onKeyDown(e)}>
-        <div class="app-scroll">${screen}</div>
+        <div class="app-scroll">
+          ${this._syncStatus ? html`<div class="sync-notice" role="status">
+            <span>${this._syncStatus} Your list stays available; changes may need retrying.</span>
+            <button class="btn compact" ?disabled=${this._loading} @click=${() => this._retrySync()}>Retry now</button>
+          </div>` : nothing}
+          ${screen}
+        </div>
         ${this._menuOpen ? this._menuTemplate(multilist) : nothing}
         ${this._configOpen ? this._appSettingsTemplate(state) : nothing}
         ${this._createListOpen && multilist ? this._createListTemplate(state) : nothing}
@@ -3005,6 +3181,8 @@ class LocalListAssistPanel extends LitElement {
     * { box-sizing: border-box; }
     .app { --accent: #2c78ba; }
     .app-scroll { padding-bottom: 82px; }
+    .sync-notice .btn { flex-shrink: 0; }
+    .sync-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; background: var(--lla-surface); color: var(--lla-text); border-bottom: 1px solid var(--lla-border); font-size: 14px; }
     .page-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
     .bottom-nav {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;

@@ -47,6 +47,12 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py"
       - name: Run frontend helper tests
         run: node --experimental-default-type=module --test tests/test_state_helpers.mjs
+      - name: Install browser test dependencies
+        run: |
+          npm install --no-save --package-lock=false playwright@1.58.2
+          npx playwright install --with-deps chromium
+      - name: Run panel browser tests
+        run: node --test tests/test_panel_connection.mjs
       - name: HACS validation
         uses: hacs/action@main
         with:
