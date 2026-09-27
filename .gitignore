@@ -3,3 +3,4 @@ __pycache__/
 *.pyo
 *.swp
 .DS_Store
+node_modules/
