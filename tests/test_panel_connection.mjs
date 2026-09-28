@@ -19,7 +19,7 @@ before(async () => {
     const path = new URL(req.url, "http://localhost").pathname;
     if (path === "/") {
       res.setHeader("Content-Type", "text/html");
-      res.end("<!doctype html><html><body></body></html>");
+      res.end(`<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0}</style></head><body></body></html>`);
       return;
     }
     try {
@@ -42,8 +42,8 @@ after(async () => {
   await new Promise(resolve => server?.close(resolve));
 });
 
-async function fixture(t) {
-  const page = await browser.newPage();
+async function fixture(t, options = {}) {
+  const page = await browser.newPage(options);
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   t.after(async () => { await page.close(); assert.deepEqual(errors, []); });
@@ -300,4 +300,125 @@ test("failed reconnect refresh keeps old data and retries without a new hass ass
   await page.clock.runFor(251);
   await flush(page);
   assert.deepEqual(await page.evaluate(() => [panel._state.revision, conn.subscriptions, panel._syncStatus]), ["recovered", 1, ""]);
+});
+
+// Simulate HA's documented sidebar event receiver outside an extra shadow root.
+// This checks the integration boundary without depending on private HA methods.
+async function navigationHost(page) {
+  await page.evaluate(() => {
+    const host = document.createElement("section");
+    document.body.append(host);
+    host.attachShadow({ mode: "open" }).append(panel);
+    window.navigationEvents = [];
+    window.windowEvents = 0;
+    window.backCalls = 0;
+    window.sidebarOpen = false;
+    history.pushState({}, "", "/grocery-app");
+    history.back = () => { backCalls++; };
+    document.addEventListener("hass-toggle-menu", event => {
+      navigationEvents.push({ open: event.detail?.open, composed: event.composed, bubbles: event.bubbles });
+      sidebarOpen = event.detail?.open ?? !sidebarOpen;
+    });
+    window.addEventListener("hass-toggle-menu", () => { windowEvents++; });
+  });
+  await flush(page);
+}
+
+for (const [name, options] of [
+  ["small phone", { viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true }],
+  ["phone landscape", { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true }],
+  ["desktop with hidden sidebar", { viewport: { width: 1280, height: 900 } }],
+]) {
+  test(`Home Assistant menu is reachable from every view on ${name}`, async t => {
+    const page = await fixture(t, options);
+    await page.evaluate(() => mount());
+    await navigationHost(page);
+    // Do not rely on narrow being supplied correctly or a docked desktop sidebar.
+    await page.evaluate(() => { panel.narrow = false; hass.dockedSidebar = "always_hidden"; });
+    const activate = locator => options.hasTouch ? locator.tap() : locator.click();
+    for (const label of ["List", "Shop", "Meals", "Plan"]) {
+      await activate(page.getByRole("button", { name: label, exact: true }));
+      await flush(page);
+      const button = page.getByRole("button", { name: "Open Home Assistant menu", exact: true });
+      assert.equal(await button.count(), 1);
+      const box = await button.boundingBox();
+      assert.ok(box.height >= 44 && box.width >= 44);
+      await activate(button);
+      assert.equal(await page.evaluate(() => sidebarOpen), true);
+    }
+    await activate(page.getByRole("button", { name: "List", exact: true }));
+    await activate(page.getByRole("button", { name: "Open menu", exact: true }));
+    await activate(page.getByRole("button", { name: "Activity", exact: true }));
+    await activate(page.getByRole("button", { name: "Open Home Assistant menu", exact: true }));
+    assert.deepEqual(await page.evaluate(() => ({ events: navigationEvents, count: windowEvents, back: backCalls, path: location.pathname })), {
+      events: Array(5).fill({ open: true, composed: true, bubbles: true }), count: 5, back: 0, path: "/grocery-app",
+    });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  });
+}
+
+test("Home Assistant navigation stays available before hass, during loading, and after a load failure", async t => {
+  const page = await fixture(t, { viewport: { width: 390, height: 844 } });
+  await page.evaluate(async () => {
+    await import("/local-list-assist-panel.js?v=test");
+    window.panel = document.createElement("local-list-assist-panel");
+    document.body.append(panel);
+  });
+  await navigationHost(page);
+  const button = page.getByRole("button", { name: "Open Home Assistant menu", exact: true });
+  await button.click();
+  await page.evaluate(() => {
+    conn.read = () => new Promise((_, reject) => { window.failRead = reject; });
+    conn.rest = () => { throw new Error("unavailable"); };
+    panel.hass = hass;
+  });
+  await flush(page);
+  await button.click();
+  await page.evaluate(() => failRead(new Error("unavailable")));
+  await flush(page);
+  assert.match(await page.locator("[role=status]").innerText(), /Unable to load/);
+  await button.click();
+  assert.deepEqual(await page.evaluate(() => [navigationEvents.length, windowEvents, sidebarOpen, backCalls]), [3, 3, true, 0]);
+});
+
+test("keyboard navigation opens HA over app dialogs without losing an unfinished draft", async t => {
+  const page = await fixture(t, { viewport: { width: 390, height: 844 } });
+  await page.evaluate(() => mount());
+  await navigationHost(page);
+  await page.locator("#quickAdd").fill("Unfinished groceries");
+  await page.getByRole("button", { name: "Open menu", exact: true }).click();
+  await page.getByRole("button", { name: "App Settings", exact: true }).click();
+  const button = page.getByRole("button", { name: "Open Home Assistant menu", exact: true });
+  const header = await page.locator(".ha-navigation").boundingBox();
+  const overlay = await page.locator(".overlay-shell").boundingBox();
+  assert.ok(overlay.y >= header.y + header.height);
+  await button.click(); // Playwright checks the modal doesn't intercept the click.
+  await button.focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  assert.deepEqual(await page.evaluate(() => [sidebarOpen, navigationEvents.length, windowEvents, backCalls, panel._drafts.quickAdd]), [true, 3, 3, 0, "Unfinished groceries"]);
+});
+
+test("long lists keep the HA header visible and shopping controls below it", async t => {
+  const page = await fixture(t, { viewport: { width: 390, height: 844 } });
+  await page.evaluate(() => {
+    conn.read = () => ({ ...snapshot(), groups: [{ category: "other", title: "Groceries", items: Array.from({ length: 35 }, (_, i) => ({ item_ref: `item-${i}`, summary: `Grocery item ${i}`, quantity: 1 })) }] });
+    return mount();
+  });
+  await navigationHost(page);
+  await page.evaluate(() => window.scrollTo(0, 800));
+  await page.clock.runFor(50);
+  const button = page.getByRole("button", { name: "Open Home Assistant menu", exact: true });
+  let header = await page.locator(".ha-navigation").boundingBox();
+  assert.equal(header.y, 0);
+  await button.click();
+  await page.getByRole("button", { name: "Shop", exact: true }).click();
+  await page.evaluate(() => window.scrollTo(0, 800));
+  await page.clock.runFor(50);
+  header = await page.locator(".ha-navigation").boundingBox();
+  const shopping = await page.locator(".shop-bar").boundingBox();
+  assert.equal(header.y, 0);
+  assert.ok(shopping.y >= header.y + header.height);
+  await button.click();
+  assert.equal(await page.evaluate(() => navigationEvents.length), 2);
 });

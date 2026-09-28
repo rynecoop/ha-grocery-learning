@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.12
+- Added a persistent Home Assistant menu button on every app screen, including startup, connection errors, shopping, meals, planning, and dialogs. The button opens the main Home Assistant sidebar directly without using browser Back.
+- Kept navigation reachable while scrolling, adjusted shopping and dialog layouts below the header, and added mobile, desktop, and keyboard navigation regression tests.
+
 ## 0.35.4
 - Hardened the automatic recovery added in 0.35.3. Closed two timing gaps where a change could still get stuck in the "Couldn't save" banner even though the connection was already back — one where a save failed a split second after the connection was restored, and one where a second change made during an in-progress auto-resend was left behind — so recovery now re-sends reliably in both cases (still de-duplicated, so nothing is added twice). Also stopped the app from endlessly re-trying a change the server has actually rejected (for example, editing an item that someone else already removed): it now shows the error once and moves on instead of resending it on every update.
 
