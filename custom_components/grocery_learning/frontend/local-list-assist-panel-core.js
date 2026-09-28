@@ -817,18 +817,11 @@ class LocalListAssistPanel extends LitElement {
   }
 
   openNavigation() {
-    const toggleEvent = new CustomEvent("hass-toggle-menu", { bubbles: true, composed: true });
-    this.dispatchEvent(toggleEvent);
-    window.dispatchEvent(toggleEvent);
-    const homeAssistant = document.querySelector("home-assistant");
-    const main = homeAssistant?.shadowRoot?.querySelector("home-assistant-main");
-    if (main && typeof main._toggleSidebar === "function") {
-      main._toggleSidebar();
-      return;
-    }
-    if (window.history.length > 1) {
-      window.history.back();
-    }
+    // HA handles this event in both embedded and non-iframe custom panels.
+    // Request an open explicitly: duplicate clicks must not close the sidebar.
+    this.dispatchEvent(new CustomEvent("hass-toggle-menu", {
+      detail: { open: true }, bubbles: true, composed: true,
+    }));
   }
 
   clearChipLongPress() {
@@ -1061,8 +1054,8 @@ class LocalListAssistPanel extends LitElement {
     // We deliberately skip this on the Shop tab: its header is position:sticky, so
     // scrollIntoView({ block: "start" }) would scroll the field *behind* that
     // sticky header ("the page scrolls down and you lose the text box"). The Shop
-    // layout keeps its own field visible without help. (List's .mobile-bar is not
-    // sticky, so the scroll there is safe.)
+    // layout keeps its own field visible without help. On List, scroll-margin
+    // leaves room for the persistent Home Assistant navigation header.
     if (this._view === "shopping") return;
     window.setTimeout(() => {
       const field = this.renderRoot?.querySelector(".quick-add-field");
@@ -1530,11 +1523,27 @@ class LocalListAssistPanel extends LitElement {
     );
   }
 
+  _navigationTemplate() {
+    const view = { list: "List", shopping: "Shop", meals: "Meals", plan: "Plan", activity: "Activity" }[this._view] || "List";
+    return html`
+      <header class="ha-navigation" aria-label="Home Assistant navigation">
+        <button id="haNavigation" class="ha-navigation-button" type="button"
+          aria-label="Open Home Assistant menu" title="Open Home Assistant menu"
+          @click=${() => this.openNavigation()}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+          <span>Home Assistant</span>
+        </button>
+        <span class="ha-navigation-context">${view}</span>
+      </header>`;
+  }
+
   // --- templates ---
   render() {
     const state = this._state;
     if (!state) {
-      return html`<div class="app"><div class="app-scroll"><div class="wrap"><section class="hero">
+      return html`<div class="app">${this._navigationTemplate()}<div class="app-scroll"><div class="wrap"><section class="hero">
         <div class="empty" role="status">${this._loadError ? "Unable to load your lists. Retrying…" : "Connecting…"}</div>
         <button class="btn" ?disabled=${this._loading} @click=${() => this._retrySync()}>Retry now</button>
       </section></div></div></div>`;
@@ -1559,6 +1568,7 @@ class LocalListAssistPanel extends LitElement {
 
     return html`
       <div class="app" style=${styleMap({ "--accent": activeListColor })} @keydown=${(e) => this._onKeyDown(e)}>
+        ${this._navigationTemplate()}
         <div class="app-scroll">
           ${this._syncStatus ? html`<div class="sync-notice" role="status">
             <span>${this._syncStatus} Your list stays available; changes may need retrying.</span>
@@ -1597,12 +1607,6 @@ class LocalListAssistPanel extends LitElement {
   _listScreen(state, multilist, dashboardName, activeListName, visibleGroups) {
     return html`
       <div class="wrap">
-        ${this._narrow
-          ? html`<div class="mobile-bar">
-              <button id="menuBtn" class="btn icon-btn" aria-label="Open navigation" @click=${() => this.openNavigation()}>☰</button>
-              <div class="mobile-title">${dashboardName}</div>
-            </div>`
-          : nothing}
         <section class="hero">
           <div class="hero-head">
             <div class="hero-headings">
@@ -3163,6 +3167,8 @@ class LocalListAssistPanel extends LitElement {
     :host {
       display: block;
       min-height: 100%;
+      isolation: isolate;
+      --lla-navigation-height: 56px;
       /* Theme-aware tokens: adopt the active Home Assistant theme, falling back
          to the original dark palette when a variable is unavailable. */
       --lla-bg-1: var(--primary-background-color, #0d1520);
@@ -3180,6 +3186,23 @@ class LocalListAssistPanel extends LitElement {
     }
     * { box-sizing: border-box; }
     .app { --accent: #2c78ba; }
+    .ha-navigation {
+      position: sticky; top: 0; z-index: 45;
+      height: var(--lla-navigation-height); display: flex; align-items: center;
+      justify-content: space-between; gap: 12px; padding: 0 12px;
+      background: var(--lla-surface-2); border-bottom: 1px solid var(--lla-border);
+    }
+    .ha-navigation-button {
+      display: inline-flex; align-items: center; gap: 10px; min-height: 44px;
+      padding: 0 10px; border: 0; border-radius: 10px; cursor: pointer;
+      background: transparent; color: var(--lla-text); font: inherit; font-size: 14px;
+      font-weight: 600; white-space: nowrap;
+    }
+    .ha-navigation-button svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; }
+    .ha-navigation-button:hover { background: var(--lla-surface); }
+    .ha-navigation-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .ha-navigation-context { color: var(--lla-text-dim); font-size: 14px; }
+    .quick-add-field { scroll-margin-top: calc(var(--lla-navigation-height) + 12px); }
     .app-scroll { padding-bottom: 82px; }
     .sync-notice .btn { flex-shrink: 0; }
     .sync-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; background: var(--lla-surface); color: var(--lla-text); border-bottom: 1px solid var(--lla-border); font-size: 14px; }
@@ -3350,19 +3373,17 @@ class LocalListAssistPanel extends LitElement {
     /* Above .bottom-nav (z-index 30) so a modal and its backdrop cover the tab
        bar — otherwise the fixed nav paints over the bottom of the card and hides
        actions like "Add to list". */
-    .overlay-shell { position: fixed; inset: 0; background: rgba(3, 8, 14, 0.58); backdrop-filter: blur(4px); z-index: 40; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .overlay-shell { position: fixed; inset: var(--lla-navigation-height) 0 0; background: rgba(3, 8, 14, 0.58); backdrop-filter: blur(4px); z-index: 40; display: flex; align-items: center; justify-content: center; padding: 24px; }
     .overlay-drawer { justify-content: flex-end; padding: 0; }
     .modal-card, .side-drawer {
       background: var(--lla-surface); color: var(--lla-text);
       border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--lla-border)); border-radius: 24px;
       box-shadow: 0 24px 90px rgba(0, 0, 0, 0.44);
     }
-    .modal-card { width: min(760px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; padding: 20px; }
+    .modal-card { width: min(760px, calc(100vw - 48px)); max-height: calc(100vh - var(--lla-navigation-height) - 48px); max-height: calc(100dvh - var(--lla-navigation-height) - 48px); overflow: auto; padding: 20px; }
     .modal-card-narrow { width: min(560px, calc(100vw - 48px)); }
-    .side-drawer { width: min(360px, 92vw); height: 100vh; border-radius: 0; padding: 22px 18px; }
+    .side-drawer { width: min(360px, 92vw); height: 100%; border-radius: 0; padding: 22px 18px; }
     .drawer-stack { display: flex; flex-direction: column; gap: 10px; }
-    .mobile-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-    .mobile-title { font-size: 14px; font-weight: 700; color: var(--lla-text-dim); letter-spacing: 0.04em; text-transform: uppercase; }
     .icon-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; font-size: 20px; padding: 0; }
     .icon-btn.compact { width: 42px; height: 42px; font-size: 18px; flex: 0 0 auto; }
     .btn.compact { padding: 6px 12px; font-size: 13px; }
@@ -3428,7 +3449,7 @@ class LocalListAssistPanel extends LitElement {
     .save-retry-actions { display: flex; gap: 8px; flex: 0 0 auto; }
     .paste-error { color: var(--lla-danger, #c0392b); margin: 4px 0 0; }
     .shopping { max-width: 720px; margin: 0 auto; padding: 10px 12px 40px; min-height: 100%; --accent: #2c78ba; }
-    .shop-bar { display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--lla-bg-1); }
+    .shop-bar { display: flex; align-items: center; gap: 10px; position: sticky; top: var(--lla-navigation-height); z-index: 5; padding: 8px 0; background: var(--lla-bg-1); }
     .shop-done { padding: 10px 14px; }
     .shop-heading { flex: 1; text-align: center; min-width: 0; }
     .shop-title { font-size: 18px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -3457,7 +3478,7 @@ class LocalListAssistPanel extends LitElement {
       .meta-line { font-size: 13px; }
       .item-main { align-items: flex-start; }
       .overlay-shell { padding: 12px; }
-      .modal-card { width: 100%; max-height: calc(100vh - 24px); padding: 16px; }
+      .modal-card { width: 100%; max-height: calc(100vh - var(--lla-navigation-height) - 24px); max-height: calc(100dvh - var(--lla-navigation-height) - 24px); padding: 16px; }
     }
   `;
 }
