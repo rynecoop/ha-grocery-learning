@@ -881,6 +881,7 @@ class LocalListAssistPanel extends LitElement {
     const item = (this._drafts.quickAdd || "").trim();
     const quantity = Math.max(1, Number.parseInt(this._drafts.quickAddQty || "1", 10) || 1);
     if (!item) return;
+    this.closeSuggest();
     this._drafts.quickAdd = "";
     this._drafts.quickAddQty = "1";
     this.requestUpdate();
@@ -894,7 +895,7 @@ class LocalListAssistPanel extends LitElement {
     });
     // Keep focus in the quick-add box for rapid entry.
     this.updateComplete.then(() => {
-      const el = this.renderRoot?.getElementById("quickAdd");
+      const el = this.renderRoot?.getElementById(this._view === "shopping" ? "shopAdd" : "quickAdd");
       if (el) el.focus();
     });
   }
@@ -1116,7 +1117,14 @@ class LocalListAssistPanel extends LitElement {
     this.closeSuggest();
     this._drafts.quickAdd = String(item || "");
     this.requestUpdate();
-    await this.addItem();
+    await this.updateComplete;
+    // Choosing a name prepares the add; leave quantity and submission in the
+    // user's hands. Select the current quantity so one keystroke replaces it.
+    const quantity = this.renderRoot?.getElementById("quickAddQty");
+    if (quantity) {
+      quantity.focus();
+      quantity.select();
+    }
   }
 
   onSuggestionClick(s) {
@@ -1633,9 +1641,7 @@ class LocalListAssistPanel extends LitElement {
                 @keydown=${(e) => this.onQuickAddKeydown(e)} />
               ${this._suggestOpen ? this._suggestDropdown() : nothing}
             </div>
-            <input id="quickAddQty" class="input qty-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Qty"
-              .value=${live(this._drafts.quickAddQty || "1")}
-              @input=${(e) => this.updateDraft("quickAddQty", e.target.value)} />
+            ${this._quickAddQuantityInput()}
             <button class="btn primary" @click=${() => this.addItem()}>Add</button>
           </div>
           <div class="paste-list-row">
@@ -1813,6 +1819,13 @@ class LocalListAssistPanel extends LitElement {
       </div>`;
   }
 
+  _quickAddQuantityInput() {
+    return html`<input id="quickAddQty" class="input qty-input" type="number" min="1" step="1" inputmode="numeric" placeholder="Qty" aria-label="Quantity"
+      .value=${live(this._drafts.quickAddQty || "1")}
+      @input=${(e) => this.updateDraft("quickAddQty", e.target.value)}
+      @keydown=${(e) => { if (e.key === "Enter") { e.preventDefault(); this.addItem(); } }} />`;
+  }
+
   _suggestDropdown() {
     const typed = (this._drafts.quickAdd || "").trim();
     const matches = this.quickAddSuggestions();
@@ -1821,7 +1834,7 @@ class LocalListAssistPanel extends LitElement {
       <div class="suggest-dropdown" @mousedown=${(e) => e.preventDefault()}>
         ${matches.map((s, i) => html`
           <button class=${"suggest-row" + (this._suggestIndex === i ? " active" : "")}
-            title="Tap to add · long-press or right-click to remove"
+            title="Tap to choose quantity · long-press or right-click to remove"
             @click=${() => this.onSuggestionClick(s)}
             @contextmenu=${(e) => { e.preventDefault(); this.dismissSuggestion(s); }}
             @pointerdown=${(e) => this.onSuggestionPointerDown(s, e)}
@@ -2896,6 +2909,7 @@ class LocalListAssistPanel extends LitElement {
               @keydown=${(e) => this.onQuickAddKeydown(e)} />
             ${this._suggestOpen ? this._suggestDropdown() : nothing}
           </div>
+          ${this._quickAddQuantityInput()}
           <button class="btn primary" @click=${() => this.addItem()}>Add</button>
         </div>
         ${remaining === 0
@@ -3484,3 +3498,4 @@ class LocalListAssistPanel extends LitElement {
 }
 
 customElements.define("local-list-assist-panel", LocalListAssistPanel);
+

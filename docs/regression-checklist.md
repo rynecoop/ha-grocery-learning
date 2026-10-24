@@ -9,6 +9,9 @@ Use this checklist before and after each Home Assistant release candidate.
 
 ## Core Flows
 - Quick Add typed item appears in the correct list
+- On both List and Shop, tapping or keyboard-selecting a suggestion fills the name and focuses/selects quantity without adding yet
+- Confirm quantity with Add or Enter: exactly one add uses that quantity, then resets to 1 and returns focus to the name field
+- Choosing a suggestion preserves a quantity entered beforehand; the add row fits on a 320px phone
 - duplicate typed add shows the in-app duplicate decision card
 - `Add anyway` adds one additional item only
 - `Skip` does not add a duplicate
@@ -53,4 +56,5 @@ Use this checklist before and after each Home Assistant release candidate.
 
 ## Release Gate
 - do not release if any item above fails
+
 

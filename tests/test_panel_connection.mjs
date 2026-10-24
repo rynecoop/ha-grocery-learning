@@ -115,6 +115,73 @@ async function fixture(t, options = {}) {
 }
 const flush = page => page.evaluate(async () => { await Promise.resolve(); await panel.updateComplete; });
 
+async function autocompleteFixture(t, options = {}) {
+  const page = await fixture(t, options);
+  await page.evaluate(() => {
+    window.adds = [];
+    conn.read = () => ({ ...snapshot(), suggestions: [
+      { item: "Fire roasted tomatoes", normalized: "fire roasted tomato", category: "pantry", category_display: "Pantry" },
+    ] });
+    conn.action = payload => { adds.push(payload); return { ok: true, dashboard: conn.read() }; };
+    return mount();
+  });
+  await flush(page);
+  return page;
+}
+
+for (const tab of ["List", "Shop"]) {
+  test(`${tab}: tapping autocomplete waits for quantity and Add on a small phone`, async t => {
+    const page = await autocompleteFixture(t, { viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
+    await page.getByRole("button", { name: tab, exact: true }).tap();
+    const name = page.locator(tab === "Shop" ? "#shopAdd" : "#quickAdd");
+    const quantity = page.getByRole("spinbutton", { name: "Quantity", exact: true });
+    await name.fill("fire");
+    await page.locator(".suggest-row").filter({ hasText: "Fire roasted tomatoes" }).tap();
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds), []);
+    assert.equal(await name.inputValue(), "Fire roasted tomatoes");
+    assert.equal(await quantity.inputValue(), "1");
+    assert.equal(await quantity.evaluate(el => el.getRootNode().activeElement === el), true);
+    assert.equal(await page.locator(".suggest-dropdown").count(), 0);
+    // Typing replaces the selected default rather than turning 1 into 12.
+    await page.keyboard.type("2");
+    assert.equal(await quantity.inputValue(), "2");
+    await page.getByRole("button", { name: "Add", exact: true }).tap();
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds.map(({ action, item, quantity, list_id, actor_user_id }) => ({ action, item, quantity, list_id, actor_user_id }))), [
+      { action: "add_item", item: "Fire roasted tomatoes", quantity: 2, list_id: "default", actor_user_id: "test" },
+    ]);
+    assert.equal(await name.inputValue(), "");
+    assert.equal(await quantity.inputValue(), "1");
+    assert.equal(await name.evaluate(el => el.getRootNode().activeElement === el), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  });
+
+  test(`${tab}: keyboard selection preserves quantity until Enter confirms`, async t => {
+    const page = await autocompleteFixture(t);
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    const name = page.locator(tab === "Shop" ? "#shopAdd" : "#quickAdd");
+    const quantity = page.getByRole("spinbutton", { name: "Quantity", exact: true });
+    await quantity.fill("3");
+    await name.fill("fire");
+    await name.press("ArrowDown");
+    await name.press("Enter");
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds), []);
+    assert.equal(await name.inputValue(), "Fire roasted tomatoes");
+    assert.equal(await quantity.inputValue(), "3");
+    assert.equal(await quantity.evaluate(el => el.getRootNode().activeElement === el), true);
+    await quantity.press("Enter");
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds.map(p => [p.item, p.quantity])), [["Fire roasted tomatoes", 3]]);
+    // A new typed item can still be added directly, with the reset quantity.
+    await name.fill("Bread");
+    await name.press("Enter");
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds.map(p => [p.item, p.quantity])), [["Fire roasted tomatoes", 3], ["Bread", 1]]);
+  });
+}
+
 test("pre-upgrade hass starts through real browser lifecycle; detach cleans everything", async t => {
   const page = await fixture(t);
   await page.evaluate(() => mount(true));
@@ -422,3 +489,4 @@ test("long lists keep the HA header visible and shopping controls below it", asy
   await button.click();
   assert.equal(await page.evaluate(() => navigationEvents.length), 2);
 });
+

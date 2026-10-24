@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.35.13
+- Quick Add suggestions now fill in the item name and focus the quantity field instead of adding immediately. Confirm or change the quantity, then tap Add or press Enter. Quantities entered before choosing a suggestion are preserved.
+- Added the same quantity control to Shopping Mode, and return focus to its add field after adding so the next item is ready to type.
+
 ## 0.35.12
 - Added a persistent Home Assistant menu button on every app screen, including startup, connection errors, shopping, meals, planning, and dialogs. The button opens the main Home Assistant sidebar directly without using browser Back.
 - Kept navigation reachable while scrolling, adjusted shopping and dialog layouts below the header, and added mobile, desktop, and keyboard navigation regression tests.
@@ -664,4 +668,5 @@
   - `examples/dashboards/lovelace.grocery.json`
   - `examples/dashboards/lovelace.grocery_admin.json`
 - Added example YAML snippets for helpers, automations, and scripts.
+
 

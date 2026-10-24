@@ -42,7 +42,7 @@ Tap the **Shop** tab in the bottom bar to switch into Shopping Mode: a stripped-
 ![Shopping Mode](docs/screenshots/shopping-mode.png)
 
 ### Quick Add Autocomplete
-As you type in Quick Add, a dropdown suggests items you've added before — each with its category already resolved — so a known item goes on the list in one tap without retyping or re-categorizing. Suggestions are drawn from your frequent items, item history, and what's already on your lists, ranked by how often and how recently you add them; use the arrow keys and Enter to pick one, or keep typing and choose "Add … as new item". It also cuts down on near-duplicates like "milk" vs "Milk" vs "whole milk".
+As you type in Quick Add, a dropdown suggests items you've added before — each with its category already resolved — so you can choose a known item without retyping or re-categorizing. Selecting a suggestion fills in its name and focuses the quantity field; confirm or change the quantity, then tap Add or press Enter. This works on both the List and Shop tabs. Suggestions are drawn from your frequent items, item history, and what's already on your lists, ranked by how often and how recently you add them; use the arrow keys and Enter to pick one before confirming the quantity, or keep typing and choose "Add … as new item". It also cuts down on near-duplicates like "milk" vs "Milk" vs "whole milk".
 
 ![Quick Add autocomplete](docs/screenshots/autocomplete.png)
 
@@ -146,4 +146,5 @@ More captures live in [docs/screenshots](docs/screenshots).
 ## Support
 - Issues: [https://github.com/rynecoop/ha-grocery-learning/issues](https://github.com/rynecoop/ha-grocery-learning/issues)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
+
 

@@ -31,7 +31,9 @@
 ## Quick Add Autocomplete
 - as you type in Quick Add, a dropdown suggests items you've added before, each with its category already worked out
 - the suggestions come from your frequent items, your item history, and what's already on your lists, ranked by how often and how recently you add them
-- tap a suggestion (or use the arrow keys + Enter) to add it in one tap with the category already applied — no retyping or re-categorizing
+- tap a suggestion (or use the arrow keys + Enter) to fill in its name and move to the quantity field — no item is added yet
+- confirm or change the selected quantity, then tap `Add` or press Enter to add the item; the name field is ready for the next item and quantity resets to 1
+- this works on both List and Shop; any quantity entered before choosing a suggestion is preserved
 - keep typing and choose `Add "…" as new item` to add exactly what you typed
 - this helps avoid near-duplicates like "milk" vs "Milk" vs "whole milk"
 
@@ -128,4 +130,5 @@
 The panel adapts to phone-sized screens and follows your Home Assistant theme:
 
 ![Mobile view](screenshots/mobile-view.png)
+
 
