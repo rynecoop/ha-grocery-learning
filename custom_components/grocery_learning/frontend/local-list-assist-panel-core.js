@@ -3498,4 +3498,3 @@ class LocalListAssistPanel extends LitElement {
 }
 
 customElements.define("local-list-assist-panel", LocalListAssistPanel);
-

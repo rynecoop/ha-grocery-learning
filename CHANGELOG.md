@@ -669,4 +669,3 @@
   - `examples/dashboards/lovelace.grocery_admin.json`
 - Added example YAML snippets for helpers, automations, and scripts.
 
-

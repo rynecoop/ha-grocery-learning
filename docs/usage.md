@@ -131,4 +131,3 @@ The panel adapts to phone-sized screens and follows your Home Assistant theme:
 
 ![Mobile view](screenshots/mobile-view.png)
 
-

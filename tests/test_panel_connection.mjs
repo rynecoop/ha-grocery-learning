@@ -489,4 +489,3 @@ test("long lists keep the HA header visible and shopping controls below it", asy
   await button.click();
   assert.equal(await page.evaluate(() => navigationEvents.length), 2);
 });
-

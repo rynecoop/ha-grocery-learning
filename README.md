@@ -147,4 +147,3 @@ More captures live in [docs/screenshots](docs/screenshots).
 - Issues: [https://github.com/rynecoop/ha-grocery-learning/issues](https://github.com/rynecoop/ha-grocery-learning/issues)
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 
-

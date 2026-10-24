@@ -57,4 +57,3 @@ Use this checklist before and after each Home Assistant release candidate.
 ## Release Gate
 - do not release if any item above fails
 
-
