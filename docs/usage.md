@@ -31,15 +31,18 @@
 ## Quick Add Autocomplete
 - as you type in Quick Add, a dropdown suggests items you've added before, each with its category already worked out
 - the suggestions come from your frequent items, your item history, and what's already on your lists, ranked by how often and how recently you add them
-- tap a suggestion (or use the arrow keys + Enter) to add it in one tap with the category already applied — no retyping or re-categorizing
+- tap a suggestion (or use the arrow keys + Enter) to fill in its name and move to the quantity field — no item is added yet
+- confirm or change the selected quantity, then tap `Add` or press Enter to add the item; the name field is ready for the next item and quantity resets to 1
+- this works on both List and Shop; any quantity entered before choosing a suggestion is preserved
 - keep typing and choose `Add "…" as new item` to add exactly what you typed
 - this helps avoid near-duplicates like "milk" vs "Milk" vs "whole milk"
 
 ![Quick Add autocomplete](screenshots/autocomplete.png)
 
 ## Frequent Quick-Add
-- the `FREQUENT` row above the list shows the items you add most often as one-tap chips
-- tap a chip to add that item to the current list
+- the `FREQUENT` row above the list shows the items you add most often as shortcut chips
+- tap a chip to fill in its name and focus the quantity field, just like an autocomplete suggestion
+- confirm or change the quantity, then tap `Add` or press Enter; choosing a chip preserves any quantity already entered
 - long-press a chip on touch, or right-click on desktop, to hide a suggestion you never want (it stays hidden even if it gets added again later)
 - a suggestion appears only after you have added an item a couple of times
 - anything already on the current list is hidden from the row

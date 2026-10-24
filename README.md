@@ -1,6 +1,6 @@
 # Local List Assist
 
-Local List Assist is a Home Assistant custom integration that gives you a local-first list app with clean list management, category-based organization, a phone-friendly Shopping Mode, one-tap frequent items, saved meals, duplicate handling, review-and-learn routing, and voice-friendly add flows.
+Local List Assist is a Home Assistant custom integration that gives you a local-first list app with clean list management, category-based organization, a phone-friendly Shopping Mode, frequent-item shortcuts, saved meals, duplicate handling, review-and-learn routing, and voice-friendly add flows.
 
 ![Local List Assist main list](docs/screenshots/main-list.png)
 
@@ -15,7 +15,7 @@ Local List Assist is a Home Assistant custom integration that gives you a local-
 - **phone-first bottom tab bar**: `List` · `Shop` · `Meals` · `Plan`, each one tap away
 - **Shopping Mode**: a focused, big-tap-target screen for when you are at the store
 - **Quick Add autocomplete**: type-ahead suggestions of items you've added before, each with its category already resolved
-- **Frequent quick-add**: one-tap chips for the items you add most often
+- **Frequent quick-add**: choose a staple, confirm its quantity, and add
 - **saved Meals**: define a meal once (ingredients + directions), add it with a confirm checklist, and cook from the numbered steps
 - **meal planner (dated calendar)**: assign meals to real dates, page between weeks, and add a day's or the whole week's ingredients at once — nothing ever auto-clears
 - **smarter automatic categories** so far fewer items land in `Other`, with a checkbox list to turn categories on or off
@@ -42,12 +42,12 @@ Tap the **Shop** tab in the bottom bar to switch into Shopping Mode: a stripped-
 ![Shopping Mode](docs/screenshots/shopping-mode.png)
 
 ### Quick Add Autocomplete
-As you type in Quick Add, a dropdown suggests items you've added before — each with its category already resolved — so a known item goes on the list in one tap without retyping or re-categorizing. Suggestions are drawn from your frequent items, item history, and what's already on your lists, ranked by how often and how recently you add them; use the arrow keys and Enter to pick one, or keep typing and choose "Add … as new item". It also cuts down on near-duplicates like "milk" vs "Milk" vs "whole milk".
+As you type in Quick Add, a dropdown suggests items you've added before — each with its category already resolved — so you can choose a known item without retyping or re-categorizing. Selecting a suggestion fills in its name and focuses the quantity field; confirm or change the quantity, then tap Add or press Enter. This works on both the List and Shop tabs. Suggestions are drawn from your frequent items, item history, and what's already on your lists, ranked by how often and how recently you add them; use the arrow keys and Enter to pick one before confirming the quantity, or keep typing and choose "Add … as new item". It also cuts down on near-duplicates like "milk" vs "Milk" vs "whole milk".
 
 ![Quick Add autocomplete](docs/screenshots/autocomplete.png)
 
 ### Frequent Quick-Add
-The `FREQUENT` row above the list shows the staples you add most often as one-tap chips, so common items go on the list without typing. Suggestions appear once you have added an item a couple of times, hide anything already on the current list, and the tally survives clearing completed items.
+The `FREQUENT` row above the list shows the staples you add most often as shortcut chips. Tap a chip to fill in the item name and focus the quantity field, then confirm or change the quantity and tap Add or press Enter. Common items need no retyping, and any quantity entered before choosing a chip is preserved. Suggestions appear once you have added an item a couple of times, hide anything already on the current list, and the tally survives clearing completed items.
 
 ### Saved Meals
 Open `Meals` from the menu (⋯) to define a meal once — a name, its ingredients (one per line), and optionally its directions (one step per line). Tapping a meal opens a detail view with two tabs: **Add to list**, a pre-checked ingredient checklist so you just uncheck anything you already have (or grew in the garden) and add the rest; and **Directions**, a numbered step list you can tap to check off as you cook. Each ingredient is auto-categorized as it goes on the list, and meals are stored locally like everything else.

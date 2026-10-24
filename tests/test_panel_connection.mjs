@@ -115,6 +115,111 @@ async function fixture(t, options = {}) {
 }
 const flush = page => page.evaluate(async () => { await Promise.resolve(); await panel.updateComplete; });
 
+async function autocompleteFixture(t, options = {}) {
+  const page = await fixture(t, options);
+  await page.evaluate(() => {
+    window.adds = [];
+    conn.read = () => ({ ...snapshot(), frequent_items: [{ item: "Fire roasted tomatoes" }], suggestions: [
+      { item: "Fire roasted tomatoes", normalized: "fire roasted tomato", category: "pantry", category_display: "Pantry" },
+    ] });
+    conn.action = payload => { adds.push(payload); return { ok: true, dashboard: conn.read() }; };
+    return mount();
+  });
+  await flush(page);
+  return page;
+}
+
+for (const tab of ["List", "Shop"]) {
+  test(`${tab}: tapping autocomplete waits for quantity and Add on a small phone`, async t => {
+    const page = await autocompleteFixture(t, { viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
+    await page.getByRole("button", { name: tab, exact: true }).tap();
+    const name = page.locator(tab === "Shop" ? "#shopAdd" : "#quickAdd");
+    const quantity = page.getByRole("spinbutton", { name: "Quantity", exact: true });
+    await name.fill("fire");
+    await page.locator(".suggest-row").filter({ hasText: "Fire roasted tomatoes" }).tap();
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds), []);
+    assert.equal(await name.inputValue(), "Fire roasted tomatoes");
+    assert.equal(await quantity.inputValue(), "1");
+    assert.equal(await quantity.evaluate(el => el.getRootNode().activeElement === el), true);
+    assert.equal(await page.locator(".suggest-dropdown").count(), 0);
+    // Typing replaces the selected default rather than turning 1 into 12.
+    await page.keyboard.type("2");
+    assert.equal(await quantity.inputValue(), "2");
+    await page.getByRole("button", { name: "Add", exact: true }).tap();
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds.map(({ action, item, quantity, list_id, actor_user_id }) => ({ action, item, quantity, list_id, actor_user_id }))), [
+      { action: "add_item", item: "Fire roasted tomatoes", quantity: 2, list_id: "default", actor_user_id: "test" },
+    ]);
+    assert.equal(await name.inputValue(), "");
+    assert.equal(await quantity.inputValue(), "1");
+    assert.equal(await name.evaluate(el => el.getRootNode().activeElement === el), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  });
+
+  test(`${tab}: keyboard selection preserves quantity until Enter confirms`, async t => {
+    const page = await autocompleteFixture(t);
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    const name = page.locator(tab === "Shop" ? "#shopAdd" : "#quickAdd");
+    const quantity = page.getByRole("spinbutton", { name: "Quantity", exact: true });
+    await quantity.fill("3");
+    await name.fill("fire");
+    await name.press("ArrowDown");
+    await name.press("Enter");
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds), []);
+    assert.equal(await name.inputValue(), "Fire roasted tomatoes");
+    assert.equal(await quantity.inputValue(), "3");
+    assert.equal(await quantity.evaluate(el => el.getRootNode().activeElement === el), true);
+    await quantity.press("Enter");
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds.map(p => [p.item, p.quantity])), [["Fire roasted tomatoes", 3]]);
+    // A new typed item can still be added directly, with the reset quantity.
+    await name.fill("Bread");
+    await name.press("Enter");
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds.map(p => [p.item, p.quantity])), [["Fire roasted tomatoes", 3], ["Bread", 1]]);
+  });
+}
+
+for (const activation of ["touch", "keyboard"]) {
+  test(`Frequent chips: ${activation} selection waits for quantity confirmation`, async t => {
+    const page = await autocompleteFixture(t, { viewport: { width: 320, height: 740 }, isMobile: true, hasTouch: true });
+    const quantity = page.getByRole("spinbutton", { name: "Quantity", exact: true });
+    await quantity.fill("3");
+    const chip = page.locator(".frequent-chip").filter({ hasText: "Fire roasted tomatoes" });
+    if (activation === "touch") await chip.tap();
+    else { await chip.focus(); await chip.press("Enter"); }
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds), []);
+    assert.equal(await page.locator("#quickAdd").inputValue(), "Fire roasted tomatoes");
+    assert.equal(await quantity.inputValue(), "3");
+    assert.equal(await quantity.evaluate(el => el.getRootNode().activeElement === el), true);
+    await page.keyboard.type("2");
+    assert.equal(await quantity.inputValue(), "2");
+    await quantity.press("Enter");
+    await flush(page);
+    assert.deepEqual(await page.evaluate(() => adds.map(p => [p.action, p.item, p.quantity])), [["add_item", "Fire roasted tomatoes", 2]]);
+    assert.equal(await quantity.inputValue(), "1");
+    assert.equal(await page.locator("#quickAdd").inputValue(), "");
+    assert.equal(await page.locator("#quickAdd").evaluate(el => el.getRootNode().activeElement === el), true);
+  });
+}
+
+test("long-pressing a Frequent chip still hides it without preparing or adding it", async t => {
+  const page = await autocompleteFixture(t);
+  await page.locator("#quickAdd").fill("Unfinished item");
+  await page.getByRole("spinbutton", { name: "Quantity", exact: true }).fill("4");
+  await page.locator(".frequent-chip").hover();
+  await page.mouse.down();
+  await page.clock.runFor(551);
+  await page.mouse.up();
+  await flush(page);
+  assert.deepEqual(await page.evaluate(() => adds.map(p => p.action)), ["dismiss_frequent"]);
+  assert.equal(await page.locator("#quickAdd").inputValue(), "Unfinished item");
+  assert.equal(await page.getByRole("spinbutton", { name: "Quantity", exact: true }).inputValue(), "4");
+});
+
 test("pre-upgrade hass starts through real browser lifecycle; detach cleans everything", async t => {
   const page = await fixture(t);
   await page.evaluate(() => mount(true));
