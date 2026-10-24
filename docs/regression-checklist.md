@@ -11,6 +11,7 @@ Use this checklist before and after each Home Assistant release candidate.
 - Quick Add typed item appears in the correct list
 - On both List and Shop, tapping or keyboard-selecting a suggestion fills the name and focuses/selects quantity without adding yet
 - Confirm quantity with Add or Enter: exactly one add uses that quantity, then resets to 1 and returns focus to the name field
+- Frequent chips also wait for quantity confirmation; long-press/right-click still hides a chip without adding or replacing the draft
 - Choosing a suggestion preserves a quantity entered beforehand; the add row fits on a 320px phone
 - duplicate typed add shows the in-app duplicate decision card
 - `Add anyway` adds one additional item only

@@ -1162,25 +1162,12 @@ class LocalListAssistPanel extends LitElement {
     });
   }
 
-  async quickAddItem(item) {
-    const name = String(item || "").trim();
-    if (!name) return;
-    await this.act({
-      action: "add_item",
-      item: name,
-      quantity: 1,
-      list_id: this.currentListId(),
-      actor_user_id: this._hass?.user?.id || "",
-      actor_name: this._hass?.user?.display_name || this._hass?.user?.name || "",
-    });
-  }
-
   onFrequentClick(item) {
     if (this._suppressNextFrequentClick === item) {
       this._suppressNextFrequentClick = "";
       return;
     }
-    this.quickAddItem(item);
+    return this.selectSuggestion(item);
   }
 
   onFrequentPointerDown(item, ev) {
@@ -1857,7 +1844,7 @@ class LocalListAssistPanel extends LitElement {
       <div class="frequent-row" aria-label="Frequently added items">
         <span class="frequent-label">Frequent</span>
         ${frequent.map((f) => html`
-          <button class="frequent-chip" title="Tap to add · long-press or right-click to hide"
+          <button class="frequent-chip" title="Tap to choose quantity · long-press or right-click to hide"
             @click=${() => this.onFrequentClick(f.item)}
             @pointerdown=${(e) => this.onFrequentPointerDown(f.item, e)}
             @pointerup=${() => this.clearFrequentLongPress()}

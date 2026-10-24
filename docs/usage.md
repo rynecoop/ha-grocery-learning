@@ -40,8 +40,9 @@
 ![Quick Add autocomplete](screenshots/autocomplete.png)
 
 ## Frequent Quick-Add
-- the `FREQUENT` row above the list shows the items you add most often as one-tap chips
-- tap a chip to add that item to the current list
+- the `FREQUENT` row above the list shows the items you add most often as shortcut chips
+- tap a chip to fill in its name and focus the quantity field, just like an autocomplete suggestion
+- confirm or change the quantity, then tap `Add` or press Enter; choosing a chip preserves any quantity already entered
 - long-press a chip on touch, or right-click on desktop, to hide a suggestion you never want (it stays hidden even if it gets added again later)
 - a suggestion appears only after you have added an item a couple of times
 - anything already on the current list is hidden from the row

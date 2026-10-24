@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.35.13
-- Quick Add suggestions now fill in the item name and focus the quantity field instead of adding immediately. Confirm or change the quantity, then tap Add or press Enter. Quantities entered before choosing a suggestion are preserved.
+- Quick Add suggestions and Frequent chips now fill in the item name and focus the quantity field instead of adding immediately. Confirm or change the quantity, then tap Add or press Enter. Quantities entered before choosing a suggestion are preserved.
 - Added the same quantity control to Shopping Mode, and return focus to its add field after adding so the next item is ready to type.
 
 ## 0.35.12
