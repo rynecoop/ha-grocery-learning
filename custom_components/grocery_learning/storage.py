@@ -321,6 +321,8 @@ class GroceryLearningStore:
                 "ingredients": ingredients,
                 "directions": directions,
                 "notes": str(value.get("notes", "")).strip(),
+                "image_id": str(value.get("image_id", "")),
+                "source_url": str(value.get("source_url", "")),
                 "categories": categories,
                 # Legacy single-category string (pre-0.33); migrated on load.
                 "category": str(value.get("category", "")).strip(),

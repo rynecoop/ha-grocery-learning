@@ -22,6 +22,7 @@
 ## Shopping Mode
 - tap the `Shop` tab in the bottom bar to enter Shopping Mode
 - Shopping Mode shows only the unchecked items, grouped in your list's category (store) order
+- Each item shows who added it directly below its name, including contributors when duplicate items were combined.
 - it has large tap targets, a progress bar (`X left`), and a quick add for anything you forgot
 - checking an item off moves it out of the remaining list
 - tap `Done` or the `List` tab to return to the full list
@@ -132,3 +133,7 @@ The panel adapts to phone-sized screens and follows your Home Assistant theme:
 
 ![Mobile view](screenshots/mobile-view.png)
 
+
+### Recipe photos
+
+Open **Meals**, then **New Meal** or edit a saved meal. Use **Add photo** or **Replace photo** to select a JPEG, PNG or WebP under 8 MB, review the preview, and save. **Remove photo** clears it when you save. Recipe-link imports also capture an available photo; a missing photo does not block the recipe text. Photos appear in Meals and recipe details and are stored locally with your JSON backups.

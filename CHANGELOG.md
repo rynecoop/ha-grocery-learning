@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.36.0
+- Recipe photos: import the primary image from a recipe link, or upload, replace and remove a photo in the meal editor. Photos appear in Meals and recipe details, stay local, and are included in JSON backups. Older backups still restore.
+- Imported recipes retain their source link. A photo download failure preserves the recipe text and offers manual upload.
+- Shopping Mode now shows who added each item beneath its name, including contributors to a merged item, without leaving the shopping screen.
+
 ## 0.35.13
 - Quick Add suggestions and Frequent chips now fill in the item name and focus the quantity field instead of adding immediately. Confirm or change the quantity, then tap Add or press Enter. Quantities entered before choosing a suggestion are preserved.
 - Added the same quantity control to Shopping Mode, and return focus to its add field after adding so the next item is ready to type.

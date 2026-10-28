@@ -20,6 +20,7 @@ const { LitElement, html, css, nothing, repeat, live, styleMap } = await import(
 const {
   categoryDisplay: displayCategory,
   createListLocal: applyCreateListLocal,
+  dataUrlByteLength,
   deleteArchivedListLocal: applyDeleteArchivedListLocal,
   groupTitle: deriveGroupTitle,
   matchSuggestions,
@@ -42,6 +43,34 @@ const UNDO_TIMEOUT_MS = 6000;
 // Mirror of the backend's _BULK_MAX_ITEMS: cap a single paste so an oversized
 // one is caught in the editor instead of being sent (or queued offline).
 const PASTE_MAX_ITEMS = 200;
+// Mirror of recipe_images.MAX_OUTPUT: the picker enforces this exact byte cap on
+// its WebP so an accepted photo can't be rejected by the server on save.
+const RECIPE_IMAGE_MAX_BYTES = 256 * 1024;
+
+// Fetch through HA authentication; image data never goes to third-party hosts.
+class RecipePhoto extends LitElement {
+  static properties = { imageId: {}, label: {}, loader: {}, compact: {type: Boolean}, src: {state: true} };
+  static styles = css`
+    :host { display: block; }
+    img { display: block; max-width: 100%; width: 100%; max-height: 300px; object-fit: contain; border-radius: 10px; }
+    img.compact { width: 64px; height: 64px; object-fit: cover; }
+    span { font-size: 12px; opacity: .7; }
+  `;
+  async updated(changed) {
+    if (!changed.has("imageId")) return;
+    const id = this.imageId;
+    this.src = "";
+    if (!id || !this.loader) return;
+    try {
+      const result = await this.loader(id);
+      if (this.imageId === id) this.src = result?.ok ? result.image_data : "";
+    } catch (_) { /* Missing image never prevents opening the recipe. */ }
+  }
+  render() {
+    return this.src ? html`<img class=${this.compact ? "compact" : ""} src=${this.src} alt=${this.label || "Recipe photo"} />` : html`<span>Photo unavailable</span>`;
+  }
+}
+customElements.define("lla-recipe-photo", RecipePhoto);
 
 const TERMINAL_ACTION_ERRORS = new Set([
   "missing_url", "invalid_url", "no_recipe", "not_a_page", "too_large", "blocked",
@@ -83,6 +112,7 @@ class LocalListAssistPanel extends LitElement {
     _mealPlanAdded: { state: true },
     _mealPlanError: { state: true },
     _recipeImporting: { state: true },
+    _photoLoading: { state: true },
     _recipeImportError: { state: true },
     _stepsChecked: { state: true },
     _suggestOpen: { state: true },
@@ -2083,6 +2113,7 @@ class LocalListAssistPanel extends LitElement {
         ${ordered.length
           ? repeat(ordered, (m) => m.id, (m) => html`
             <button class="meal-row meal-row-button" @click=${() => this.openMealDetail(m.id, "add")}>
+              ${this._photoTemplate(m.image_id, m.name, true)}
               <div class="meal-row-main">
                 <strong>${favs.has(m.id) ? html`<span class="meal-fav-star" aria-label="Favorite" title="Favorite">★</span> ` : nothing}${m.name}</strong>
                 <div class="small">${(m.category_labels || []).length ? html`${(m.category_labels).map((l) => html`<span class="meal-cat-tag">${l}</span> `)}· ` : nothing}${m.ingredient_count} ${m.ingredient_count === 1 ? "ingredient" : "ingredients"}${m.direction_count ? ` · ${m.direction_count} ${m.direction_count === 1 ? "step" : "steps"}` : ""}${(m.notes || "").trim() ? " · has notes" : ""}</div>
@@ -2125,8 +2156,61 @@ class LocalListAssistPanel extends LitElement {
       </div>`;
   }
 
+  _photoTemplate(imageId, label, compact = false) {
+    return imageId ? html`<lla-recipe-photo .imageId=${imageId} .label=${label} .compact=${compact}
+      .loader=${(id) => this.api("action", "POST", {action: "get_recipe_image", image_id: id})}></lla-recipe-photo>` : nothing;
+  }
+
+  async chooseRecipePhoto(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const editorId = this._mealEditorId;
+    const editVersion = this._photoEditVersion;
+    // A shared photo-operation generation: every photo change (pick, import,
+    // remove) bumps it, and async ones apply their result only if it's still the
+    // latest — so the last-initiated photo change wins no matter which finishes
+    // first (a slower pick can't clobber a newer pick/import/remove).
+    const seq = (this._photoOpSeq = (this._photoOpSeq || 0) + 1);
+    const isCurrent = () => this._mealEditorId === editorId && this._photoEditVersion === editVersion && this._photoOpSeq === seq;
+    this._photoLoading = true;
+    this.requestUpdate();
+    try {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) throw new Error("Choose a JPEG, PNG or WebP image under 8 MB.");
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      // Step the quality down exactly like the server does (80/65/45) so a
+      // detailed photo is compressed to fit rather than rejected outright, and
+      // the highest fitting quality is kept. Measure the actual decoded byte
+      // size against the server's exact 256 KiB output cap
+      // (recipe_images.MAX_OUTPUT) — a looser char-length cap would accept
+      // images the server then rejects on save.
+      let data = "";
+      for (const quality of [0.8, 0.65, 0.45]) {
+        data = canvas.toDataURL("image/webp", quality);
+        if (dataUrlByteLength(data) <= RECIPE_IMAGE_MAX_BYTES) break;
+      }
+      if (dataUrlByteLength(data) > RECIPE_IMAGE_MAX_BYTES) throw new Error("That photo is too detailed. Try a smaller image.");
+      if (!isCurrent()) return;
+      this._drafts.mealImageData = data;
+      this._drafts.mealImageId = "";
+      this._recipeImportError = "";
+    } catch (error) {
+      if (!isCurrent()) return;
+      this._recipeImportError = error.message || "Couldn't read that image.";
+    } finally {
+      if (isCurrent()) { this._photoLoading = false; this.requestUpdate(); }
+    }
+  }
+
   _mealEditorTemplate() {
     const isNew = this._mealEditorId === "new";
+    const hasPhoto = !!(this._drafts.mealImageData || this._drafts.mealImageId);
     return html`
       ${isNew ? html`
         <div class="recipe-import">
@@ -2141,8 +2225,19 @@ class LocalListAssistPanel extends LitElement {
             </button>
           </div>
           ${this._recipeImportError ? html`<div class="error small">${this._recipeImportError}</div>` : nothing}
-          <div class="small">Pulls the name, ingredients and directions off the page so you can review and tweak them below before saving. Your Home Assistant reads the recipe directly — nothing is sent to any cloud service.</div>
+          <div class="small">Pulls the name, ingredients, directions and available photo off the page so you can review and tweak them below before saving. Your Home Assistant reads the recipe directly — nothing is sent to any cloud service.</div>
         </div>` : nothing}
+      <div class="recipe-photo-editor">
+        <div class="label">Recipe photo (optional)</div>
+        ${this._drafts.mealImageData ? html`<img class="recipe-photo-preview" src=${this._drafts.mealImageData} alt="Recipe photo preview" />` : hasPhoto ? this._photoTemplate(this._drafts.mealImageId, this._drafts.mealName) : html`<div class="small">Add a photo to recognize this recipe at a glance.</div>`}
+        <div class="row">
+          <button class="btn" @click=${() => this.renderRoot?.getElementById("recipePhotoInput")?.click()}>${hasPhoto ? "Replace photo" : "Add photo"}</button>
+          <input id="recipePhotoInput" aria-label="Recipe photo" type="file" accept="image/jpeg,image/png,image/webp" hidden @change=${(e) => this.chooseRecipePhoto(e)} />
+          ${hasPhoto || this._photoLoading ? html`<button class="btn compact" @click=${() => { this._photoOpSeq = (this._photoOpSeq || 0) + 1; this._photoLoading = false; this._drafts.mealImageData = ""; this._drafts.mealImageId = ""; this.requestUpdate(); }}>Remove photo</button>` : nothing}
+        </div>
+        <div class="small" role="status">${this._photoLoading ? "Preparing photo…" : "JPEG, PNG or WebP, up to 8 MB. Stored locally and included in backups."}</div>
+        ${!isNew && this._recipeImportError ? html`<div class="error small">${this._recipeImportError}</div>` : nothing}
+      </div>
       <div class="grid compact-grid">
         <input class="input" placeholder="Meal name (e.g. Taco Night)" .value=${live(this._drafts.mealName || "")}
           @input=${(e) => this.updateDraft("mealName", e.target.value)} />
@@ -2178,7 +2273,7 @@ class LocalListAssistPanel extends LitElement {
         .value=${live(this._drafts.mealNotes || "")}
         @input=${(e) => this.updateDraft("mealNotes", e.target.value)}></textarea>
       <div class="row">
-        <button class="btn primary" @click=${() => this.saveMeal()}>${isNew ? "Create Meal" : "Save Meal"}</button>
+        <button class="btn primary" ?disabled=${this._photoLoading || this._recipeImporting} @click=${() => this.saveMeal()}>${isNew ? "Create Meal" : "Save Meal"}</button>
         <button class="btn" @click=${() => this.closeMealEditor()}>Cancel</button>
       </div>`;
   }
@@ -2202,6 +2297,8 @@ class LocalListAssistPanel extends LitElement {
             </div>
             <button class="btn icon-btn compact" aria-label="Close" @click=${() => this.closeMealDetail()}>×</button>
           </div>
+          ${this._photoTemplate(meal.image_id, meal.name)}
+          ${meal.source_url ? html`<a href=${meal.source_url} target="_blank" rel="noopener noreferrer">View original recipe</a>` : nothing}
           <div class="meal-tabs">
             <button class=${"meal-tab" + (tab === "add" ? " active" : "")} @click=${() => { this._mealTab = "add"; }}>Ingredients</button>
             <button class=${"meal-tab" + (tab === "directions" ? " active" : "")} @click=${() => { this._mealTab = "directions"; }}>Directions &amp; notes${directions.length ? ` (${directions.length})` : ""}${hasNotes ? " 📝" : ""}</button>
@@ -2454,9 +2551,16 @@ class LocalListAssistPanel extends LitElement {
   }
 
   openMealEditor(mealId) {
+    this._photoEditVersion = (this._photoEditVersion || 0) + 1;
+    this._photoLoading = false;
     const meal = (this._state?.meals || []).find((m) => m.id === mealId) || null;
     this._mealEditorId = mealId || "new";
     this._drafts.mealName = meal?.name || "";
+    this._drafts.mealImageId = meal?.image_id || "";
+    this._drafts.mealImageData = undefined;
+    this._drafts.mealSourceUrl = meal?.source_url || "";
+    this._recipeImportError = "";
+    this._recipeImporting = false;
     this._drafts.mealIngredients = (meal?.ingredients || []).map((i) => i.item).join("\n");
     this._drafts.mealDirections = (meal?.directions || []).join("\n");
     this._drafts.mealNotes = meal?.notes || "";
@@ -2467,6 +2571,8 @@ class LocalListAssistPanel extends LitElement {
   }
 
   openMealFromList() {
+    this._photoEditVersion = (this._photoEditVersion || 0) + 1;
+    this._photoLoading = false;
     const groups = this._state?.groups || [];
     const items = [];
     const seen = new Set();
@@ -2482,6 +2588,11 @@ class LocalListAssistPanel extends LitElement {
     }
     this._mealEditorId = "new";
     this._drafts.mealName = "";
+    this._drafts.mealImageId = "";
+    this._drafts.mealImageData = undefined;
+    this._drafts.mealSourceUrl = "";
+    this._recipeImportError = "";
+    this._recipeImporting = false;
     this._drafts.mealIngredients = items.join("\n");
     this._drafts.mealDirections = "";
     this._drafts.mealNotes = "";
@@ -2496,8 +2607,15 @@ class LocalListAssistPanel extends LitElement {
   }
 
   closeMealEditor() {
+    this._photoEditVersion = (this._photoEditVersion || 0) + 1;
+    this._photoLoading = false;
     this._mealEditorId = "";
     this._drafts.mealName = "";
+    this._drafts.mealImageId = "";
+    this._drafts.mealImageData = undefined;
+    this._drafts.mealSourceUrl = "";
+    this._recipeImportError = "";
+    this._recipeImporting = false;
     this._drafts.mealIngredients = "";
     this._drafts.mealDirections = "";
     this._drafts.mealNotes = "";
@@ -2507,6 +2625,8 @@ class LocalListAssistPanel extends LitElement {
   }
 
   async saveMeal() {
+    if (this._photoLoading || this._recipeImporting) return;
+    const editVersion = this._photoEditVersion;
     const name = (this._drafts.mealName || "").trim();
     if (!name) return;
     const ingredients = (this._drafts.mealIngredients || "")
@@ -2520,10 +2640,11 @@ class LocalListAssistPanel extends LitElement {
       .filter(Boolean);
     const notes = (this._drafts.mealNotes || "").trim();
     const categories = [...(this._drafts.mealCategoryIds || [])];
-    const payload = { action: "save_meal", name, ingredients, directions, notes, categories };
+    const payload = { action: "save_meal", name, ingredients, directions, notes, categories, source_url: this._drafts.mealSourceUrl || "" };
+    if (this._drafts.mealImageData !== undefined) payload.image_data = this._drafts.mealImageData;
     if (this._mealEditorId && this._mealEditorId !== "new") payload.meal_id = this._mealEditorId;
-    await this.act(payload);
-    this.closeMealEditor();
+    const result = await this.act(payload);
+    if (result?.ok && this._photoEditVersion === editVersion) this.closeMealEditor();
   }
 
   async deleteMeal(mealId) {
@@ -2555,19 +2676,32 @@ class LocalListAssistPanel extends LitElement {
 
   async importRecipe() {
     const url = (this._drafts.recipeUrl || "").trim();
-    if (!url) return;
+    if (!url || this._recipeImporting) return;
     this._recipeImportError = "";
     this._recipeImporting = true;
+    const editVersion = this._photoEditVersion;
+    // Claim the shared photo-op generation so a photo the user picks (or removes)
+    // while this import is in flight wins over the imported photo.
+    const photoSeq = (this._photoOpSeq = (this._photoOpSeq || 0) + 1);
+    this._photoLoading = false;
     this.requestUpdate();
     try {
       // import_recipe returns {ok, recipe} (no dashboard), so call the API
       // directly rather than act(), which would trigger a needless reload.
       const res = await this.api("action", "POST", { action: "import_recipe", url });
+      if (this._photoEditVersion !== editVersion) return;
       if (!res || res.ok === false) {
         this._recipeImportError = this._recipeImportErrorText(res && res.error);
         return;
       }
       const recipe = res.recipe || {};
+      // Apply the imported photo only if no later pick/remove superseded it.
+      if (this._photoOpSeq === photoSeq) {
+        this._drafts.mealImageData = recipe.image_data || "";
+        this._drafts.mealImageId = "";
+        this._recipeImportError = res.image_warning || "";
+      }
+      this._drafts.mealSourceUrl = res.source_url || url;
       if (recipe.name) this.updateDraft("mealName", recipe.name);
       if (Array.isArray(recipe.ingredients) && recipe.ingredients.length) {
         this.updateDraft("mealIngredients", recipe.ingredients.join("\n"));
@@ -2577,10 +2711,12 @@ class LocalListAssistPanel extends LitElement {
       }
       this.updateDraft("recipeUrl", "");
     } catch (err) {
-      this._recipeImportError = "Couldn't reach that link. Check the URL and try again.";
+      if (this._photoEditVersion === editVersion) this._recipeImportError = "Couldn't reach that link. Check the URL and try again.";
     } finally {
-      this._recipeImporting = false;
-      this.requestUpdate();
+      if (this._photoEditVersion === editVersion) {
+        this._recipeImporting = false;
+        this.requestUpdate();
+      }
     }
   }
 
@@ -2926,9 +3062,9 @@ class LocalListAssistPanel extends LitElement {
   _shoppingItem(item) {
     const qty = Number(item.quantity || 1);
     return html`
-      <button class="shop-item" @click=${() => this.completeItem(item)} aria-label=${"Check off " + item.summary}>
+      <button class="shop-item" @click=${() => this.completeItem(item)} aria-label=${"Check off " + item.summary + (item.description ? ". " + item.description : "")}>
         <span class="shop-check" aria-hidden="true"></span>
-        <span class="shop-name">${item.summary}</span>
+        <span class="shop-name"><span>${item.summary}</span>${item.description ? html`<span class="shop-attribution">${item.description}</span>` : nothing}</span>
         ${qty > 1 ? html`<span class="pill ghost-pill">×${qty}</span>` : nothing}
       </button>`;
   }
@@ -2964,7 +3100,7 @@ class LocalListAssistPanel extends LitElement {
                 <label class="toggle-row"><input id="settingsDebugMode" type="checkbox" ?checked=${state?.settings?.debug_mode} /> Debug mode</label>
               </div>
               <div class="label" style="margin-top:14px;">Backup</div>
-              <div class="small">Export a local JSON backup of your lists, meals, and learned data — or restore one. Import replaces your current data; run Repair Local Setup afterwards if you use voice.</div>
+              <div class="small">Export a local JSON backup of your lists, meals, photos, and learned data — or restore one. Import replaces your current data; run Repair Local Setup afterwards if you use voice.</div>
               <div class="row advanced-row">
                 <button class="btn" @click=${() => this.exportData()}>Export backup</button>
                 <button class="btn" @click=${() => this.renderRoot?.getElementById("importFileInput")?.click()}>Import backup</button>
@@ -3466,7 +3602,10 @@ class LocalListAssistPanel extends LitElement {
     .shop-item { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: var(--lla-surface-2); border: 1px solid var(--lla-border); border-radius: 12px; padding: 10px 12px; margin-bottom: 6px; color: var(--lla-text); font: inherit; font-size: 16px; cursor: pointer; transition: transform 80ms ease, opacity 120ms ease; }
     .shop-item:active { transform: scale(0.99); }
     .shop-check { width: 22px; height: 22px; flex: 0 0 22px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 70%, var(--lla-border)); }
-    .shop-name { flex: 1; }
+    .recipe-photo-editor { margin: 12px 0; padding: 12px; border: 1px solid var(--lla-border); border-radius: 12px; }
+    .recipe-photo-preview { display: block; max-width: 100%; max-height: 240px; border-radius: 10px; }
+    .shop-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .shop-attribution { display: block; margin-top: 4px; font-size: 12px; line-height: 1.4; color: var(--lla-text-dim); }
     .shop-empty { text-align: center; padding: 48px 16px; font-size: 44px; color: var(--lla-text-dim); display: flex; flex-direction: column; gap: 16px; align-items: center; }
     .shop-empty div { font-size: 16px; }
     @media (max-width: 720px) {

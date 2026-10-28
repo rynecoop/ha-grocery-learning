@@ -44,6 +44,7 @@ after(async () => {
 
 async function fixture(t, options = {}) {
   const page = await browser.newPage(options);
+  page.setDefaultTimeout(5000);
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   t.after(async () => { await page.close(); assert.deepEqual(errors, []); });
@@ -526,4 +527,160 @@ test("long lists keep the HA header visible and shopping controls below it", asy
   assert.ok(shopping.y >= header.y + header.height);
   await button.click();
   assert.equal(await page.evaluate(() => navigationEvents.length), 2);
+});
+
+for (const width of [320, 740, 1280]) {
+  test(`Shop shows contributors beside quantities and keeps check-off working at ${width}px`, async t => {
+    const page = await fixture(t, { viewport: { width, height: 800 } });
+    await page.evaluate(() => {
+      window.actions = [];
+      window.items = [
+        { item_ref: "tomatoes", summary: "Fire roasted tomatoes", quantity: 3, description: "Added by Alexandria Montgomery, Ryne & Jordan · just now · Typed", category: "pantry" },
+        { item_ref: "bread", summary: "Bread", quantity: 1, description: "", category: "pantry" },
+      ];
+      conn.read = () => ({ ...snapshot(), groups: [{ category: "pantry", title: "Pantry", items }] });
+      conn.action = payload => { actions.push(payload); return { ok: true, dashboard: conn.read() }; };
+      return mount();
+    });
+    await page.getByRole("button", { name: "Shop", exact: true }).click();
+    const row = page.locator(".shop-item").filter({ hasText: "Fire roasted tomatoes" });
+    assert.match(await row.innerText(), /Added by Alexandria Montgomery, Ryne & Jordan/);
+    assert.equal(await row.locator(".pill").innerText(), "×3");
+    assert.equal(await page.locator(".shop-item").filter({ hasText: "Bread" }).locator(".shop-attribution").count(), 0);
+    assert.equal(await row.locator(".shop-attribution").evaluate(el => el.getBoundingClientRect().right <= innerWidth), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    if (width === 320) await page.screenshot({ path: "/tmp/lla-shopping-attribution.png", fullPage: true });
+    await row.click();
+    assert.deepEqual(await page.evaluate(() => actions.map(p => [p.action, p.item, p.status])), [["set_status", "tomatoes", "completed"]]);
+  });
+}
+
+// A valid raster exercises the real browser decode/canvas/WebP path.
+const photoPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAABgAAAAQCAIAAACDRijCAAAAG0lEQVR4nGP8v5SBKoCJOsaMGjRq0KhBI9cgAMfwAcQ4+tH4AAAAAElFTkSuQmCC", "base64");
+async function photoFixture(t, options = {}) {
+  const page = await fixture(t, options);
+  await page.evaluate(() => {
+    window.saved = []; window.imageReads = [];
+    window.meals = [];
+    window.photoData = "";
+    window.failSave = false;
+    conn.read = () => ({ ...snapshot(), meals, favorites: [], meal_categories: [] });
+    conn.action = payload => {
+      if (payload.action === "get_recipe_image") { imageReads.push(payload.image_id); return { ok: true, image_data: photoData }; }
+      if (payload.action === "save_meal") {
+        saved.push(payload);
+        if (failSave) return { ok: false, error: "Save failed" };
+        const old = meals.find(m => m.id === payload.meal_id);
+        if (payload.image_data) photoData = payload.image_data;
+        const meal = { ...old, ...payload, id: payload.meal_id || "dinner", ingredient_count: payload.ingredients.length,
+          image_id: payload.image_data === undefined ? old?.image_id || "" : payload.image_data ? "a".repeat(64) : "" };
+        meals = [meal];
+        return { ok: true, dashboard: conn.read() };
+      }
+      if (payload.action === "import_recipe") return window.importResult;
+      return { ok: true, dashboard: conn.read() };
+    };
+    return mount();
+  });
+  await page.getByRole("button", { name: "Meals", exact: true }).click();
+  await page.evaluate(() => panel.openMealEditor());
+  return page;
+}
+
+for (const width of [320, 1280]) {
+  test(`Recipe photo upload, save, thumbnail, details, preserve, replace and remove at ${width}px`, async t => {
+    const page = await photoFixture(t, { viewport: { width, height: 900 } });
+    assert.equal(await page.getByRole("button", { name: "Add photo", exact: true }).isVisible(), true);
+    await page.getByPlaceholder("Meal name (e.g. Taco Night)").fill("Taco Night");
+    await page.locator("#recipePhotoInput").setInputFiles({ name: "tacos.png", mimeType: "image/png", buffer: photoPng });
+    await page.locator(".recipe-photo-preview").waitFor();
+    assert.equal(await page.getByRole("button", { name: "Replace photo", exact: true }).isVisible(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    if (width === 320) await page.screenshot({ path: "/tmp/lla-recipe-photo-editor.png", fullPage: true });
+    await page.getByRole("button", { name: "Create Meal", exact: true }).click();
+    await page.locator(".meal-row lla-recipe-photo img").waitFor();
+    assert.match(await page.evaluate(() => saved[0].image_data), /^data:image\/webp;base64,/);
+    await page.locator(".meal-row").click();
+    await page.getByRole("dialog", { name: "Taco Night" }).locator("lla-recipe-photo img").waitFor();
+    assert.equal(await page.evaluate(() => imageReads.every(id => id === "a".repeat(64))), true);
+    await page.evaluate(() => { panel.closeMealDetail(); panel.openMealEditor("dinner"); });
+    await page.getByRole("button", { name: "Save Meal", exact: true }).click();
+    assert.equal(await page.evaluate(() => "image_data" in saved.at(-1)), false);
+    await page.evaluate(() => panel.openMealEditor("dinner"));
+    await page.locator("#recipePhotoInput").setInputFiles({ name: "replacement.png", mimeType: "image/png", buffer: photoPng });
+    await page.locator(".recipe-photo-preview").waitFor();
+    await page.getByRole("button", { name: "Save Meal", exact: true }).click();
+    assert.match(await page.evaluate(() => saved.at(-1).image_data), /^data:image\/webp;base64,/);
+    await page.evaluate(() => panel.openMealEditor("dinner"));
+    await page.getByRole("button", { name: "Remove photo", exact: true }).click();
+    assert.equal(await page.getByRole("button", { name: "Add photo", exact: true }).isVisible(), true);
+    await page.getByRole("button", { name: "Save Meal", exact: true }).click();
+    assert.equal(await page.evaluate(() => saved.at(-1).image_data), "");
+    assert.equal(await page.locator(".meal-row lla-recipe-photo").count(), 0);
+  });
+}
+
+test("Recipe photo failed save keeps preview; invalid files do not replace the selected photo", async t => {
+  const page = await photoFixture(t);
+  await page.getByPlaceholder("Meal name (e.g. Taco Night)").fill("Dinner");
+  await page.locator("#recipePhotoInput").setInputFiles({ name: "dinner.png", mimeType: "image/png", buffer: photoPng });
+  await page.locator(".recipe-photo-preview").waitFor();
+  const src = await page.locator(".recipe-photo-preview").getAttribute("src");
+  await page.locator("#recipePhotoInput").setInputFiles({ name: "bad.svg", mimeType: "image/svg+xml", buffer: Buffer.from("<svg/>") });
+  assert.equal(await page.locator(".recipe-photo-preview").getAttribute("src"), src);
+  assert.match(await page.locator(".recipe-import .error").innerText(), /JPEG, PNG or WebP/);
+  await page.evaluate(() => { failSave = true; });
+  await page.getByRole("button", { name: "Create Meal", exact: true }).click();
+  assert.equal(await page.locator(".recipe-photo-preview").getAttribute("src"), src);
+  assert.equal(await page.getByRole("button", { name: "Create Meal", exact: true }).isVisible(), true);
+});
+
+test("Recipe imports show photo and source link; missing photo preserves usable recipe text", async t => {
+  const page = await photoFixture(t);
+  await page.evaluate(async () => {
+    const canvas = document.createElement("canvas"); canvas.width = canvas.height = 2;
+    importResult = { ok: true, recipe: { name: "Imported dinner", ingredients: ["rice"], directions: ["Cook"], image_data: canvas.toDataURL("image/webp") }, source_url: "https://example.com/dinner" };
+  });
+  await page.getByPlaceholder("Paste a recipe URL").fill("https://example.com/dinner");
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  await page.locator(".recipe-photo-preview").waitFor();
+  await page.getByRole("button", { name: "Create Meal", exact: true }).click();
+  await page.locator(".meal-row").click();
+  assert.equal(await page.getByRole("link", { name: "View original recipe" }).getAttribute("href"), "https://example.com/dinner");
+  await page.evaluate(() => {
+    panel.closeMealDetail(); panel.openMealEditor();
+    importResult = { ok: true, recipe: { name: "No photo dinner", ingredients: ["rice"], directions: ["Cook"] }, image_warning: "Photo unavailable — upload your own." };
+  });
+  await page.getByPlaceholder("Paste a recipe URL").fill("https://example.com/other");
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  assert.equal(await page.getByPlaceholder("Meal name (e.g. Taco Night)").inputValue(), "No photo dinner");
+  assert.match(await page.locator(".recipe-import .error").innerText(), /Photo unavailable/);
+  assert.equal(await page.getByRole("button", { name: "Add photo", exact: true }).isVisible(), true);
+});
+
+test("Removing a photo invalidates an in-flight decode and saves wait for photo preparation", async t => {
+  const page = await photoFixture(t);
+  await page.getByPlaceholder("Meal name (e.g. Taco Night)").fill("Dinner");
+  await page.evaluate(() => { window.realDecode = createImageBitmap; window.createImageBitmap = file => new Promise(resolve => { window.finishDecode = async () => resolve(await realDecode(file)); }); });
+  await page.locator("#recipePhotoInput").setInputFiles({ name: "dinner.png", mimeType: "image/png", buffer: photoPng });
+  assert.equal(await page.getByRole("button", { name: "Create Meal", exact: true }).isDisabled(), true);
+  await page.getByRole("button", { name: "Remove photo", exact: true }).click();
+  await page.evaluate(() => finishDecode());
+  assert.equal(await page.locator(".recipe-photo-preview").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Create Meal", exact: true }).isEnabled(), true);
+});
+
+test("An import superseding a pending photo decode does not leave Save disabled", async t => {
+  const page = await photoFixture(t);
+  await page.evaluate(() => {
+    window.realDecode = createImageBitmap;
+    window.createImageBitmap = file => new Promise(resolve => { window.finishDecode = async () => resolve(await realDecode(file)); });
+    window.importResult = { ok: true, recipe: { name: "Imported dinner", ingredients: ["rice"] } };
+  });
+  await page.locator("#recipePhotoInput").setInputFiles({ name: "dinner.png", mimeType: "image/png", buffer: photoPng });
+  await page.getByPlaceholder("Paste a recipe URL").fill("https://example.com/dinner");
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Create Meal", exact: true }).isEnabled(), true);
+  await page.evaluate(() => finishDecode());
+  assert.equal(await page.locator(".recipe-photo-preview").count(), 0);
 });
