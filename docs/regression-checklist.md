@@ -58,3 +58,9 @@ Use this checklist before and after each Home Assistant release candidate.
 ## Release Gate
 - do not release if any item above fails
 
+
+## Recipe photos and shopping attribution (0.36.0)
+- On a 320px phone and desktop, Shop shows the same contributor information as List; long names wrap without hiding quantity or check-off controls.
+- Add, replace and remove a photo in both a new and existing meal. Confirm preview, thumbnail and detail image; retry a failed save without losing the photo.
+- Import a recipe with and without a photo. Confirm source link, text and failure warning.
+- Restart HA and reopen a photographed recipe. Export multiple photographed meals and restore into a clean installation; confirm photos and source links. Restore an older image-free backup too.
