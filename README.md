@@ -57,8 +57,11 @@ Open `Meals` from the menu (⋯) to define a meal once — a name, its ingredien
 
 ### Recipe Photos
 
-Import a recipe link to capture its primary photo when available, or upload a JPEG,
-PNG or WebP photo (up to 8 MB) while creating or editing a meal. Replace or remove
+Import a recipe link to capture its primary photo when available, or choose a full-size
+phone photo while creating or editing a meal. Originals up to 100 MB are resized
+and compressed automatically on your device before upload; no manual editing is
+needed. JPEG, PNG and WebP work across supported browsers; HEIC/HEIF photos use
+your browser’s native decoder where available. Replace or remove
 photos in the same editor. Photos appear in Meals and recipe details; imported
 meals also retain a link to the source recipe. An unavailable photo never blocks
 recipe import.

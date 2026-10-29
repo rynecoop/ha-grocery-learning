@@ -33,11 +33,16 @@ def normalize_image(raw: bytes) -> bytes:
                 return raw
             image = ImageOps.exif_transpose(source).convert("RGB")
             image.thumbnail((1200, 1200))
-            for quality in (80, 65, 45):
-                output = io.BytesIO()
-                image.save(output, format="WEBP", quality=quality)
-                if output.tell() <= MAX_OUTPUT:
-                    return output.getvalue()
+            while True:
+                for quality in (80, 65, 45):
+                    output = io.BytesIO()
+                    image.save(output, format="WEBP", quality=quality)
+                    if output.tell() <= MAX_OUTPUT:
+                        return output.getvalue()
+                if max(image.size) <= 1:
+                    break
+                edge = max(1, int(max(image.size) * 0.75))
+                image.thumbnail((edge, edge))
     except (OSError, Image.DecompressionBombError) as err:
         raise ValueError("Invalid image") from err
     raise ValueError("Image cannot be compressed sufficiently")

@@ -628,7 +628,7 @@ test("Recipe photo failed save keeps preview; invalid files do not replace the s
   const src = await page.locator(".recipe-photo-preview").getAttribute("src");
   await page.locator("#recipePhotoInput").setInputFiles({ name: "bad.svg", mimeType: "image/svg+xml", buffer: Buffer.from("<svg/>") });
   assert.equal(await page.locator(".recipe-photo-preview").getAttribute("src"), src);
-  assert.match(await page.locator(".recipe-import .error").innerText(), /JPEG, PNG or WebP/);
+  assert.match(await page.locator(".recipe-import .error").innerText(), /Choose a photo from your library/);
   await page.evaluate(() => { failSave = true; });
   await page.getByRole("button", { name: "Create Meal", exact: true }).click();
   assert.equal(await page.locator(".recipe-photo-preview").getAttribute("src"), src);
@@ -683,4 +683,131 @@ test("An import superseding a pending photo decode does not leave Save disabled"
   assert.equal(await page.getByRole("button", { name: "Create Meal", exact: true }).isEnabled(), true);
   await page.evaluate(() => finishDecode());
   assert.equal(await page.locator(".recipe-photo-preview").count(), 0);
+});
+
+test("A real 48MP phone JPEG over 8 MB is resized on-device and saved as a bounded raster", async t => {
+  const page = await photoFixture(t, { viewport: { width: 320, height: 900 } });
+  page.setDefaultTimeout(20000);
+  await page.getByPlaceholder("Meal name (e.g. Taco Night)").fill("Phone photo dinner");
+  const original = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas"); canvas.width = 8000; canvas.height = 6000;
+    const ctx = canvas.getContext("2d");
+    // Reuse a noisy eight-row tile to keep fixture memory low. JPEG encodes
+    // every block separately, producing a genuine large 48MP camera-like file.
+    const tile = ctx.createImageData(8000, 8); let seed = 123456;
+    for (let i = 0; i < tile.data.length; i += 4) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      tile.data[i] = seed >>> 24; tile.data[i + 1] = (seed >>> 16) & 255; tile.data[i + 2] = (seed >>> 8) & 255; tile.data[i + 3] = 255;
+    }
+    for (let y = 0; y < canvas.height; y += 8) ctx.putImageData(tile, 0, y);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    canvas.width = canvas.height = 1;
+    const file = new File([blob], "IMG_1234.JPG", { type: "image/jpeg" });
+    const dt = new DataTransfer(); dt.items.add(file);
+    const input = panel.renderRoot.getElementById("recipePhotoInput"); input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true }));
+    return { size: file.size, width: 8000, height: 6000 };
+  });
+  assert.ok(original.size > 8 * 1024 * 1024, `fixture should exceed the old cap: ${original.size}`);
+  assert.ok(original.size < 100 * 1024 * 1024);
+  await page.locator(".recipe-photo-preview").waitFor();
+  const prepared = await page.evaluate(async () => {
+    const blob = await (await fetch(panel._drafts.mealImageData)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const result = { bytes: blob.size, width: bitmap.width, height: bitmap.height }; bitmap.close(); return result;
+  });
+  assert.ok(prepared.bytes <= 256 * 1024);
+  assert.ok(Math.max(prepared.width, prepared.height) <= 1200);
+  assert.equal(prepared.width / prepared.height, 4 / 3);
+  await page.getByRole("button", { name: "Create Meal", exact: true }).click();
+  assert.equal(await page.evaluate(() => saved.length), 1);
+  assert.ok(await page.evaluate(() => saved[0].image_data.length < 360000));
+});
+
+test("Detailed photos automatically shrink further when the first size cannot fit", async t => {
+  const page = await photoFixture(t);
+  const result = await page.evaluate(async () => {
+    const { prepareRecipePhoto } = await import("/recipe-photo.js?v=test");
+    const real = HTMLCanvasElement.prototype.toDataURL; window.encodedSizes = [];
+    HTMLCanvasElement.prototype.toDataURL = function (...args) {
+      encodedSizes.push([this.width, this.height]);
+      if (Math.max(this.width, this.height) >= 1200) return "data:image/webp;base64," + "A".repeat(360000);
+      return real.apply(this, args);
+    };
+    try {
+      const canvas = document.createElement("canvas"); canvas.width = 1600; canvas.height = 1200;
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      const data = await prepareRecipePhoto(new File([blob], "detailed.png", { type: "image/png" }));
+      const image = await createImageBitmap(await (await fetch(data)).blob());
+      const result = { width: image.width, height: image.height, tried: encodedSizes }; image.close(); return result;
+    } finally { HTMLCanvasElement.prototype.toDataURL = real; }
+  });
+  assert.ok(result.tried.some(([w]) => w === 1200));
+  assert.equal(result.width, 900);
+  assert.equal(result.height, 675);
+});
+
+test("Missing MIME metadata and browser decode/JPEG-encode fallbacks require no user conversion", async t => {
+  const page = await photoFixture(t);
+  const result = await page.evaluate(async bytes => {
+    const { prepareRecipePhoto } = await import("/recipe-photo.js?v=test");
+    const bitmapDecoder = window.createImageBitmap;
+    const encode = HTMLCanvasElement.prototype.toDataURL;
+    const realCreate = URL.createObjectURL; const realRevoke = URL.revokeObjectURL;
+    window.urlCreates = []; window.urlRevokes = [];
+    URL.createObjectURL = blob => { const url = realCreate(blob); urlCreates.push(url); return url; };
+    URL.revokeObjectURL = url => { urlRevokes.push(url); return realRevoke(url); };
+    window.createImageBitmap = async () => { throw new Error("bitmap decoder unavailable"); };
+    HTMLCanvasElement.prototype.toDataURL = function (type, quality) { return encode.call(this, type === "image/webp" ? "image/png" : type, quality); };
+    try {
+      const data = await prepareRecipePhoto(new File([new Uint8Array(bytes)], "PHONE.PNG", { type: "" }));
+      return { data, creates: urlCreates, revokes: urlRevokes };
+    } finally {
+      window.createImageBitmap = bitmapDecoder; HTMLCanvasElement.prototype.toDataURL = encode;
+      URL.createObjectURL = realCreate; URL.revokeObjectURL = realRevoke;
+    }
+  }, [...photoPng]);
+  assert.match(result.data, /^data:image\/jpeg;base64,/);
+  assert.equal(result.creates.length, 1);
+  assert.deepEqual(result.creates, result.revokes);
+});
+
+test("An unsupported phone format keeps the existing preview and recovers the Save button", async t => {
+  const page = await photoFixture(t);
+  await page.getByPlaceholder("Meal name (e.g. Taco Night)").fill("Dinner");
+  await page.locator("#recipePhotoInput").setInputFiles({ name: "dinner.png", mimeType: "image/png", buffer: photoPng });
+  await page.locator(".recipe-photo-preview").waitFor();
+  const before = await page.locator(".recipe-photo-preview").getAttribute("src");
+  await page.locator("#recipePhotoInput").setInputFiles({ name: "bad.heic", mimeType: "image/heic", buffer: Buffer.from("not a valid HEIC photo") });
+  await page.waitForFunction(() => !panel._photoLoading);
+  assert.equal(await page.locator(".recipe-photo-preview").getAttribute("src"), before);
+  assert.match(await page.locator(".recipe-import .error").innerText(), /browser couldn’t read that photo format/);
+  assert.equal(await page.getByRole("button", { name: "Create Meal", exact: true }).isEnabled(), true);
+});
+
+
+test("Phone EXIF orientation is preserved while preparing a recipe photo", async t => {
+  const page = await photoFixture(t);
+  await page.locator("#recipePhotoInput").setInputFiles({ name: "portrait.JPG", mimeType: "image/jpeg", buffer: Buffer.from("/9j/4AAQSkZJRgABAQAAAQABAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAYAAAAAAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAUACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDi6KKK+ZP3EKKKKACiiigAooooAKKKKACiiigD/9k=", "base64") });
+  await page.locator(".recipe-photo-preview").waitFor();
+  const size = await page.evaluate(async () => {
+    const bitmap = await createImageBitmap(await (await fetch(panel._drafts.mealImageData)).blob());
+    const result = [bitmap.width, bitmap.height]; bitmap.close(); return result;
+  });
+  assert.deepEqual(size, [20, 40]);
+});
+
+test("Unusually large originals are rejected before decoding or uploading", async t => {
+  const page = await photoFixture(t);
+  const result = await page.evaluate(async () => {
+    const { prepareRecipePhoto } = await import("/recipe-photo.js?v=test");
+    const real = window.createImageBitmap; let decoded = false;
+    window.createImageBitmap = async () => { decoded = true; throw Error("unexpected decode"); };
+    try {
+      await prepareRecipePhoto({ name: "enormous.jpg", type: "image/jpeg", size: 101 * 1024 * 1024 });
+      return { decoded, error: "none" };
+    } catch (e) { return { decoded, error: e.message }; }
+    finally { window.createImageBitmap = real; }
+  });
+  assert.equal(result.decoded, false);
+  assert.match(result.error, /under 100 MB/);
 });
