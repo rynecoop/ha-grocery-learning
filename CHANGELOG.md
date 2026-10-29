@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.36.1
+- Recipe photos now accept full-size phone originals up to 100 MB and automatically resize/compress them on your device before uploading. Detailed photos are reduced further when needed; no manual cropping or compression is required. Saved images remain at most 1200px and 256 KiB.
+- Added a browser image-decoder fallback for phone photo compatibility, including HEIC/HEIF on browsers with native support, plus JPEG encoding fallback when WebP encoding is unavailable. Photo processing stays local and preserves orientation and aspect ratio.
+
 ## 0.36.0
 - Recipe photos: import the primary image from a recipe link, or upload, replace and remove a photo in the meal editor. Photos appear in Meals and recipe details, stay local, and are included in JSON backups. Older backups still restore.
 - Imported recipes retain their source link. A photo download failure preserves the recipe text and offers manual upload.

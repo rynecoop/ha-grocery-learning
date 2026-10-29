@@ -64,3 +64,8 @@ Use this checklist before and after each Home Assistant release candidate.
 - Add, replace and remove a photo in both a new and existing meal. Confirm preview, thumbnail and detail image; retry a failed save without losing the photo.
 - Import a recipe with and without a photo. Confirm source link, text and failure warning.
 - Restart HA and reopen a photographed recipe. Export multiple photographed meals and restore into a clean installation; confirm photos and source links. Restore an older image-free backup too.
+
+## Phone photos (0.36.1)
+- Choose a phone photo larger than 8 MB, including a 48MP original. Confirm an oriented preview and saved image at most 1200px/256 KiB without manual edits.
+- Check automatic further resizing of highly detailed photos, missing MIME metadata, image-element decode fallback and JPEG encoding fallback.
+- On an iPhone, choose a HEIC photo from the library; verify preview and save using native decoding. On a browser without HEIC support, confirm a clear format error preserves the current photo and editor.

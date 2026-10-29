@@ -136,4 +136,4 @@ The panel adapts to phone-sized screens and follows your Home Assistant theme:
 
 ### Recipe photos
 
-Open **Meals**, then **New Meal** or edit a saved meal. Use **Add photo** or **Replace photo** to select a JPEG, PNG or WebP under 8 MB, review the preview, and save. **Remove photo** clears it when you save. Recipe-link imports also capture an available photo; a missing photo does not block the recipe text. Photos appear in Meals and recipe details and are stored locally with your JSON backups.
+Open **Meals**, then **New Meal** or edit a saved meal. Use **Add photo** or **Replace photo** to choose a phone photo, review the preview, and save. Photos are automatically resized and compressed on your device before uploading (originals up to 100 MB), so you do not need to crop or compress them. HEIC/HEIF decoding depends on native browser support. **Remove photo** clears it when you save. Recipe-link imports also capture an available photo; a missing photo does not block the recipe text. Photos appear in Meals and recipe details and are stored locally with your JSON backups.

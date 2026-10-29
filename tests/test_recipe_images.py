@@ -2,6 +2,7 @@ import asyncio
 import base64
 import importlib.util
 import io
+import random
 from pathlib import Path
 import tempfile
 import unittest
@@ -28,6 +29,15 @@ class RecipeImagesTests(unittest.TestCase):
             self.assertEqual(result.size, (1200, 600))
             self.assertFalse(result.getexif())
         self.assertLessEqual(len(raw), images.MAX_OUTPUT)
+
+    def test_detailed_photo_is_resized_further_to_fit_without_manual_edits(self):
+        output = io.BytesIO()
+        Image.frombytes("RGB", (1200, 1200), random.Random(4).randbytes(1200 * 1200 * 3)).save(output, format="PNG")
+        raw = images.normalize_image(output.getvalue())
+        self.assertLessEqual(len(raw), images.MAX_OUTPUT)
+        with Image.open(io.BytesIO(raw)) as result:
+            self.assertLess(max(result.size), 1200)
+            self.assertEqual(result.width, result.height)
 
     def test_invalid_and_oversized_images(self):
         for value in (b"<svg></svg>", b"not a photo", b"x" * (images.MAX_INPUT + 1)):

@@ -20,7 +20,6 @@ const { LitElement, html, css, nothing, repeat, live, styleMap } = await import(
 const {
   categoryDisplay: displayCategory,
   createListLocal: applyCreateListLocal,
-  dataUrlByteLength,
   deleteArchivedListLocal: applyDeleteArchivedListLocal,
   groupTitle: deriveGroupTitle,
   matchSuggestions,
@@ -29,6 +28,8 @@ const {
   switchListLocal: applySwitchListLocal,
   updateItemLocal: applyUpdateItemLocal,
 } = await import(`./state-helpers.js${_moduleQuery}`);
+
+const { prepareRecipePhoto } = await import(`./recipe-photo.js${_moduleQuery}`);
 
 const TEMPLATE_LABELS = {
   flat: "Flat List",
@@ -43,9 +44,6 @@ const UNDO_TIMEOUT_MS = 6000;
 // Mirror of the backend's _BULK_MAX_ITEMS: cap a single paste so an oversized
 // one is caught in the editor instead of being sent (or queued offline).
 const PASTE_MAX_ITEMS = 200;
-// Mirror of recipe_images.MAX_OUTPUT: the picker enforces this exact byte cap on
-// its WebP so an accepted photo can't be rejected by the server on save.
-const RECIPE_IMAGE_MAX_BYTES = 256 * 1024;
 
 // Fetch through HA authentication; image data never goes to third-party hosts.
 class RecipePhoto extends LitElement {
@@ -2176,27 +2174,8 @@ class LocalListAssistPanel extends LitElement {
     this._photoLoading = true;
     this.requestUpdate();
     try {
-      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) throw new Error("Choose a JPEG, PNG or WebP image under 8 MB.");
-      const bitmap = await createImageBitmap(file);
-      const canvas = document.createElement("canvas");
-      const scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      bitmap.close();
-      // Step the quality down exactly like the server does (80/65/45) so a
-      // detailed photo is compressed to fit rather than rejected outright, and
-      // the highest fitting quality is kept. Measure the actual decoded byte
-      // size against the server's exact 256 KiB output cap
-      // (recipe_images.MAX_OUTPUT) — a looser char-length cap would accept
-      // images the server then rejects on save.
-      let data = "";
-      for (const quality of [0.8, 0.65, 0.45]) {
-        data = canvas.toDataURL("image/webp", quality);
-        if (dataUrlByteLength(data) <= RECIPE_IMAGE_MAX_BYTES) break;
-      }
-      if (dataUrlByteLength(data) > RECIPE_IMAGE_MAX_BYTES) throw new Error("That photo is too detailed. Try a smaller image.");
-      if (!isCurrent()) return;
+      const data = await prepareRecipePhoto(file, isCurrent);
+      if (!data || !isCurrent()) return;
       this._drafts.mealImageData = data;
       this._drafts.mealImageId = "";
       this._recipeImportError = "";
@@ -2232,10 +2211,10 @@ class LocalListAssistPanel extends LitElement {
         ${this._drafts.mealImageData ? html`<img class="recipe-photo-preview" src=${this._drafts.mealImageData} alt="Recipe photo preview" />` : hasPhoto ? this._photoTemplate(this._drafts.mealImageId, this._drafts.mealName) : html`<div class="small">Add a photo to recognize this recipe at a glance.</div>`}
         <div class="row">
           <button class="btn" @click=${() => this.renderRoot?.getElementById("recipePhotoInput")?.click()}>${hasPhoto ? "Replace photo" : "Add photo"}</button>
-          <input id="recipePhotoInput" aria-label="Recipe photo" type="file" accept="image/jpeg,image/png,image/webp" hidden @change=${(e) => this.chooseRecipePhoto(e)} />
+          <input id="recipePhotoInput" aria-label="Recipe photo" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,.heic,.heif" hidden @change=${(e) => this.chooseRecipePhoto(e)} />
           ${hasPhoto || this._photoLoading ? html`<button class="btn compact" @click=${() => { this._photoOpSeq = (this._photoOpSeq || 0) + 1; this._photoLoading = false; this._drafts.mealImageData = ""; this._drafts.mealImageId = ""; this.requestUpdate(); }}>Remove photo</button>` : nothing}
         </div>
-        <div class="small" role="status">${this._photoLoading ? "Preparing photo…" : "JPEG, PNG or WebP, up to 8 MB. Stored locally and included in backups."}</div>
+        <div class="small" role="status">${this._photoLoading ? "Preparing photo…" : "Choose a photo — we resize it automatically. Stored locally and included in backups."}</div>
         ${!isNew && this._recipeImportError ? html`<div class="error small">${this._recipeImportError}</div>` : nothing}
       </div>
       <div class="grid compact-grid">
